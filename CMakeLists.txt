@@ -63,5 +63,8 @@ configure_file(
 # Add source directories
 add_subdirectory(src)
 
+# Add tests
+add_subdirectory(tests)
+
 # Install headers
 install(DIRECTORY include/ DESTINATION ${INSTALL_INCLUDE_DIR})
