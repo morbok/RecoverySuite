@@ -1,0 +1,100 @@
+# Build artifacts
+*/bin/
+*/lib/
+*/obj/
+*/build/
+*/Debug/
+*/Release/
+*/x64/
+*/x86/
+
+# CMake specific
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+Testing/
+Makefile
+cmake_install.cmake
+install_manifest.txt
+CTestTestfile.cmake
+
+# Object files
+*.o
+*.obj
+*.lo
+*.la
+*.lo
+*.lo
+
+# Libraries
+*.lib
+*.a
+*.so
+*.dylib
+*.dll
+
+# Executables
+*.exe
+*.out
+*.app
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiler specific
+*.ds_store
+*.lo
+*.la
+*.lo
+*.lo
+
+# IDE files
+.vscode/
+.idea/
+*.sln
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+.cache
+*.bak
+*.swp
+
+# Testing artifacts
+*/
+test-*/
+*/testing/
+*/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Documentation generated files
+docs/_build/
+docs/html/
+docs/latex/
+docs/epub/
+
+# Dependency directories
+vcpkg_installed/
+third_party/
+*/third_party/
+*/dependencies/
