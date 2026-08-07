@@ -8,6 +8,17 @@ All notable changes to this project will be documented in this file.
   - WindowsDiskReader bounds checking for read requests
   - WindowsDiskReader proper error handling on open failures (close handle before throwing)
   - Expanded test suite for Disk module to validate validation and error conditions
+- Partition module foundation (MBR) implementation
+  - Partition exception handling framework (PartitionException.hpp)
+  - MBR header structure (MBRHeader.hpp)
+  - MBR partition entry parser (MBRPartitionEntry.hpp)
+  - Partition table wrapper (PartitionTable.hpp)
+  - Partition geometry model (PartitionGeometry.hpp)
+  - MBR parser interface (MBParser.hpp) and implementation (MBParser.cpp)
+  - Partition validator interface (PartitionValidator.hpp) and implementation (PartitionValidator.cpp)
+  - Partition manager interface (PartitionManager.hpp) and implementation (PartitionManager.cpp)
+  - Updated CMakeLists.txt to build Partition module
+  - Unit tests for Partition module (tests/test_partition_mbr.cpp) with test cases for valid MBR, invalid signature, empty partition table, overlapping partitions, and edge cases
 ### Changed
 - Updated SESSION_STATE.md to reflect Disk Layer foundation progress
 - Updated MASTER_TODO.md to reflect actual implementation state
