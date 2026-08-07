@@ -10,7 +10,7 @@ This document tracks the overall progress and outstanding tasks for the Recovery
 - [x] Directory Structure Establishment (src/, include/, tests/ directories created)
 
 ## Current Phase
-**Disk Layer Foundation** - Implementing Windows-specific disk reader and device
+**Disk Layer Foundation** - Implementing Windows-specific disk reader and device with validation and error handling improvements
 
 ## Completed Work in Current Phase
 - Disk exception handling framework
@@ -19,16 +19,16 @@ This document tracks the overall progress and outstanding tasks for the Recovery
 - Disk reader interface (IDiskReader)
 - Disk device interface (IDiskDevice)
 - Windows-specific disk exception (WindowsDiskException)
-- Windows-specific disk reader (WindowsDiskReader)
+- Windows-specific disk reader (WindowsDiskReader) with improved validation and error handling
 - Windows-specific disk device (WindowsDiskDevice)
 - Updated CMake to build Disk module and conditionally build Windows-specific Disk library
 - Basic unit tests for Disk module interface
-- Windows-specific disk tests
+- Windows-specific disk tests (expanded to include validation and error condition tests)
 
 ## Immediate Next Tasks
 1. **Complete Disk Layer Foundation**
    - [ ] Implement Disk manager class
-   - [ ] Complete physical disk access abstraction (ensure WindowsDiskReader is robust and complete)
+   - [ ] Complete physical disk access abstraction (ensure WindowsDiskReader is robust and complete - we have implemented basic geometry and size with validation, but could extend to get more info like model, serial, etc.)
    - [ ] Implement Windows platform-specific disk enumerator implementation (IDiskEnumerator for Windows)
    - [ ] Add Linux and macOS platform implementations (stubs for now)
    - [ ] Implement disk caching mechanism

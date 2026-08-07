@@ -2,7 +2,26 @@
 
 This log contains notable findings, issues, debug information, and recovery-related notes from the development of RecoverySuite.
 
-## Disk Layer Foundation - Interfaces and Windows Implementation (Current Session)
+## Disk Layer Foundation - Validation and Testing (Current Session)
+
+### Findings
+1. **Bounds Checking**: Added validation in WindowsDiskReader::doReadSectors to prevent reads that exceed disk capacity or start beyond the end of the disk.
+2. **Error Handling on Open**: Improved WindowsDiskReader::doOpen to close the disk handle if getting geometry or size fails, preventing resource leaks.
+3. **Test Coverage**: Expanded the test suite to validate the DiskInfo and DiskGeometry validation logic, and to test exception handling for invalid states.
+4. **Resource Management**: Confirmed that WindowsDiskReader properly closes the disk handle in the destructor and on failure during open.
+5. **Platform Abstraction**: The Windows-specific implementation remains isolated in the Platform/Windows directory, with no Windows API types leaking through the public interfaces.
+
+### Issues Encountered
+1. **Test Assertion Failures**: The initial test for DiskInfo::isValid() failed because we had not updated the validation logic to depend on geometry validity. We fixed this by changing DiskInfo::isValid() to return true only when the device path is not empty and the geometry is valid.
+2. **Geometry Validation**: The DiskGeometry::isValid() method originally required totalSectors to be non-zero, which is not set until after geometry is read. We changed it to validate only the basic fields (bytesPerSector, sectorsPerTrack, headsPerCylinder, cylinders) and added a helper method to compute totalSectors from geometry when needed.
+3. **Windows API Includes**: Ensured that Windows-specific headers are only included when building on Windows by using the WIN32 macro correctly.
+
+### Debug Notes
+- WindowsDiskReader now throws WindowsDiskException with descriptive messages for out-of-range read requests and failed geometry/size retrieval.
+- The test suite now includes checks for invalid DiskInfo (empty devicePath, invalid geometry) and validates the exception messages.
+- The implementation remains read-only as required, with no write operations attempted.
+
+## Disk Layer Foundation Implementation (Prior Session - Notes)
 
 ### Findings
 1. **Interface-First Design**: Successfully defined clean, platform-independent interfaces for disk operations (IDiskReader, IDiskDevice, IDiskEnumerator) before implementing platform-specific code.
@@ -27,32 +46,6 @@ This log contains notable findings, issues, debug information, and recovery-rela
 - No actual disk recovery operations have been implemented yet (this is strictly analysis phase)
 - All storage access is read-only through the Disk layer
 - No permanent modifications to storage devices occur during analysis
-
-## Disk Layer Foundation Implementation (Prior Session - Notes)
-
-### Findings
-1. **Exception Framework**: Disk exception hierarchy provides proper error codes and messages for disk operations.
-2. **Device Information**: DeviceInformation structure captures essential disk properties including geometry, identification, and partitioning info.
-3. **Enumerator Pattern**: DiskEnumerator interface with factory pattern allows platform-specific implementations while maintaining common interface.
-4. **DiskManager**: Provides high-level disk operations while abstracting low-level disk access details.
-
-### Issues Encountered
-1. **Circular Dependency**: Initial implementation had circular dependency between DiskEnumerator.h and IDiskEnumerator.h - resolved using forward declaration.
-2. **Abstract Class Casting**: Attempt to cast to abstract class type fixed by changing factory to return platform::IDiskEnumerator interface.
-3. **Missing Includes**: memset not declared in PhysicalDisk.cpp fixed by adding #include <cstring>.
-4. **Comment Errors**: Fixed '/*' within comment warnings by reformatting comments.
-5. **Redefinition Errors**: Removed duplicate DriveGeometry/IORequest struct definitions from DeviceInformation.h.
-
-### Debug Notes
-- Windows disk enumerator stub returns mock data for development and testing
-- PhysicalDisk abstraction properly handles sector-sized reads with buffering
-- IORequest structure provides flexible I/O operation specification
-- Build system correctly handles C++20 features across all modules
-
-### Recovery Context
-- Disk layer provides low-level read/write access to physical disks
-- All operations can be performed in read-only mode for forensic analysis
-- Error handling allows graceful degradation when disk access fails
 
 ## Project Setup and Architecture (Initial Phase)
 
@@ -99,7 +92,7 @@ This log contains notable findings, issues, debug information, and recovery-rela
 - [x] Architecture documentation completed
 - [x] Build system configured (CMake with C++20)
 - [x] Directory structure established
-- [ ] Disk Layer foundation implemented (interfaces and Windows reader/device done - see current session)
+- [ ] Disk Layer foundation implemented (interfaces and Windows reader/device done with validation and error handling - see current session)
 - [ ] Storage Intelligence Subsystem implemented
 - [ ] Partition Engine Foundation (next phase)
 - [ ] Volume Discovery & Mount Analysis
