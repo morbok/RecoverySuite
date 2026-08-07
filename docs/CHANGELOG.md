@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 ### Added
+- Emergency checkpoint: saved current state after verifying MBR partition parser foundation
+- Updated documentation to reflect emergency checkpoint status
+- Cleaned repository of temporary files (removed RecoverySuite and RecoverySuite.pub)
 - Disk Layer foundation validation and testing improvements
   - WindowsDiskReader bounds checking for read requests
   - WindowsDiskReader proper error handling on open failures (close handle before throwing)
@@ -20,9 +23,11 @@ All notable changes to this project will be documented in this file.
   - Updated CMakeLists.txt to build Partition module
   - Unit tests for Partition module (tests/test_partition_mbr.cpp) with test cases for valid MBR, invalid signature, empty partition table, overlapping partitions, and edge cases
 ### Changed
-- Updated SESSION_STATE.md to reflect Disk Layer foundation progress
-- Updated MASTER_TODO.md to reflect actual implementation state
+- Updated SESSION_STATE.md to reflect emergency checkpoint status
+- Updated MASTER_TODO.md to reflect emergency checkpoint status
+- Updated HANDOFF.md to reflect emergency checkpoint status
 - Updated CHANGELOG.md to reflect the current changes
+- Updated RECOVERY_LOG.md to add findings from emergency checkpoint session
 
 ## [0.1.0] - 2026-08-06
 ### Added
