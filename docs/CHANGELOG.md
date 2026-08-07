@@ -4,24 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 ### Added
-- Storage Intelligence Subsystem implementation (Storage module)
-  - StorageDeviceInfo model
-  - StorageManager coordinator
-  - StorageAccess layer with Windows implementation
-  - TRIM, WearLeveling, and GarbageCollection analysts
-  - StorageReporter for generating analysis reports
-  - StorageUtils for helper functions
-- Disk Layer foundation (previously implemented)
+- Disk Layer foundation interfaces and Windows-specific implementation
   - Disk exception handling framework
-  - Device information structures
-  - Disk enumerator interface
-  - Disk manager class
-  - Physical disk access abstraction
-  - Windows-specific disk enumerator implementation
+  - Device information structures (DiskGeometry, DiskInfo)
+  - Disk enumerator interface (IDiskEnumerator)
+  - Disk reader interface (IDiskReader)
+  - Disk device interface (IDiskDevice)
+  - Windows-specific disk exception (WindowsDiskException)
+  - Windows-specific disk reader (WindowsDiskReader)
+  - Windows-specific disk device (WindowsDiskDevice)
+  - Updated CMake to build Disk module and conditionally build Windows-specific Disk library
+  - Basic unit tests for Disk module interface
+  - Windows-specific disk tests
 
 ### Changed
-- Updated SESSION_STATE.md to reflect Storage Intelligence subsystem completion
-- Updated MASTER_TODO.md to track progress through phases
+- Updated SESSION_STATE.md to reflect Disk Layer foundation progress
+- Updated MASTER_TODO.md to reflect actual implementation state
 
 ## [0.1.0] - 2026-08-06
 ### Added
@@ -50,4 +48,3 @@ All notable changes to this project will be documented in this file.
 - README.md with project title
 - TEST.txt placeholder
 - .gitignore for build artifacts
-

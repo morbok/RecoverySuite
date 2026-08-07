@@ -63,6 +63,11 @@ configure_file(
 # Add source directories
 add_subdirectory(src)
 
+# Add Windows platform-specific implementations if on Windows
+if(WIN32)
+    add_subdirectory(src/Platform/Windows)
+endif()
+
 # Add tests
 add_subdirectory(tests)
 
