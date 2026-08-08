@@ -56,6 +56,11 @@ This document tracks the current state of the RecoverySuite project and must be 
   - [x] GPT validator interface (GPTValidator.hpp) and implementation (GPTValidator.cpp)
   - [x] Updated CMakeLists.txt to build Partition module with GPT components
   - [x] Unit tests for GPT module (tests/test_gpt.cpp) with test cases for valid GPT, corrupted header, invalid CRC, etc.
+- [x] **Added missing test files to repository:**
+  - [x] tests/test_basic.cpp
+  - [x] tests/test_disk.cpp
+  - [x] tests/test_storage.cpp
+  - [x] tests/test_gpt.cpp
 
 ## Repository Health
 **Status: Healthy**
@@ -79,7 +84,7 @@ None.
 
 ## Future Priorities
 1. Volume Discovery & Mount Analysis (Phase 4A)
-2. Filesystem Framework Foundation (Phase 5)
+2. Filesystem Foundation (Phase 5)
 3. NTFS Engine Foundation (Phase 6)
 4. Implement Core module with logging, configuration, and utilities
 5. Implement Storage Intelligence subsystem
@@ -105,6 +110,7 @@ This session focused on reaching a safe checkpoint as requested. We verified the
 Accomplishments in this session:
 - Fixed the MBR partition parser to correctly show NTFS partition type as 7 (0x07) instead of 2.
 - Implemented GPT partition parser, validator, and related structures.
+- Added missing test files (test_basic.cpp, test_disk.cpp, tests/test_storage.cpp, tests/test_gpt.cpp) to the repository to ensure all tests are versioned.
 - Updated unit tests for both MBR and GPT to validate the implementations.
 - Ensured all tests pass: BasicTest, DiskTest, StorageTest, MBR partition test, GPT partition test.
 - Updated documentation to reflect the current state.

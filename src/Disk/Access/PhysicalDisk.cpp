@@ -1,0 +1,161 @@
+#include "PhysicalDisk.h"
+#include <stdexcept>
+#include <string>
+#include <vector>
+#include <cstring>
+#include "Version.h"
+
+// Windows-specific implementation will go here
+// For now, we'll provide a basic structure that throws not implemented
+
+namespace recoverysuite {
+namespace disk {
+
+class PhysicalDisk::PhysicalDiskImpl {
+public:
+    PhysicalDiskImpl(uint64_t diskNumber, bool readOnly)
+        : m_diskNumber(diskNumber), m_readOnly(readOnly), m_isOpen(false) {
+        // In a real implementation, this would open the disk using platform-specific APIs
+        // For Windows, this would use CreateFile with appropriate flags
+        // For now, we'll simulate opening successfully
+        m_isOpen = true;
+    }
+
+    ~PhysicalDiskImpl() {
+        // In a real implementation, this would close the disk handle
+        if (m_isOpen) {
+            // Close handle
+            m_isOpen = false;
+        }
+    }
+
+    bool isOpen() const { return m_isOpen; }
+    uint64_t getDiskNumber() const { return m_diskNumber; }
+    bool isReadOnly() const { return m_readOnly; }
+
+    DeviceInformation getDeviceInformation() const {
+        if (!m_isOpen) {
+            throw DiskException("Disk is not open");
+        }
+        // Return basic info - in real implementation would query the disk
+        DeviceInformation info;
+        info.diskNumber = m_diskNumber;
+        info.isRemovable = false;
+        info.isReadOnly = m_readOnly;
+        info.bytesPerSector = 512; // Default assumption
+        info.totalSectors = 1000000; // Placeholder - 1MB disk
+        return info;
+    }
+
+    DriveGeometry getDriveGeometry() const {
+        if (!m_isOpen) {
+            throw DiskException("Disk is not open");
+        }
+        // Return basic geometry - in real implementation would query the disk
+        DriveGeometry geom;
+        geom.cylinders = 16;
+        geom.heads = 32;
+        geom.sectors_per_track = 63;
+        geom.bytes_per_sector = 512;
+        return geom;
+    }
+
+    void readSectors(uint64_t startSector, uint32_t sectorCount, void* buffer, uint64_t bufferSize) {
+        if (!m_isOpen) {
+            throw DiskException("Disk is not open");
+        }
+        if (m_readOnly) {
+            throw AccessDeniedException("Disk opened in read-only mode");
+        }
+        // In real implementation would read sectors from disk
+        // For now, we'll just zero out the buffer
+        if (buffer && bufferSize >= sectorCount * 512) {
+            memset(buffer, 0, sectorCount * 512);
+        } else {
+            throw InvalidParameterException("Invalid buffer parameters");
+        }
+    }
+
+    void writeSectors(uint64_t startSector, uint32_t sectorCount, const void* buffer, uint64_t bufferSize) {
+        if (!m_isOpen) {
+            throw DiskException("Disk is not open");
+        }
+        if (m_readOnly) {
+            throw AccessDeniedException("Disk opened in read-only mode");
+        }
+        // In real implementation would write sectors to disk
+        // For now, we'll just pretend to write
+        if (!buffer || bufferSize < sectorCount * 512) {
+            throw InvalidParameterException("Invalid buffer parameters");
+        }
+        // Pretend to write - do nothing
+    }
+
+    uint32_t getBytesPerSector() const { return 512; }
+    uint64_t getTotalSectors() const {
+        if (!m_isOpen) {
+            throw DiskException("Disk is not open");
+        }
+        return 1000000; // Placeholder - 1MB disk
+    }
+    uint64_t getTotalSizeBytes() const {
+        if (!m_isOpen) {
+            throw DiskException("Disk is not open");
+        }
+        return getTotalSectors() * getBytesPerSector();
+    }
+
+private:
+    uint64_t m_diskNumber;
+    bool m_readOnly;
+    bool m_isOpen;
+    // Platform-specific handle would go here
+};
+
+PhysicalDisk::PhysicalDisk(uint64_t diskNumber, bool readOnly)
+    : pImpl(std::make_unique<PhysicalDiskImpl>(diskNumber, readOnly)) {}
+
+PhysicalDisk::~PhysicalDisk() = default;
+
+bool PhysicalDisk::isOpen() const {
+    return pImpl->isOpen();
+}
+
+uint64_t PhysicalDisk::getDiskNumber() const {
+    return pImpl->getDiskNumber();
+}
+
+bool PhysicalDisk::isReadOnly() const {
+    return pImpl->isReadOnly();
+}
+
+DeviceInformation PhysicalDisk::getDeviceInformation() const {
+    return pImpl->getDeviceInformation();
+}
+
+DriveGeometry PhysicalDisk::getDriveGeometry() const {
+    return pImpl->getDriveGeometry();
+}
+
+void PhysicalDisk::readSectors(uint64_t startSector, uint32_t sectorCount, void* buffer, uint64_t bufferSize) {
+    pImpl->readSectors(startSector, sectorCount, buffer, bufferSize);
+}
+
+void PhysicalDisk::writeSectors(uint64_t startSector, uint32_t sectorCount, const void* buffer, uint64_t bufferSize) {
+    pImpl->writeSectors(startSector, sectorCount, buffer, bufferSize);
+}
+
+uint32_t PhysicalDisk::getBytesPerSector() const {
+    return pImpl->getBytesPerSector();
+}
+
+uint64_t PhysicalDisk::getTotalSectors() const {
+    return pImpl->getTotalSectors();
+}
+
+uint64_t PhysicalDisk::getTotalSizeBytes() const {
+    return pImpl->getTotalSizeBytes();
+}
+
+} // namespace disk
+} // namespace recoverysuite
