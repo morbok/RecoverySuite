@@ -97,3 +97,6 @@ vcpkg_installed/
 third_party/
 */third_party/
 */dependencies/
+# Graphify analysis output
+graphify-out/
+*/graphify-out/

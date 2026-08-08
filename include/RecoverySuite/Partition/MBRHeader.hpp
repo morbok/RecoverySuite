@@ -23,8 +23,10 @@ public:
     static constexpr size_t PARTITION_TABLE_SIZE = 64;
     /** Offset of boot signature in MBR */
     static constexpr size_t BOOT_SIGNATURE_OFFSET = 510;
+    /** Size of boot signature */
+    static constexpr size_t BOOT_SIGNATURE_SIZE = 2;
     /** Expected boot signature value (0x55AA) */
-    static constexpr uint16_t EXPECTED_BOOT_SIGNATURE = 0xAA55;
+    static constexpr uint16_t EXPECTED_BOOT_SIGNATURE = 0x55AA;
     /** Total size of MBR */
     static constexpr size_t SIZE = 512;
 
@@ -41,12 +43,18 @@ public:
         return m_partitionTable;
     }
 
+    /** Get the boot signature */
+    const std::array<std::byte, BOOT_SIGNATURE_SIZE>& getBootSignature() const noexcept {
+        return m_bootSignature;
+    }
+
     /** Check if MBR has valid boot signature (0x55AA) */
     bool hasValidSignature() const noexcept;
 
 private:
     std::array<std::byte, BOOT_CODE_SIZE> m_bootCode{};
     std::array<std::byte, PARTITION_TABLE_SIZE> m_partitionTable{};
+    std::array<std::byte, BOOT_SIGNATURE_SIZE> m_bootSignature{};
 
     /** Helper function to combine two bytes into a 16-bit little-endian value */
     static uint16_t combineBytesLE(std::byte low, std::byte high) noexcept;

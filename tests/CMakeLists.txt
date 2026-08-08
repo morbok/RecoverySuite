@@ -47,6 +47,21 @@ target_link_libraries(RecoverySuite_StorageTest
         RecoverySuite_Storage
 )
 
+# Platform-specific libraries for storage access (needed for static library linking)
+if(UNIX AND NOT APPLE)
+    target_link_libraries(RecoverySuite_StorageTest
+        PRIVATE
+            /usr/lib/x86_64-linux-gnu/libudev.so.1
+    )
+elseif(APPLE)
+    target_link_libraries(RecoverySuite_StorageTest
+        PRIVATE
+            pthread
+            IOKit
+            CoreFoundation
+    )
+endif()
+
 # Add the test to CTest
 add_test(NAME RecoverySuite_StorageTest
          COMMAND RecoverySuite_StorageTest)
@@ -67,3 +82,20 @@ target_link_libraries(test_partition_mbr
 # Add the test to CTest
 add_test(NAME test_partition_mbr
          COMMAND test_partition_mbr)
+
+# GPT module test
+add_executable(test_gpt
+    test_gpt.cpp
+)
+
+# Link with core, disk, and partition libraries
+target_link_libraries(test_gpt
+    PRIVATE
+        RecoverySuite_Core
+        RecoverySuite_Disk
+        RecoverySuite_Partition
+)
+
+# Add the test to CTest
+add_test(NAME test_gpt
+         COMMAND test_gpt)

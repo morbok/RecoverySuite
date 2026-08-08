@@ -7,6 +7,11 @@ add_library(RecoverySuite_Partition STATIC
     MBParser.cpp
     PartitionValidator.cpp
     PartitionManager.cpp
+    GPTHeader.cpp
+    GPTPartitionEntry.cpp
+    GPTPartitionTable.cpp
+    GPTParser.cpp
+    GPTValidator.cpp
 )
 
 target_include_directories(RecoverySuite_Partition
