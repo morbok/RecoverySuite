@@ -99,3 +99,20 @@ target_link_libraries(test_gpt
 # Add the test to CTest
 add_test(NAME test_gpt
          COMMAND test_gpt)
+
+# FAT module test
+add_executable(test_fat
+    test_fat.cpp
+)
+
+# Link with core, disk, and filesystem libraries
+target_link_libraries(test_fat
+    PRIVATE
+        RecoverySuite_Core
+        RecoverySuite_Disk
+        RecoverySuite_Filesystem
+)
+
+# Add the test to CTest
+add_test(NAME test_fat
+         COMMAND test_fat)

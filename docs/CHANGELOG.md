@@ -3,6 +3,7 @@
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
+  - FAT boot sector foundation (Phase 7A): implemented FAT12/FAT16/FAT32 boot sector models, parser, volume representation, constants, validation, CMake integration, and comprehensive tests (excluding FAT table parsing, directory parsing, recovery, and disk writing as per scope).
 ### Added
 - Emergency checkpoint: saved current state after verifying MBR partition parser foundation
 - Updated documentation to reflect emergency checkpoint status

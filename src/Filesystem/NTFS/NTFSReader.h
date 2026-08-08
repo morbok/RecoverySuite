@@ -23,6 +23,7 @@ public:
     uint32_t readClusters(uint64_t startCluster, uint32_t clusterCount, uint8_t* buffer, uint32_t clusterSize) override;
     uint64_t getTotalSectors() const override;
     uint32_t getSectorSize() const override;
+    uint64_t getStartOffset() const override;
     void flush() override;
 
 private:

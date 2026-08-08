@@ -52,6 +52,13 @@ uint32_t NTFSReader::getSectorSize() const {
     return underlyingReader_->getSectorSize();
 }
 
+uint64_t NTFSReader::getStartOffset() const {
+    if (!underlyingReader_) {
+        return 0;
+    }
+    return underlyingReader_->getStartOffset();
+}
+
 void NTFSReader::flush() {
     if (underlyingReader_) {
         underlyingReader_->flush();

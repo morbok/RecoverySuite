@@ -31,6 +31,21 @@ add_library(RecoverySuite_Filesystem STATIC
     NTFS/NTFSAnalyzer.cpp
     NTFS/NTFSMetadata.cpp
     NTFS/NTFSVolume.cpp
+
+    # FAT component
+    FAT/FATConstants.h
+    FAT/FATStructures.h
+    FAT/FATFilesystem.h
+    FAT/FATReader.h
+    FAT/FATAnalyzer.h
+    FAT/FATMetadata.h
+    FAT/FATVolume.h
+
+    FAT/FATReader.cpp
+    FAT/FATAnalyzer.cpp
+    FAT/FATMetadata.cpp
+    FAT/FATVolume.cpp
+    FAT/FATFilesystem.cpp
 )
 
 target_include_directories(RecoverySuite_Filesystem
