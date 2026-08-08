@@ -79,7 +79,6 @@ logs/
 *.swp
 
 # Testing artifacts
-*/
 test-*/
 */testing/
 */__pycache__/
