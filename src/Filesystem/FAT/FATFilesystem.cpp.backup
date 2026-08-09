@@ -1,0 +1,143 @@
+#include "FATFilesystem.h"
+#include <memory>
+#include <stdexcept>
+#include <cstring>
+#include "FATReader.h"
+#include "FATAnalyzer.h"
+#include "FATMetadata.h"
+#include "FATVolume.h"
+#include <iostream>
+
+namespace recoverysuite {
+namespace filesystem {
+namespace fat {
+
+FATFilesystem::FATFilesystem(uint64_t startOffset, uint32_t sectorSize)
+    : startOffset_(startOffset), sectorSize_(sectorSize), initialized_(false) {
+    if (sectorSize_ == 0) {
+        throw std::invalid_argument("Sector size must be greater than zero");
+    }
+}
+
+FilesystemType FATFilesystem::getType() const {
+    initialize();
+    switch (fatType_) {
+        case fat::FATType::FAT12: return FilesystemType::FAT12;
+        case fat::FATType::FAT16: return FilesystemType::FAT16;
+        case fat::FATType::FAT32: return FilesystemType::FAT32;
+        default: return FilesystemType::UNKNOWN;
+    }
+}
+
+std::string FATFilesystem::getName() const {
+    initialize();
+    return fat::fatTypeToString(fatType_);
+}
+
+std::string FATFilesystem::getVersion() const {
+    // FAT filesystems don't have a version in the traditional sense
+    return "";
+}
+
+bool FATFilesystem::supportsCapability(FilesystemCapability capability) const {
+    // FAT filesystems support read support and maybe metadata support
+    switch (capability) {
+        case FilesystemCapability::READ_SUPPORT:
+            return true;
+        case FilesystemCapability::METADATA_SUPPORT:
+            return true;
+        default:
+            return false;
+    }
+}
+
+FilesystemCapabilities FATFilesystem::getCapabilities() const {
+    FilesystemCapabilities caps =
+        static_cast<FilesystemCapabilities>(FilesystemCapability::READ_SUPPORT) |
+        static_cast<FilesystemCapabilities>(FilesystemCapability::METADATA_SUPPORT);
+    return caps;
+}
+
+std::unique_ptr<FilesystemReader> FATFilesystem::createReader() const {
+    initialize();
+    return std::make_unique<FATReader>(startOffset_, sectorSize_);
+}
+
+std::unique_ptr<FilesystemAnalyzer> FATFilesystem::createAnalyzer() const {
+    initialize();
+    // We need to pass a reader to the analyzer. We'll create a temporary reader.
+    // We'll read the boot sector to determine the FAT type
+    FATReader reader(startOffset_, sectorSize_);
+    return std::make_unique<FATAnalyzer>(reader);
+}
+
+std::unique_ptr<FilesystemMetadata> FATFilesystem::getMetadata() const {
+    initialize();
+    // We need to pass a reader to the metadata. We'll create a temporary reader.
+    // We'll read the boot sector to determine the FAT type
+    FATReader reader(startOffset_, sectorSize_);
+    return std::make_unique<FATMetadata>(reader);
+}
+
+std::unique_ptr<FilesystemVolume> FATFilesystem::getVolume() const {
+    std::cerr << "In FATFilesystem::getVolume()" << std::endl;
+    initialize();
+    // We need to pass the boot sector to the volume. We'll create a temporary reader to get the boot sector.
+    // We'll read the boot sector to determine the FAT type
+    FATReader reader(startOffset_, sectorSize_);
+    // Read the boot sector
+    uint8_t buffer[512] = {0};
+    // We'll assume 512 bytes for the boot sector read, but we should use the sector size from the reader.
+    // However, the reader's sector size is the same as the filesystem's sector size.
+    uint32_t bytesRead = reader.readSector(0, buffer, sectorSize_);
+    if (bytesRead < sizeof(FATBootSectorCommon)) {
+        throw std::runtime_error("Failed to read FAT boot sector for volume");
+    }
+    FATBootSectorCommon bootSector;
+    std::memcpy(&bootSector, buffer, sizeof(FATBootSectorCommon));
+    return std::make_unique<FATVolume>(startOffset_, sectorSize_, bootSector);
+}
+
+void FATFilesystem::initialize() const {
+    if (initialized_) {
+        return;
+    }
+    // We'll read the boot sector to determine the FAT type
+    // We'll read the boot sector to determine the FAT type
+    FATReader reader(startOffset_, sectorSize_);
+    uint8_t buffer[512] = {0};
+    uint32_t bytesRead = reader.readSector(0, buffer, sectorSize_);
+    if (bytesRead < sizeof(FATBootSectorCommon)) {
+        throw std::runtime_error("Failed to read FAT boot sector");
+    }
+    FATBootSectorCommon bootSector;
+    std::memcpy(&bootSector, buffer, sizeof(FATBootSectorCommon));
+
+    // Validate the boot sector signature
+    if (bootSector.bootSignature != FAT_BOOT_SIGNATURE) {
+        throw std::runtime_error("Invalid FAT boot sector signature");
+    }
+
+    // Determine the FAT type based on the cluster count
+    uint32_t totalSectors = (bootSector.totalSectors16 != 0) ? bootSector.totalSectors16 : bootSector.totalSectors32;
+    uint32_t reservedSectors = bootSector.reservedSectorCount;
+    uint32_t fatsSize = bootSector.fatCount *
+        ( (bootSector.fatCount == 2 && bootSector.sectorsPerFat16 != 0) ? bootSector.sectorsPerFat16 : 0 ); // Simplified
+    uint32_t rootDirSectors = ( (bootSector.rootEntryCount * 32) + (bootSector.bytesPerSector - 1) ) / bootSector.bytesPerSector;
+    uint32_t dataSectors = totalSectors - (reservedSectors + fatsSize + rootDirSectors);
+    uint32_t clusterCount = dataSectors / bootSector.sectorsPerCluster;
+
+    if (clusterCount < fat::FAT12_MAX_CLUSTERS) {
+        fatType_ = fat::FATType::FAT12;
+    } else if (clusterCount < fat::FAT16_MAX_CLUSTERS) {
+        fatType_ = fat::FATType::FAT16;
+    } else {
+        fatType_ = fat::FATType::FAT32;
+    }
+
+    initialized_ = true;
+}
+
+} // namespace fat
+} // namespace filesystem
+} // namespace recoverysuite

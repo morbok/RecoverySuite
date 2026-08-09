@@ -1,0 +1,85 @@
+#ifndef RECOVERYSUITE_FILESYSTEM_FAT_FATFILESYSTEM_H
+#define RECOVERYSUITE_FILESYSTEM_FAT_FATFILESYSTEM_H
+
+#include <memory>
+#include <string>
+#include <vector>
+#include "../Filesystem.h"
+#include "../FilesystemReader.h"
+#include "FATConstants.h"
+#include "FATStructures.h"
+
+namespace recoverysuite {
+namespace filesystem {
+namespace fat {
+
+// Forward declaration
+class FATReader;
+
+// FAT Filesystem implementation
+class FATFilesystem : public Filesystem {
+public:
+    // Constructor
+    explicit FATFilesystem(uint64_t startOffset, uint32_t sectorSize);
+
+    // Destructor
+    ~FATFilesystem() override = default;
+
+    // Get the type of this filesystem
+    FilesystemType getType() const override;
+
+    // Get the name of this filesystem (e.g., "FAT12", "FAT16", "FAT32")
+    std::string getName() const override;
+
+    // Get the version of this filesystem (if applicable)
+    std::string getVersion() const override;
+
+    // Check if the filesystem supports a given capability
+    bool supportsCapability(FilesystemCapability capability) const override;
+
+    // Get the set of capabilities supported by this filesystem
+    FilesystemCapabilities getCapabilities() const override;
+
+    // Open a reader for this filesystem
+    std::unique_ptr<FilesystemReader> createReader() const override;
+
+    // Open an analyzer for this filesystem
+    std::unique_ptr<FilesystemAnalyzer> createAnalyzer() const override;
+
+    // Get metadata about this filesystem
+    std::unique_ptr<FilesystemMetadata> getMetadata() const override;
+
+    // Get a volume representation of this filesystem
+    std::unique_ptr<FilesystemVolume> getVolume() const override;
+
+private:
+    // FAT boot sector data
+    mutable FATBootSectorCommon bootSector_;
+
+    // FAT type
+    mutable FATType fatType_;
+
+    // Start offset of the FAT filesystem (in bytes)
+    uint64_t startOffset_;
+
+    // Sector size in bytes
+    uint32_t sectorSize_;
+
+    // Flag to indicate if we have initialized the boot sector and FAT type
+    mutable bool initialized_;
+
+    // Calculate FAT type based on cluster count
+    FATType calculateFatType(uint32_t clusterCount) const;
+
+    // Validate the boot sector
+    bool validateBootSector() const;
+
+    // Initialize the boot sector and FAT type by reading from disk
+    void initialize() const;
+};
+
+} // namespace fat
+} // namespace filesystem
+} // namespace recoverysuite
+
+#endif // RECOVERYSUITE_FILESYSTEM_FAT_FATFILESYSTEM_H
