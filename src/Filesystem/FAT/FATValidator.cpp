@@ -1,6 +1,7 @@
 #include "FATValidator.h"
 #include <sstream>
 #include <algorithm>
+#include "FATClusterState.h"
 
 namespace recoverysuite {
 namespace filesystem {
@@ -54,10 +55,10 @@ bool FATValidator::validateClusterChain(uint32_t startCluster) const {
     uint32_t lastCluster = chain.back();
     FATEntry lastEntry = fatTable_->getEntry(lastCluster);
     if (!fatTable_->isValidEntry(lastEntry, lastCluster) ||
-        !(fatTable_->getClusterState(lastCluster).state == FATClusterInfo::ClusterState::END_OF_CHAIN ||
-          fatTable_->getClusterState(lastCluster).state == FATClusterInfo::ClusterState::BAD ||
-          fatTable_->getClusterState(lastCluster).state == FATClusterInfo::ClusterState::FREE ||
-          fatTable_->getClusterState(lastCluster).state == FATClusterInfo::ClusterState::RESERVED)) {
+        !(fatTable_->getClusterState(lastCluster).state == ClusterState::END_OF_CHAIN ||
+          fatTable_->getClusterState(lastCluster).state == ClusterState::BAD ||
+          fatTable_->getClusterState(lastCluster).state == ClusterState::FREE ||
+          fatTable_->getClusterState(lastCluster).state == ClusterState::RESERVED)) {
         addValidationError(ValidationError::Type::CLUSTER_CHAIN_END_MISSING, lastCluster,
                            "Cluster chain does not end with a valid end-of-chain marker");
         return false;
@@ -95,7 +96,7 @@ bool FATValidator::validateEntry(uint32_t clusterIndex, const FATEntry& entry) c
     // Check if the cluster is reserved and marked as allocated (or vice versa)
     ClusterState state = fatTable_->getClusterState(clusterIndex).state;
     if (isReservedCluster(clusterIndex, entry)) {
-        if (state != FATClusterInfo::ClusterState::RESERVED) {
+        if (state != ClusterState::RESERVED) {
             std::stringstream ss;
             ss << "Reserved cluster " << clusterIndex << " is not marked as reserved (state: "
                << static_cast<int>(state) << ")";
@@ -104,7 +105,7 @@ bool FATValidator::validateEntry(uint32_t clusterIndex, const FATEntry& entry) c
         }
     } else {
         // Non-reserved clusters should not be marked as reserved
-        if (state == FATClusterInfo::ClusterState::RESERVED) {
+        if (state == ClusterState::RESERVED) {
             std::stringstream ss;
             ss << "Non-reserved cluster " << clusterIndex << " is marked as reserved";
             addValidationError(ValidationError::Type::RESERVED_CLUSTER_USED, clusterIndex, ss.str());
@@ -114,7 +115,7 @@ bool FATValidator::validateEntry(uint32_t clusterIndex, const FATEntry& entry) c
 
     // Check for bad clusters marked as allocated
     if (fatTable_->isBadCluster(clusterIndex)) {
-        if (state == FATClusterInfo::ClusterState::ALLOCATED) {
+        if (state == ClusterState::ALLOCATED) {
             std::stringstream ss;
             ss << "Bad cluster " << clusterIndex << " is marked as allocated";
             addValidationError(ValidationError::Type::BAD_CLUSTER_MARKED_ALLOCATED, clusterIndex, ss.str());
@@ -126,7 +127,7 @@ bool FATValidator::validateEntry(uint32_t clusterIndex, const FATEntry& entry) c
 }
 
 bool FATValidator::isValidClusterNumber(uint32_t clusterNumber) const {
-    return fatTable_->isValidClusterNumber(clusterNumber, fatTable_->getClusterCount());
+    return recoverysuite::filesystem::fat::isValidClusterNumber(clusterNumber, fatTable_->getClusterCount());
 }
 
 bool FATValidator::isReservedCluster(uint32_t clusterNumber, const FATEntry& entry) const {

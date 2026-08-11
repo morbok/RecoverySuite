@@ -1,7 +1,7 @@
 #include "FATTableParser.h"
 #include "FATTable.h"
+#include "FATReader.h"
 #include <stdexcept>
-#include <iostream>
 
 namespace recoverysuite {
 namespace filesystem {
@@ -34,12 +34,12 @@ std::shared_ptr<FATTable> FATTableParser::parseFatTable() const {
     // For simplicity, we'll create a new FATReader that starts at the FAT begin
     // Note: The original reader_ is positioned at the start of the FAT filesystem (boot sector)
     uint64_t fatStartOffset = static_cast<uint64_t>(reservedSectorCount) * bytesPerSector;
-    auto fatReader = std::make_shared<FATReader>(
+    auto fatReader = std::make_shared<recoverysuite::filesystem::fat::FATReader>(
         reader_->getStartOffset() + fatStartOffset,
         bytesPerSector
     );
 
-    return std::make_shared<FATTable>(fatType, sectorsPerFat, bytesPerSector, clusterCount, fatReader);
+    return std::make_shared<FATTable>(fatType, sectorsPerFat, bytesPerSector, clusterCount, reservedSectorCount, fatReader);
 }
 
 uint32_t FATTableParser::getSectorsPerFat() const {

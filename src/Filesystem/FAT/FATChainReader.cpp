@@ -132,7 +132,7 @@ uint32_t FATChainReader::readClusterSectors(uint32_t clusterNumber, uint8_t* buf
     }
 
     // Read the sectors
-    return fatTable_->reader_->readSectors(targetSector, sectorCount, buffer, bytesPerSector_);
+    return fatTable_->readSectors(targetSector, sectorCount, buffer, bytesPerSector_);
 }
 
 } // namespace fat

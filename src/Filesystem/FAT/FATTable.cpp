@@ -4,17 +4,19 @@
 #include <algorithm>
 #include <unordered_set>
 #include <iostream>
+#include <limits>
 
 namespace recoverysuite {
 namespace filesystem {
 namespace fat {
 
 FATTable::FATTable(FATType fatType, uint32_t sectorsPerFat, uint32_t bytesPerSector,
-                   uint32_t clusterCount, std::shared_ptr<FilesystemReader> reader)
+                   uint32_t clusterCount, uint32_t reservedSectorCount, std::shared_ptr<FilesystemReader> reader)
     : fatType_(fatType),
       sectorsPerFat_(sectorsPerFat),
       bytesPerSector_(bytesPerSector),
       clusterCount_(clusterCount),
+      reservedSectorCount_(reservedSectorCount),
       reader_(reader) {
     if (!reader_) {
         throw std::invalid_argument("Reader cannot be null");
@@ -181,7 +183,7 @@ FATTable::Statistics FATTable::getStatistics() const {
                 ++stats.freeClusters;
                 break;
             case ClusterState::ALLOCATED:
-                ++stats.allocatedClusters++;
+                ++stats.allocatedClusters;
                 break;
             case ClusterState::BAD:
                 ++stats.badClusters;
@@ -310,16 +312,7 @@ void FATTable::loadFatData() const {
 
 uint64_t FATTable::getFatSectorOffset(uint32_t fatSectorIndex) const {
     // The FAT starts right after the reserved sectors
-    // We need to get this information from the boot sector, but we don't have direct access here
-    // For now, we'll assume the caller has positioned the reader correctly
-    // In a real implementation, we'd store the FAT start offset
-
-    // This is a limitation - we need to know where the FAT starts on disk
-    // For Phase 7B, we'll assume the FAT starts at sector 0 relative to the reader
-    // A better approach would be to pass the FAT start offset to the constructor
-
-    // For now, we'll rely on the FATReader being positioned at the start of the FAT
-    return static_cast<uint64_t>(fatSectorIndex) * bytesPerSector_;
+    return static_cast<uint64_t>(reservedSectorCount_ + fatSectorIndex) * bytesPerSector_;
 }
 
 bool FATTable::isValidEntry(const FATEntry& entry, uint32_t clusterIndex) const {
@@ -344,6 +337,13 @@ bool FATTable::isValidEntry(const FATEntry& entry, uint32_t clusterIndex) const 
 
     // Check that cluster index is valid
     return isValidClusterNumber(clusterIndex, clusterCount_);
+}
+
+uint32_t FATTable::readSectors(uint64_t sectorOffset, uint32_t sectorCount, uint8_t* buffer, uint32_t bytesPerSector) const {
+    if (!reader_) {
+        return 0;
+    }
+    return reader_->readSectors(sectorOffset, sectorCount, buffer, bytesPerSector);
 }
 
 } // namespace fat

@@ -13,6 +13,7 @@ add_subdirectory(Filesystem)
 add_subdirectory(Application)
 add_subdirectory(CLI)
 add_subdirectory(GUI)
+add_subdirectory(Recovery)
 
 # Install headers from include directory
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/include/ DESTINATION include)

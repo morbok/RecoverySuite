@@ -5,6 +5,7 @@
 #include <memory>
 #include "FATTable.h"
 #include "../FilesystemReader.h"
+#include "FATStructures.h"
 
 namespace recoverysuite {
 namespace filesystem {
@@ -38,7 +39,7 @@ private:
     std::shared_ptr<FilesystemReader> reader_;
 
     // Cached boot sector data
-    mutable struct FATBootSectorCommon bootSector_;
+    mutable FATBootSectorCommon bootSector_;
     mutable bool bootSectorLoaded_ = false;
 
     // Load boot sector from disk

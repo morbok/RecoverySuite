@@ -3,6 +3,8 @@
 
 #include <cstdint>
 #include <string>
+#include <cstring>
+#include "FATConstants.h"
 
 namespace recoverysuite {
 namespace filesystem {

@@ -5,6 +5,7 @@
 #include <vector>
 #include <memory>
 #include <stdexcept>
+#include "FATConstants.h"
 #include "FATEntry.h"
 #include "FATClusterState.h"
 #include "../FilesystemReader.h"
@@ -24,7 +25,7 @@ class FATTable {
 public:
     // Constructor
     FATTable(FATType fatType, uint32_t sectorsPerFat, uint32_t bytesPerSector,
-             uint32_t clusterCount, std::shared_ptr<FilesystemReader> reader);
+             uint32_t clusterCount, uint32_t reservedSectorCount, std::shared_ptr<FilesystemReader> reader);
 
     // Destructor
     ~FATTable() = default;
@@ -57,6 +58,9 @@ public:
     // Validate the FAT table structure
     bool validate() const;
 
+    // Validate a single FAT entry
+    bool isValidEntry(const FATEntry& entry, uint32_t clusterIndex) const;
+
     // Get statistics about the FAT table
     struct Statistics {
         uint32_t freeClusters = 0;
@@ -76,9 +80,15 @@ public:
     // Check if a cluster chain is valid (no cycles, valid ranges, etc.)
     bool isValidClusterChain(uint32_t startCluster) const;
 
+    // Read sectors from the underlying storage
+    uint32_t readSectors(uint64_t sectorOffset, uint32_t sectorCount, uint8_t* buffer, uint32_t bytesPerSector) const;
+
 private:
     // FAT type (FAT12, FAT16, FAT32)
     FATType fatType_;
+
+    // Reserved sector count (including boot sector)
+    uint32_t reservedSectorCount_;
 
     // Table parameters
     uint32_t sectorsPerFat_;
@@ -97,9 +107,6 @@ private:
 
     // Calculate the sector offset for a given FAT sector index
     uint64_t getFatSectorOffset(uint32_t fatSectorIndex) const;
-
-    // Validate a single FAT entry
-    bool isValidEntry(const FATEntry& entry, uint32_t clusterIndex) const;
 };
 
 } // namespace fat
