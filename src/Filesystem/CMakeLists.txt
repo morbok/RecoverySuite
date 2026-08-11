@@ -40,12 +40,22 @@ add_library(RecoverySuite_Filesystem STATIC
     FAT/FATAnalyzer.h
     FAT/FATMetadata.h
     FAT/FATVolume.h
+    FAT/FATEntry.h
+    FAT/FATClusterState.h
+    FAT/FATTable.h
+    FAT/FATTableParser.h
+    FAT/FATChainReader.h
+    FAT/FATValidator.h
 
     FAT/FATReader.cpp
     FAT/FATAnalyzer.cpp
     FAT/FATMetadata.cpp
     FAT/FATVolume.cpp
     FAT/FATFilesystem.cpp
+    FAT/FATTable.cpp
+    FAT/FATTableParser.cpp
+    FAT/FATChainReader.cpp
+    FAT/FATValidator.cpp
 )
 
 target_include_directories(RecoverySuite_Filesystem
