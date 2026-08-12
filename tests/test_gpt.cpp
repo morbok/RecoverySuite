@@ -42,7 +42,7 @@ public:
         return isOpen_;
     }
 
-    uint64_t readSectors(uint64_t startSector, uint64_t sectorCount, std::vector<std::byte>& buffer) override {
+    bool readSectors(uint64_t startSector, uint64_t sectorCount, std::vector<std::byte>& buffer) override {
         if (!isOpen_) {
             throw recoverysuite::disk::DiskException("Disk is not open");
         }
@@ -50,16 +50,16 @@ public:
         // We'll handle reading sector 0, 1, backup LBA, and entry array LBA.
         if (startSector == 0 && sectorCount == 1) {
             buffer = sector0Data_;
-            return 1;
+            return true;
         }
         if (startSector == 1 && sectorCount == 1) {
             buffer = sector1Data_;
-            return 1;
+            return true;
         }
         // For backup header, we assume it's at the last sector
         if (startSector == totalSectors_ - 1 && sectorCount == 1) {
             buffer = backupHeaderData_;
-            return 1;
+            return true;
         }
         // For entry array, we assume it's provided as a contiguous buffer that may span multiple sectors.
         // We'll calculate how many sectors we need based on the buffer size and sector size.
@@ -74,12 +74,11 @@ public:
                 buffer.resize(entryArrayData_.size());
             }
             std::copy(entryArrayData_.begin(), entryArrayData_.end(), buffer.begin());
-            return sectorCount; // Return the number of sectors we were asked to read (even if we didn't use all)
+            return true; // Indicate successful read
         }
-        // If we don't recognize the request, return 0 sectors read (or throw?)
+        // If we don't recognize the request, return false (or throw?)
         // For simplicity, we'll throw an exception to indicate unsupported read.
         throw recoverysuite::disk::DiskException("Unsupported sector read in mock");
-        return 0;
     }
 
     recoverysuite::disk::DeviceInformation getDiskInfo() const override {

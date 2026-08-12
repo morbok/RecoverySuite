@@ -47,10 +47,10 @@ public:
      * @param startSector Starting sector to read from (0-based)
      * @param sectorCount Number of sectors to read
      * @param buffer Buffer to store the read data
-     * @return Number of sectors actually read
+     * @return true if successful, false otherwise
      * @throws DiskException if reading fails
      */
-    virtual uint64_t readSectors(uint64_t startSector, uint64_t sectorCount, std::vector<std::byte>& buffer) = 0;
+    virtual bool readSectors(uint64_t startSector, uint64_t sectorCount, std::vector<std::byte>& buffer) = 0;
 
     /**
      * @brief Get information about the disk device

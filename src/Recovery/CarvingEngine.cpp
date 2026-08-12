@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cstring>
 #include <sstream>
+#include <vector>
+#include <cstddef> // for std::byte
 
 namespace recoverysuite {
 namespace recovery {
@@ -56,19 +58,35 @@ bool CarvingEngine::carveFiles(
     }
 
     // Calculate total bytes to process
-    uint64_t totalBytes = numSectors * 512; // Assuming 512-byte sectors
+    // Get actual sector size from disk reader
+    uint32_t sectorSize = diskReader_->getSectorSize();
+    if (sectorSize == 0) {
+        return false; // Invalid sector size
+    }
+
+    uint64_t totalBytes = numSectors * sectorSize;
 
     // For simplicity, we'll simulate reading all data into memory
     // In a real implementation, we would read in chunks to avoid memory issues
     std::vector<uint8_t> allData;
     allData.resize(totalBytes, 0);
 
-    // In a real implementation, we would read from the disk in chunks
-    // For now, we'll simulate reading by filling with some pattern
-    // TODO: Actual disk read implementation
-    if (!readSectors(startSector, numSectors, allData)) {
+    // Actual disk read implementation
+    if (diskReader_ == nullptr) {
         return false;
     }
+
+    // Create vector of std::byte for the disk reader interface
+    std::vector<std::byte> byteBuffer(totalBytes);
+
+    // Read sectors from disk
+    if (!diskReader_->readSectors(startSector, numSectors, byteBuffer)) {
+        return false;
+    }
+
+    // Copy data from std::byte vector to uint8_t vector
+    std::copy(byteBuffer.begin(), byteBuffer.end(),
+              reinterpret_cast<std::byte*>(allData.data()));
 
     // Perform carving for different file types
     bool success = false;
@@ -143,18 +161,34 @@ bool CarvingEngine::carveFileType(
     }
 
     // Calculate total bytes to process
-    uint64_t totalBytes = numSectors * 512; // Assuming 512-byte sectors
+    // Get actual sector size from disk reader
+    uint32_t sectorSize = diskReader_->getSectorSize();
+    if (sectorSize == 0) {
+        return false; // Invalid sector size
+    }
+
+    uint64_t totalBytes = numSectors * sectorSize;
 
     // Read all data
     std::vector<uint8_t> allData;
     allData.resize(totalBytes, 0);
 
-    // In a real implementation, we would read from the disk in chunks
-    // For now, we'll simulate reading by filling with some pattern
-    // TODO: Actual disk read implementation
-    if (!readSectors(startSector, numSectors, allData)) {
+    // Actual disk read implementation
+    if (diskReader_ == nullptr) {
         return false;
     }
+
+    // Create vector of std::byte for the disk reader interface
+    std::vector<std::byte> byteBuffer(totalBytes);
+
+    // Read sectors from disk
+    if (!diskReader_->readSectors(startSector, numSectors, byteBuffer)) {
+        return false;
+    }
+
+    // Copy data from std::byte vector to uint8_t vector
+    std::copy(byteBuffer.begin(), byteBuffer.end(),
+              reinterpret_cast<std::byte*>(allData.data()));
 
     // Carve based on file type
     bool success = false;
@@ -211,16 +245,38 @@ bool CarvingEngine::readSectors(
     uint64_t startSector,
     uint64_t numSectors,
     std::vector<uint8_t>& buffer) const {
-    // In a real implementation, we would use the disk reader to read sectors
-    // For now, we'll simulate reading by filling with dummy data
-    // TODO: Actual disk read implementation
+    // Actual disk read implementation
     if (diskReader_ == nullptr) {
         return false;
     }
 
-    // Simulate reading - in reality this would call diskReader_->read()
-    // For now, just fill with some pattern to indicate we attempted to read
-    std::fill(buffer.begin(), buffer.end(), 0xAA);
+    // Get sector size from disk reader
+    uint32_t sectorSize = diskReader_->getSectorSize();
+    if (sectorSize == 0) {
+        return false; // Invalid sector size
+    }
+
+    // Calculate total bytes needed
+    size_t totalBytes = static_cast<size_t>(numSectors) * static_cast<size_t>(sectorSize);
+    if (totalBytes == 0) {
+        return false;
+    }
+
+    // Resize buffer to hold the data
+    buffer.resize(totalBytes);
+
+    // Create vector of std::byte for the disk reader interface
+    std::vector<std::byte> byteBuffer(totalBytes);
+
+    // Read sectors from disk
+    if (!diskReader_->readSectors(startSector, numSectors, byteBuffer)) {
+        return false;
+    }
+
+    // Copy data from std::byte vector to uint8_t vector
+    std::copy(byteBuffer.begin(), byteBuffer.end(),
+              reinterpret_cast<std::byte*>(buffer.data()));
+
     return true;
 }
 

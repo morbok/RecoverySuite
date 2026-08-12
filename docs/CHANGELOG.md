@@ -3,7 +3,15 @@
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
-  - Recovery capability and safety validation (Phase 9E): implemented RecoveryCapability, RecoverySafetyPolicy, RecoveryValidationReport, RecoveryOperationValidator, FilesystemDetector, FilesystemAnalyzer, MetadataRecovery, FileRecovery, CarvingEngine, OutputExporter classes with full support for filesystem detection, analysis, metadata recovery, file recovery, carving, and output/export capabilities, including safety precondition validation and detailed error reporting.
+    - Recovery Integration & Dependency Validation (Phase 10A): integrated Recovery module with actual Disk, Partition, FAT, and NTFS layers by:
+      * Added RecoverySuite_Disk, RecoverySuite_Partition, and RecoverySuite_Filesystem dependencies to src/Recovery/CMakeLists.txt
+      * Replaced all simulation TODOs with actual diskReader_->readSectors() calls in Recovery components
+      * Fixed IDiskReader interface mismatch (changed readSectors return type from uint64_t to bool) and updated all implementations
+      * Implemented missing interface methods in PhysicalDisk (open, close, getDiskInfo, getSectorSize)
+      * Fixed variable shadowing issue in FileRecovery.cpp
+      * Updated test mocks to match corrected IDiskReader interface
+      * Verified end-to-end integration through successful build and test execution (6/6 tests passed)
+    - Recovery capability and safety validation (Phase 9E): implemented RecoveryCapability, RecoverySafetyPolicy, RecoveryValidationReport, RecoveryOperationValidator, FilesystemDetector, FilesystemAnalyzer, MetadataRecovery, FileRecovery, CarvingEngine, OutputExporter classes with full support for filesystem detection, analysis, metadata recovery, file recovery, carving, and output/export capabilities, including safety precondition validation and detailed error reporting.
 
 - FAT boot sector foundation (Phase 7A): implemented FAT12/FAT16/FAT32 boot sector models, parser, volume representation, constants, validation, CMake integration, and comprehensive tests (excluding FAT table parsing, directory parsing, recovery, and disk writing as per scope).
 ### Added

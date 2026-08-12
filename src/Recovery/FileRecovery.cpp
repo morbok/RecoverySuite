@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <cstring>
 #include <sstream>
+#include <vector>
+#include <cstddef> // for std::byte
 
 namespace recoverysuite {
 namespace recovery {
@@ -57,14 +59,30 @@ bool FileRecovery::recoverFiles(
     }
 
     // Read the boot sector (first sector) to determine filesystem type
-    std::vector<uint8_t> bootSectorData(512, 0); // Assuming 512-byte sectors
+    // Get actual sector size from disk reader
+    uint32_t sectorSize = diskReader_->getSectorSize();
+    if (sectorSize == 0) {
+        return false; // Invalid sector size
+    }
 
-    // In a real implementation, we would read from the disk
-    // For now, we'll simulate reading boot sector data
-    // TODO: Actual disk read implementation
-    if (!readSectors(startSector, 1, bootSectorData)) {
+    std::vector<uint8_t> bootSectorData(sectorSize, 0);
+
+    // Actual disk read implementation
+    if (diskReader_ == nullptr) {
         return false;
     }
+
+    // Create vector of std::byte for the disk reader interface
+    std::vector<std::byte> byteBuffer(sectorSize);
+
+    // Read sectors from disk
+    if (!diskReader_->readSectors(startSector, 1, byteBuffer)) {
+        return false;
+    }
+
+    // Copy data from std::byte vector to uint8_t vector
+    std::copy(byteBuffer.begin(), byteBuffer.end(),
+              reinterpret_cast<std::byte*>(bootSectorData.data()));
 
     // Detect filesystem type
     std::string filesystemType = detectFilesystemType(bootSectorData);
@@ -158,14 +176,33 @@ bool FileRecovery::recoverFile(
     }
 
     // Read the file data
+    // Get actual sector size from disk reader
+    uint32_t sectorSize = diskReader_->getSectorSize();
+    if (sectorSize == 0) {
+        return false; // Invalid sector size
+    }
+
+    // Calculate number of sectors needed
+    uint64_t sectorsRequired = (fileSizeInBytes + sectorSize - 1) / sectorSize;
+
     std::vector<uint8_t> buffer(fileSizeInBytes, 0);
 
-    // In a real implementation, we would read from the disk
-    // For now, we'll simulate reading by filling with dummy data
-    // TODO: Actual disk read implementation
-    if (!readSectors(fileStartSector, (fileSizeInBytes + 511) / 512, buffer)) {
+    // Actual disk read implementation
+    if (diskReader_ == nullptr) {
         return false;
     }
+
+    // Create vector of std::byte for the disk reader interface
+    std::vector<std::byte> byteBuffer(sectorsRequired * sectorSize);
+
+    // Read sectors from disk
+    if (!diskReader_->readSectors(fileStartSector, sectorsRequired, byteBuffer)) {
+        return false;
+    }
+
+    // Copy data from std::byte vector to uint8_t vector (only the requested bytes)
+    std::copy(byteBuffer.begin(), byteBuffer.begin() + fileSizeInBytes,
+              reinterpret_cast<std::byte*>(buffer.data()));
 
     // Copy the recovered data
     recoveredData = buffer;
@@ -187,16 +224,38 @@ bool FileRecovery::readSectors(
     uint64_t startSector,
     uint64_t numSectors,
     std::vector<uint8_t>& buffer) const {
-    // In a real implementation, we would use the disk reader to read sectors
-    // For now, we'll simulate reading by filling with dummy data
-    // TODO: Actual disk read implementation
+    // Actual disk read implementation
     if (diskReader_ == nullptr) {
         return false;
     }
 
-    // Simulate reading - in reality this would call diskReader_->read()
-    // For now, just fill with some pattern to indicate we attempted to read
-    std::fill(buffer.begin(), buffer.end(), 0xAA);
+    // Get sector size from disk reader
+    uint32_t sectorSize = diskReader_->getSectorSize();
+    if (sectorSize == 0) {
+        return false; // Invalid sector size
+    }
+
+    // Calculate total bytes needed
+    size_t totalBytes = static_cast<size_t>(numSectors) * static_cast<size_t>(sectorSize);
+    if (totalBytes == 0) {
+        return false;
+    }
+
+    // Resize buffer to hold the data
+    buffer.resize(totalBytes);
+
+    // Create vector of std::byte for the disk reader interface
+    std::vector<std::byte> byteBuffer(totalBytes);
+
+    // Read sectors from disk
+    if (!diskReader_->readSectors(startSector, numSectors, byteBuffer)) {
+        return false;
+    }
+
+    // Copy data from std::byte vector to uint8_t vector
+    std::copy(byteBuffer.begin(), byteBuffer.end(),
+              reinterpret_cast<std::byte*>(buffer.data()));
+
     return true;
 }
 

@@ -2,6 +2,8 @@
 #include <stdexcept>
 #include <algorithm>
 #include <cstring>
+#include <vector>
+#include <cstddef> // for std::byte
 
 namespace recoverysuite {
 namespace recovery {
@@ -58,11 +60,30 @@ bool FilesystemDetector::detectFilesystems(
     }
 
     // Read the boot sector (first sector)
-    std::vector<uint8_t> bootSectorData(512, 0); // Assuming 512-byte sectors
+    // Get actual sector size from disk reader
+    uint32_t sectorSize = diskReader_->getSectorSize();
+    if (sectorSize == 0) {
+        return false; // Invalid sector size
+    }
 
-    // In a real implementation, we would read from the disk
-    // For now, we'll simulate reading boot sector data
-    // TODO: Actual disk read implementation
+    std::vector<uint8_t> bootSectorData(sectorSize, 0);
+
+    // Actual disk read implementation
+    if (diskReader_ == nullptr) {
+        return false;
+    }
+
+    // Create vector of std::byte for the disk reader interface
+    std::vector<std::byte> byteBuffer(sectorSize);
+
+    // Read sectors from disk
+    if (!diskReader_->readSectors(startSector, 1, byteBuffer)) {
+        return false;
+    }
+
+    // Copy data from std::byte vector to uint8_t vector
+    std::copy(byteBuffer.begin(), byteBuffer.end(),
+              reinterpret_cast<std::byte*>(bootSectorData.data()));
 
     // Detect filesystem type from boot sector data
     std::string filesystemType = detectFilesystemType(bootSectorData);

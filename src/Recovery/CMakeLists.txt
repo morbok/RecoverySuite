@@ -44,6 +44,9 @@ target_link_libraries(RecoverySuite_Recovery
         RecoverySuite_Logging
         RecoverySuite_Errors
         RecoverySuite_Config
+        RecoverySuite_Disk
+        RecoverySuite_Partition
+        RecoverySuite_Filesystem
 )
 
 # Install headers

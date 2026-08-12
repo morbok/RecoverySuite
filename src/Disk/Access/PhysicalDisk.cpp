@@ -4,6 +4,7 @@
 #include <vector>
 #include <cstring>
 #include "Version.h"
+#include <cstddef> // for std::byte
 
 // Windows-specific implementation will go here
 // For now, we'll provide a basic structure that throws not implemented
@@ -33,6 +34,21 @@ public:
     uint64_t getDiskNumber() const { return m_diskNumber; }
     bool isReadOnly() const { return m_readOnly; }
 
+    void open(const std::string& devicePath) {
+        // In a real implementation, we would open the disk using platform-specific APIs
+        // For now, we'll just simulate opening successfully
+        // Ignore the devicePath for simulation
+        m_isOpen = true;
+    }
+
+    void close() {
+        // In a real implementation, this would close the disk handle
+        if (m_isOpen) {
+            // Close handle
+            m_isOpen = false;
+        }
+    }
+
     DeviceInformation getDeviceInformation() const {
         if (!m_isOpen) {
             throw DiskException("Disk is not open");
@@ -60,20 +76,35 @@ public:
         return geom;
     }
 
-    void readSectors(uint64_t startSector, uint32_t sectorCount, void* buffer, uint64_t bufferSize) {
+    bool readSectors(uint64_t startSector, uint64_t sectorCount, std::vector<std::byte>& buffer) {
         if (!m_isOpen) {
             throw DiskException("Disk is not open");
         }
         if (m_readOnly) {
             throw AccessDeniedException("Disk opened in read-only mode");
         }
-        // In real implementation would read sectors from disk
-        // For now, we'll just zero out the buffer
-        if (buffer && bufferSize >= sectorCount * 512) {
-            memset(buffer, 0, sectorCount * 512);
-        } else {
-            throw InvalidParameterException("Invalid buffer parameters");
+        // Get sector size
+        uint32_t sectorSize = getBytesPerSector();
+        if (sectorSize == 0) {
+            return false;
         }
+
+        // Calculate buffer size needed
+        size_t bufferSizeNeeded = static_cast<size_t>(sectorCount) * static_cast<size_t>(sectorSize);
+        if (bufferSizeNeeded == 0) {
+            return false;
+        }
+
+        // Resize buffer to hold the data
+        buffer.resize(bufferSizeNeeded);
+
+        // In real implementation would read sectors from disk
+        // For now, we'll just zero out the buffer (simulating successful read)
+        if (!buffer.empty()) {
+            memset(buffer.data(), 0, buffer.size());
+        }
+
+        return true;
     }
 
     void writeSectors(uint64_t startSector, uint32_t sectorCount, const void* buffer, uint64_t bufferSize) {
@@ -117,7 +148,7 @@ PhysicalDisk::PhysicalDisk(uint64_t diskNumber, bool readOnly)
 
 PhysicalDisk::~PhysicalDisk() = default;
 
-bool PhysicalDisk::isOpen() const {
+bool PhysicalDisk::isOpen() const noexcept {
     return pImpl->isOpen();
 }
 
@@ -129,16 +160,24 @@ bool PhysicalDisk::isReadOnly() const {
     return pImpl->isReadOnly();
 }
 
-DeviceInformation PhysicalDisk::getDeviceInformation() const {
+void PhysicalDisk::open(const std::string& devicePath) {
+    pImpl->open(devicePath);
+}
+
+void PhysicalDisk::close() {
+    pImpl->close();
+}
+
+DeviceInformation PhysicalDisk::getDiskInfo() const {
     return pImpl->getDeviceInformation();
 }
 
-DriveGeometry PhysicalDisk::getDriveGeometry() const {
-    return pImpl->getDriveGeometry();
+uint32_t PhysicalDisk::getSectorSize() const noexcept {
+    return pImpl->getBytesPerSector();
 }
 
-void PhysicalDisk::readSectors(uint64_t startSector, uint32_t sectorCount, void* buffer, uint64_t bufferSize) {
-    pImpl->readSectors(startSector, sectorCount, buffer, bufferSize);
+bool PhysicalDisk::readSectors(uint64_t startSector, uint64_t sectorCount, std::vector<std::byte>& buffer) {
+    return pImpl->readSectors(startSector, sectorCount, buffer);
 }
 
 void PhysicalDisk::writeSectors(uint64_t startSector, uint32_t sectorCount, const void* buffer, uint64_t bufferSize) {
@@ -149,7 +188,7 @@ uint32_t PhysicalDisk::getBytesPerSector() const {
     return pImpl->getBytesPerSector();
 }
 
-uint64_t PhysicalDisk::getTotalSectors() const {
+uint64_t PhysicalDisk::getTotalSectors() const noexcept {
     return pImpl->getTotalSectors();
 }
 

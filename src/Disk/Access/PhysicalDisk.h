@@ -9,6 +9,7 @@
 #include "IORequest.h"
 #include "DiskExceptions.h"
 #include "Core/Version.h"
+#include "../IDiskReader.hpp"
 
 namespace recoverysuite {
 namespace disk {
@@ -20,7 +21,7 @@ namespace disk {
  * This class handles the platform-specific details of disk access while providing
  * a clean, consistent interface.
  */
-class PhysicalDisk {
+class PhysicalDisk : public recoverysuite::disk::IDiskReader {
 public:
     /**
      * @brief Open a physical disk
@@ -44,13 +45,61 @@ public:
     PhysicalDisk(PhysicalDisk&&) = delete;
     PhysicalDisk& operator=(PhysicalDisk&&) = delete;
 
+    // IDiskReader interface implementation
     /**
-     * @brief Check if the disk is currently open
+     * @brief Open the disk device for reading
      *
-     * @return True if the disk is open, false otherwise
+     * @param devicePath Path to the disk device (e.g., "\\\\.\\PhysicalDrive0" on Windows, "/dev/sda" on Linux)
+     * @throws DiskException if opening fails
      */
-    bool isOpen() const;
+    void open(const std::string& devicePath) override;
 
+    /**
+     * @brief Close the disk device
+     */
+    void close() override;
+
+    /**
+     * @brief Check if the disk device is open
+     *
+     * @return true if the disk is open, false otherwise
+     */
+    bool isOpen() const noexcept override;
+
+    /**
+     * @brief Get information about the disk device
+     *
+     * @return DeviceInformation structure containing disk details
+     * @throws DiskException if querying fails
+     */
+    DeviceInformation getDiskInfo() const override;
+
+    /**
+     * @brief Get the sector size of the disk (usually 512 or 4096 bytes)
+     *
+     * @return Sector size in bytes
+     */
+    uint32_t getSectorSize() const noexcept override;
+
+    /**
+     * @brief Get the total number of sectors on the disk
+     *
+     * @return Total number of sectors
+     */
+    uint64_t getTotalSectors() const noexcept override;
+
+    /**
+     * @brief Read sectors from the disk
+     *
+     * @param startSector Starting sector to read from (0-based)
+     * @param sectorCount Number of sectors to read
+     * @param buffer Buffer to store the read data
+     * @return true if successful, false otherwise
+     * @throws DiskException if reading fails
+     */
+    bool readSectors(uint64_t startSector, uint64_t sectorCount, std::vector<std::byte>& buffer) override;
+
+    // Additional methods for backward compatibility and extended functionality
     /**
      * @brief Get the disk number
      *
@@ -82,18 +131,6 @@ public:
     DriveGeometry getDriveGeometry() const;
 
     /**
-     * @brief Read sectors from the disk
-     *
-     * @param startSector The starting sector to read from (0-based)
-     * @param sectorCount Number of sectors to read
-     * @param buffer Pointer to buffer to receive the data
-     * @param bufferSize Size of the buffer in bytes
-     * @throws DiskException if read fails
-     * @throws InvalidParameterException if parameters are invalid
-     */
-    void readSectors(uint64_t startSector, uint32_t sectorCount, void* buffer, uint64_t bufferSize);
-
-    /**
      * @brief Write sectors to the disk
      *
      * @note This function will only work if the disk was opened in read/write mode
@@ -114,13 +151,6 @@ public:
      * @return Sector size in bytes (typically 512 or 4096)
      */
     uint32_t getBytesPerSector() const;
-
-    /**
-     * @brief Get the total number of sectors on the disk
-     *
-     * @return Total number of sectors
-     */
-    uint64_t getTotalSectors() const;
 
     /**
      * @brief Get the total size of the disk in bytes

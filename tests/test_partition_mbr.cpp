@@ -29,7 +29,7 @@ public:
         return isOpen_;
     }
 
-    uint64_t readSectors(uint64_t startSector, uint64_t sectorCount, std::vector<std::byte>& buffer) override {
+    bool readSectors(uint64_t startSector, uint64_t sectorCount, std::vector<std::byte>& buffer) override {
         if (!isOpen_) {
             throw recoverysuite::disk::DiskException("Disk is not open");
         }
@@ -40,10 +40,10 @@ public:
             throw recoverysuite::disk::DiskException("Mock only supports reading 1 sector");
         }
         if (sectorData_.empty()) {
-            return 0;
+            return false;
         }
         buffer = sectorData_;
-        return 1;
+        return true;
     }
 
     recoverysuite::disk::DeviceInformation getDiskInfo() const override {
