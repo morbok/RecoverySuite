@@ -81,6 +81,17 @@ public:
         throw recoverysuite::disk::DiskException("Unsupported sector read in mock");
     }
 
+    bool writeSectors(uint64_t startSector, uint64_t sectorCount, const std::vector<std::byte>& buffer) override {
+        // Mock implementation: pretend to write successfully
+        // We don't actually write data, but we can check that the request is valid
+        if (!isOpen_) {
+            throw recoverysuite::disk::DiskException("Disk is not open");
+        }
+        // For simplicity, we'll assume the mock is writable (ignore read-only)
+        // Just return true to indicate success.
+        return true;
+    }
+
     recoverysuite::disk::DeviceInformation getDiskInfo() const override {
         recoverysuite::disk::DeviceInformation info;
         info.modelNumber = "mock";

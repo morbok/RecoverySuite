@@ -73,6 +73,19 @@ public:
      * @return Total number of sectors
      */
     virtual uint64_t getTotalSectors() const noexcept = 0;
+
+    /**
+     * @brief Write sectors to the disk
+     *
+     * @note This function will only work if the disk was opened in read/write mode
+     *
+     * @param startSector The starting sector to write to (0-based)
+     * @param sectorCount Number of sectors to write
+     * @param buffer Buffer containing the data to write
+     * @return true if successful, false otherwise
+     * @throws DiskException if writing fails
+     */
+    virtual bool writeSectors(uint64_t startSector, uint64_t sectorCount, const std::vector<std::byte>& buffer) = 0;
 };
 
 } // namespace disk

@@ -69,6 +69,9 @@ private:
     // The operation validator
     RecoveryOperationValidator validator_;
 
+    // Start sector of the volume being analyzed
+    uint64_t startSector_;
+
     // Helper to check if a sector range is valid for the disk
     bool isSectorRangeValid(uint64_t startSector, uint64_t numSectors) const;
 

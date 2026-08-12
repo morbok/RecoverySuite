@@ -137,13 +137,13 @@ public:
      *
      * @param startSector The starting sector to write to (0-based)
      * @param sectorCount Number of sectors to write
-     * @param buffer Pointer to buffer containing the data to write
-     * @param bufferSize Size of the buffer in bytes
+     * @param buffer Buffer containing the data to write
+     * @return true if successful, false otherwise
      * @throws AccessDeniedException if disk was opened read-only
      * @throws DiskException if write fails
      * @throws InvalidParameterException if parameters are invalid
      */
-    void writeSectors(uint64_t startSector, uint32_t sectorCount, const void* buffer, uint64_t bufferSize);
+    bool writeSectors(uint64_t startSector, uint64_t sectorCount, const std::vector<std::byte>& buffer) override;
 
     /**
      * @brief Get the disk's sector size in bytes

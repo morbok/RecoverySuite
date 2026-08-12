@@ -5,6 +5,10 @@
 #include <sstream>
 #include <vector>
 #include <cstddef> // for std::byte
+#include "../Disk/IDiskReader.hpp"
+#include "DiskReaderAdapter.hpp"
+#include "../Filesystem/FAT/FATMetadata.h"
+#include "../Filesystem/NTFS/NTFSMetadata.h"
 
 namespace recoverysuite {
 namespace recovery {
@@ -16,7 +20,8 @@ FilesystemAnalyzer::FilesystemAnalyzer(
     : capabilityRegistry_(capabilityRegistry),
       safetyPolicy_(safetyPolicy),
       diskReader_(diskReader),
-      validator_(capabilityRegistry, safetyPolicy) {
+      validator_(capabilityRegistry, safetyPolicy),
+      startSector_(0) {
 }
 
 bool FilesystemAnalyzer::analyzeFilesystem(
@@ -29,6 +34,9 @@ bool FilesystemAnalyzer::analyzeFilesystem(
     bool arithmeticCannotOverflow,
     bool cancellationStateIsValid,
     std::map<std::string, std::string>& analysisResults) {
+
+    // Store the start sector for use in helper methods
+    startSector_ = startSector;
 
     // Clear any previous results
     analysisResults.clear();
@@ -108,6 +116,9 @@ bool FilesystemAnalyzer::getFilesystemInfo(
     const std::string& filesystemType,
     std::map<std::string, std::string>& info) {
 
+    // Store the start sector for use in helper methods
+    startSector_ = startSector;
+
     // Clear any previous results
     info.clear();
 
@@ -172,7 +183,7 @@ bool FilesystemAnalyzer::getFilesystemInfo(
     return false;
 }
 
-bool FilesystemAnalyzer::isSectorRangeValid(uint64_t startSector, uint64_t numSectors) const {
+bool FilesystemAnalyzer::isSectorRangeValid(uint64_t /* startSector */, uint64_t numSectors) const {
     // In a real implementation, we would check against the disk's actual size
     // For now, we'll do a basic validation
     if (numSectors == 0) {
@@ -284,60 +295,62 @@ bool FilesystemAnalyzer::analyzeFatFilesystem(
     const std::vector<uint8_t>& bootSectorData,
     std::map<std::string, std::string>& analysisResults) const {
 
-    if (bootSectorData.size() < 512) {
+    // Create a filesystem reader from the disk reader
+    // We need to determine the volume start offset and sector size
+    uint32_t sectorSize = diskReader_->getSectorSize();
+    if (sectorSize == 0) {
         return false;
     }
 
-    // Extract basic FAT boot sector information
-    uint16_t bytesPerSector = *(uint16_t*)&bootSectorData[0x0B];
-    uint8_t sectorsPerCluster = bootSectorData[0x0D];
-    uint16_t reservedSectorCount = *(uint16_t*)&bootSectorData[0x0E];
-    uint8_t numFATs = bootSectorData[0x10];
-    uint16_t rootEntryCount = *(uint16_t*)&bootSectorData[0x11];
-    uint16_t totalSectors16 = *(uint16_t*)&bootSectorData[0x13];
-    uint16_t fatSize16 = *(uint16_t*)&bootSectorData[0x16];
-    uint32_t totalSectors32 = *(uint32_t*)&bootSectorData[0x20];
-    uint32_t fatSize32 = *(uint32_t*)&bootSectorData[0x24];
+    // For now, we assume the boot sector we read is at the volume start
+    // In a more complete implementation, we would get this from the partition layer
+    uint64_t volumeStartOffset = startSector_ * sectorSize;
 
-    uint32_t totalSectors = (totalSectors16 != 0) ? totalSectors16 : totalSectors32;
+    // Create the disk reader adapter
+    DiskReaderAdapter adapter(diskReader_, volumeStartOffset);
+
+    // Create FAT metadata object
+    recoverysuite::filesystem::fat::FATMetadata fatMetadata(adapter);
+
+    // Populate analysis results from the FAT metadata
+    analysisResults["Filesystem Type"] = fatMetadata.getName();
+    analysisResults["Bytes Per Sector"] = std::to_string(fatMetadata.getBytesPerSector());
+    analysisResults["Sectors Per Cluster"] = std::to_string(fatMetadata.getSectorsPerCluster());
+    analysisResults["Reserved Sector Count"] = std::to_string(fatMetadata.getReservedSectorCount());
+    analysisResults["Number of FATs"] = std::to_string(fatMetadata.getFatCount());
+    analysisResults["Root Entry Count"] = std::to_string(fatMetadata.getRootEntryCount());
+    analysisResults["Total Sectors (16-bit)"] = std::to_string(fatMetadata.getTotalSectors16());
+    analysisResults["Total Sectors (32-bit)"] = std::to_string(fatMetadata.getTotalSectors32());
+    analysisResults["FAT Size (16-bit)"] = std::to_string(fatMetadata.getSectorsPerFat16());
+    analysisResults["FAT Size (32-bit)"] = std::to_string(fatMetadata.getSectorsPerFat32());
+
+    // Calculate FAT size value for display
+    uint32_t fatSize16 = fatMetadata.getSectorsPerFat16();
+    uint32_t fatSize32 = fatMetadata.getSectorsPerFat32();
     uint32_t fatSize = (fatSize16 != 0) ? fatSize16 : fatSize32;
-
-    // Determine FAT type
-    std::string fatType;
-    if (rootEntryCount == 0 && fatSize > 0) {
-        fatType = "FAT32";
-    } else if (rootEntryCount > 0) {
-        if (totalSectors < 4085) {
-            fatType = "FAT12";
-        } else {
-            fatType = "FAT16";
-        }
-    } else {
-        fatType = "FAT (Unknown)";
-    }
-
-    // Populate analysis results
-    analysisResults["Filesystem Type"] = fatType;
-    analysisResults["Bytes Per Sector"] = std::to_string(bytesPerSector);
-    analysisResults["Sectors Per Cluster"] = std::to_string(sectorsPerCluster);
-    analysisResults["Reserved Sector Count"] = std::to_string(reservedSectorCount);
-    analysisResults["Number of FATs"] = std::to_string(numFATs);
-    analysisResults["Root Entry Count"] = std::to_string(rootEntryCount);
-    analysisResults["Total Sectors (16-bit)"] = std::to_string(totalSectors16);
-    analysisResults["Total Sectors (32-bit)"] = std::to_string(totalSectors32);
-    analysisResults["FAT Size (16-bit)"] = std::to_string(fatSize16);
-    analysisResults["FAT Size (32-bit)"] = std::to_string(fatSize32);
-    analysisResults["Total Sectors"] = std::to_string(totalSectors);
     analysisResults["FAT Size"] = std::to_string(fatSize);
 
+    // Total sectors
+    uint32_t totalSectors16 = fatMetadata.getTotalSectors16();
+    uint32_t totalSectors32 = fatMetadata.getTotalSectors32();
+    uint32_t totalSectors = (totalSectors16 != 0) ? totalSectors16 : totalSectors32;
+    analysisResults["Total Sectors"] = std::to_string(totalSectors);
+
     // Calculate derived values
-    uint32_t rootDirSectors = ((rootEntryCount * 32) + (bytesPerSector - 1)) / bytesPerSector;
-    uint32_t firstDataSector = reservedSectorCount + (numFATs * fatSize) + rootDirSectors;
-    uint32_t clusterCount = (totalSectors - firstDataSector) / sectorsPerCluster;
+    uint32_t rootEntryCount = fatMetadata.getRootEntryCount();
+    uint32_t rootDirSectors = ((rootEntryCount * 32) + (fatMetadata.getBytesPerSector() - 1)) / fatMetadata.getBytesPerSector();
+    uint32_t firstDataSector = fatMetadata.getReservedSectorCount() +
+                              (fatMetadata.getFatCount() * fatSize) +
+                              rootDirSectors;
+    uint32_t clusterCount = (totalSectors - firstDataSector) / fatMetadata.getSectorsPerCluster();
 
     analysisResults["Root Directory Sectors"] = std::to_string(rootDirSectors);
     analysisResults["First Data Sector"] = std::to_string(firstDataSector);
     analysisResults["Cluster Count"] = std::to_string(clusterCount);
+
+    // Additional FAT-specific information
+    analysisResults["Volume Serial Number"] = std::to_string(fatMetadata.getVolumeSerialNumber());
+    analysisResults["Volume Label"] = fatMetadata.getVolumeLabel();
 
     return true;
 }
@@ -346,56 +359,48 @@ bool FilesystemAnalyzer::analyzeNtfsFilesystem(
     const std::vector<uint8_t>& bootSectorData,
     std::map<std::string, std::string>& analysisResults) const {
 
-    if (bootSectorData.size() < 1024) {
+    // Create a filesystem reader from the disk reader
+    // We need to determine the volume start offset and sector size
+    uint32_t sectorSize = diskReader_->getSectorSize();
+    if (sectorSize == 0) {
         return false;
     }
 
-    // NTFS boot sector analysis (simplified)
-    // In a real implementation, we would parse the NTFS boot sector properly
+    // For now, we assume the boot sector we read is at the volume start
+    // In a more complete implementation, we would get this from the partition layer
+    uint64_t volumeStartOffset = startSector_ * sectorSize;
 
-    analysisResults["Filesystem Type"] = "NTFS";
-    analysisResults["Version"] = "NTFS 3.1"; // Most common modern version
+    // Create the disk reader adapter
+    auto adapterPtr = std::make_shared<DiskReaderAdapter>(diskReader_, volumeStartOffset);
 
-    // Extract some basic fields from NTFS boot sector
-    // Bytes per sector
-    uint16_t bytesPerSector = *(uint16_t*)&bootSectorData[0x0B];
-    analysisResults["Bytes Per Sector"] = std::to_string(bytesPerSector);
+    // Create NTFS metadata object
+    auto ntfsMetadata = std::make_shared<recoverysuite::filesystem::ntfs::NTFSMetadata>(adapterPtr);
 
-    // Sectors per cluster
-    uint8_t sectorsPerCluster = bootSectorData[0x0D];
+    // Populate analysis results from the NTFS metadata
+    analysisResults["Filesystem Type"] = ntfsMetadata->getName();
+    analysisResults["Version"] = ntfsMetadata->getVersion();
+    analysisResults["Bytes Per Sector"] = std::to_string(ntfsMetadata->getBlockSize());
+    // NTFSMetadata doesn't have getSectorsPerCluster, so we'll calculate it
+    uint32_t sectorsPerCluster = 1; // Default value
+    if (ntfsMetadata->getBlockSize() > 0 && sectorSize > 0) {
+        sectorsPerCluster = ntfsMetadata->getBlockSize() / sectorSize;
+    }
     analysisResults["Sectors Per Cluster"] = std::to_string(sectorsPerCluster);
 
-    // MFT start cluster
-    int64_t mftStartCluster = *(int64_t*)&bootSectorData[0x30];
-    analysisResults["MFT Start Cluster"] = std::to_string(mftStartCluster);
-
-    // MFT mirror start cluster
-    int64_t mftMirrorStartCluster = *(int64_t*)&bootSectorData[0x38];
-    analysisResults["MFT Mirror Start Cluster"] = std::to_string(mftMirrorStartCluster);
-
-    // Bytes per file record segment
-    int8_t bytesPerFileRecordSegment = bootSectorData[0x40];
-    uint32_t fileRecordSegmentSize = (bytesPerFileRecordSegment > 0)
-        ? bytesPerFileRecordSegment
-        : (1 << (-bytesPerFileRecordSegment));
-    analysisResults["File Record Segment Size"] = std::to_string(fileRecordSegmentSize);
-
-    // Bytes per index block
-    int8_t bytesPerIndexBlock = bootSectorData[0x44];
-    uint32_t indexBlockSize = (bytesPerIndexBlock > 0)
-        ? bytesPerIndexBlock
-        : (1 << (-bytesPerIndexBlock));
-    analysisResults["Index Block Size"] = std::to_string(indexBlockSize);
-
     // Volume serial number
-    uint64_t volumeSerial = *(uint64_t*)&bootSectorData[0x48];
-    std::stringstream ss;
-    ss << std::hex << volumeSerial;
-    analysisResults["Volume Serial Number"] = ss.str();
+    analysisResults["Volume Serial Number"] = ntfsMetadata->getSerialNumber();
 
-    // Checksum
-    uint16_t checksum = *(uint16_t*)&bootSectorData[0x50];
-    analysisResults["Boot Sector Checksum"] = std::to_string(checksum);
+    // Volume label
+    analysisResults["Volume Label"] = ntfsMetadata->getVolumeLabel();
+
+    // Total size
+    analysisResults["Total Size"] = std::to_string(ntfsMetadata->getTotalSize());
+
+    // Free space
+    analysisResults["Free Space"] = std::to_string(ntfsMetadata->getFreeSpace());
+
+    // Used space
+    analysisResults["Used Space"] = std::to_string(ntfsMetadata->getUsedSpace());
 
     return true;
 }

@@ -20,6 +20,8 @@ add_library(RecoverySuite_Recovery STATIC
     CarvingEngine.cpp
     OutputExporter.h
     OutputExporter.cpp
+    DiskReaderAdapter.hpp
+    DiskReaderAdapter.cpp
 )
 
 target_include_directories(RecoverySuite_Recovery

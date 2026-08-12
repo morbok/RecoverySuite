@@ -107,19 +107,33 @@ public:
         return true;
     }
 
-    void writeSectors(uint64_t startSector, uint32_t sectorCount, const void* buffer, uint64_t bufferSize) {
+    bool writeSectors(uint64_t startSector, uint64_t sectorCount, const std::vector<std::byte>& buffer) {
         if (!m_isOpen) {
             throw DiskException("Disk is not open");
         }
         if (m_readOnly) {
             throw AccessDeniedException("Disk opened in read-only mode");
         }
-        // In real implementation would write sectors to disk
-        // For now, we'll just pretend to write
-        if (!buffer || bufferSize < sectorCount * 512) {
-            throw InvalidParameterException("Invalid buffer parameters");
+        // Get sector size
+        uint32_t sectorSize = getBytesPerSector();
+        if (sectorSize == 0) {
+            return false; // Invalid sector size
         }
-        // Pretend to write - do nothing
+
+        // Calculate buffer size needed
+        size_t bufferSizeNeeded = static_cast<size_t>(sectorCount) * static_cast<size_t>(sectorSize);
+        if (bufferSizeNeeded == 0) {
+            return false; // Nothing to write
+        }
+
+        // Check buffer size
+        if (buffer.size() < bufferSizeNeeded) {
+            return false; // Insufficient buffer
+        }
+
+        // In real implementation would write sectors to disk
+        // For now, we'll just pretend to write (return true to indicate success)
+        return true;
     }
 
     uint32_t getBytesPerSector() const { return 512; }
@@ -180,8 +194,8 @@ bool PhysicalDisk::readSectors(uint64_t startSector, uint64_t sectorCount, std::
     return pImpl->readSectors(startSector, sectorCount, buffer);
 }
 
-void PhysicalDisk::writeSectors(uint64_t startSector, uint32_t sectorCount, const void* buffer, uint64_t bufferSize) {
-    pImpl->writeSectors(startSector, sectorCount, buffer, bufferSize);
+bool PhysicalDisk::writeSectors(uint64_t startSector, uint64_t sectorCount, const std::vector<std::byte>& buffer) {
+    return pImpl->writeSectors(startSector, sectorCount, buffer);
 }
 
 uint32_t PhysicalDisk::getBytesPerSector() const {
