@@ -5,6 +5,7 @@
 #include <sstream>
 #include <vector>
 #include <cstddef> // for std::byte
+#include <limits>
 
 namespace recoverysuite {
 namespace recovery {
@@ -62,6 +63,12 @@ bool CarvingEngine::carveFiles(
     uint32_t sectorSize = diskReader_->getSectorSize();
     if (sectorSize == 0) {
         return false; // Invalid sector size
+    }
+
+    // Check for overflow in numSectors * sectorSize
+    // If numSectors > UINT64_MAX / sectorSize, overflow would occur
+    if (sectorSize > 0 && numSectors > std::numeric_limits<uint64_t>::max() / sectorSize) {
+        return false; // Overflow would occur
     }
 
     uint64_t totalBytes = numSectors * sectorSize;
@@ -167,6 +174,12 @@ bool CarvingEngine::carveFileType(
         return false; // Invalid sector size
     }
 
+    // Check for overflow in numSectors * sectorSize
+    // If numSectors > UINT64_MAX / sectorSize, overflow would occur
+    if (sectorSize > 0 && numSectors > std::numeric_limits<uint64_t>::max() / sectorSize) {
+        return false; // Overflow would occur
+    }
+
     uint64_t totalBytes = numSectors * sectorSize;
 
     // Read all data
@@ -184,6 +197,12 @@ bool CarvingEngine::carveFileType(
     // Read sectors from disk
     if (!diskReader_->readSectors(startSector, numSectors, byteBuffer)) {
         return false;
+    }
+
+    // Verify that we received the expected amount of data
+    // If the disk reader returned fewer bytes than requested, treat as failure
+    if (byteBuffer.size() != totalBytes) {
+        return false; // Incomplete read - do not interpret partial data as valid
     }
 
     // Copy data from std::byte vector to uint8_t vector
@@ -231,13 +250,37 @@ bool CarvingEngine::carveFileType(
 }
 
 bool CarvingEngine::isSectorRangeValid(uint64_t startSector, uint64_t numSectors) const {
-    // In a real implementation, we would check against the disk's actual size
-    // For now, we'll do a basic validation
+    // Validate that we have a disk reader
+    if (diskReader_ == nullptr) {
+        return false;
+    }
+
+    // Check for zero-length range
     if (numSectors == 0) {
         return false;
     }
 
-    // Additional validation would go here
+    // Get total sectors from disk
+    uint64_t totalSectors = diskReader_->getTotalSectors();
+
+    // Check for overflow in startSector + numSectors
+    // If startSector + numSectors < startSector, overflow occurred
+    if (startSector > std::numeric_limits<uint64_t>::max() - numSectors) {
+        return false; // Overflow would occur
+    }
+
+    uint64_t endSector = startSector + numSectors;
+
+    // Check if start is beyond the disk
+    if (startSector >= totalSectors) {
+        return false;
+    }
+
+    // Check if range extends beyond the disk
+    if (endSector > totalSectors) {
+        return false;
+    }
+
     return true;
 }
 
@@ -254,6 +297,12 @@ bool CarvingEngine::readSectors(
     uint32_t sectorSize = diskReader_->getSectorSize();
     if (sectorSize == 0) {
         return false; // Invalid sector size
+    }
+
+    // Check for overflow in numSectors * sectorSize
+    // If numSectors > SIZE_MAX / sectorSize, overflow would occur
+    if (sectorSize > 0 && numSectors > std::numeric_limits<size_t>::max() / sectorSize) {
+        return false; // Overflow would occur
     }
 
     // Calculate total bytes needed
