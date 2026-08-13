@@ -44,7 +44,11 @@ public:
 
         // For our test, we'll return the test data regardless of sector parameters
         // In a real test, we would map sectors to data appropriately
-        buffer.insert(buffer.end(), dataToReturn_.begin(), dataToReturn_.end());
+        buffer.resize(bufferSizeNeeded);
+        buffer.assign(dataToReturn_.begin(), dataToReturn_.end());
+        if (buffer.size() < bufferSizeNeeded) {
+            buffer.resize(bufferSizeNeeded, std::byte{0});
+        }
         return true;
     }
 
@@ -367,7 +371,7 @@ void test_carving_large_sector_count() {
 
     // If we get here without an exception, check if it failed due to validation
     if (success) {
-        std::cerr << "ERROR: Carving engine should have failed due to arithmetic overflow!" << std std::endl;
+        std::cerr << "ERROR: Carving engine should have failed due to arithmetic overflow!" << std::endl;
         mockReader->close();
         return;
     } else {

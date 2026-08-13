@@ -106,6 +106,14 @@ private:
         const std::vector<uint8_t>& data,
         std::map<std::string, std::vector<uint8_t>>& carvedFiles
     ) const;
+
+    // Helper to extract file data from disk
+    bool extractFileData(
+        uint64_t startOffset,
+        uint64_t fileSize,
+        uint32_t sectorSize,
+        std::vector<uint8_t>& data
+    ) const;
 };
 
 } // namespace recovery

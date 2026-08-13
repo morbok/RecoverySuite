@@ -82,8 +82,7 @@ bool FileRecovery::recoverFiles(
     }
 
     // Copy data from std::byte vector to uint8_t vector
-    std::copy(byteBuffer.begin(), byteBuffer.end(),
-              reinterpret_cast<std::byte*>(bootSectorData.data()));
+    std::memcpy(bootSectorData.data(), byteBuffer.data(), byteBuffer.size());
 
     // Detect filesystem type
     std::string filesystemType = detectFilesystemType(bootSectorData);
@@ -202,8 +201,7 @@ bool FileRecovery::recoverFile(
     }
 
     // Copy data from std::byte vector to uint8_t vector (only the requested bytes)
-    std::copy(byteBuffer.begin(), byteBuffer.begin() + fileSizeInBytes,
-              reinterpret_cast<std::byte*>(buffer.data()));
+    std::memcpy(buffer.data(), byteBuffer.data(), fileSizeInBytes);
 
     // Copy the recovered data
     recoveredData = buffer;
@@ -290,8 +288,7 @@ bool FileRecovery::readSectors(
     }
 
     // Copy data from std::byte vector to uint8_t vector
-    std::copy(byteBuffer.begin(), byteBuffer.end(),
-              reinterpret_cast<std::byte*>(buffer.data()));
+    std::memcpy(buffer.data(), byteBuffer.data(), byteBuffer.size());
 
     return true;
 }

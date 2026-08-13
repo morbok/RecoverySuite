@@ -81,8 +81,7 @@ bool MetadataRecovery::recoverMetadata(
     }
 
     // Copy data from std::byte vector to uint8_t vector
-    std::copy(byteBuffer.begin(), byteBuffer.end(),
-              reinterpret_cast<std::byte*>(bootSectorData.data()));
+    std::memcpy(bootSectorData.data(), byteBuffer.data(), byteBuffer.size());
 
     // Detect filesystem type
     std::string filesystemType = detectFilesystemType(bootSectorData);
@@ -175,8 +174,7 @@ bool MetadataRecovery::recoverMetadataType(
     }
 
     // Copy data from std::byte vector to uint8_t vector
-    std::copy(byteBuffer.begin(), byteBuffer.end(),
-              reinterpret_cast<std::byte*>(buffer.data()));
+    std::memcpy(buffer.data(), byteBuffer.data(), byteBuffer.size());
 
     // Extract the requested data (handle partial sector at the end)
     uint64_t bytesToCopy = std::min(size, static_cast<uint64_t>(buffer.size()));
@@ -273,8 +271,7 @@ bool MetadataRecovery::readSectors(
     }
 
     // Copy data from std::byte vector to uint8_t vector
-    std::copy(byteBuffer.begin(), byteBuffer.end(),
-              reinterpret_cast<std::byte*>(buffer.data()));
+    std::memcpy(buffer.data(), byteBuffer.data(), byteBuffer.size());
 
     return true;
 }

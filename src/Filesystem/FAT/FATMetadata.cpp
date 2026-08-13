@@ -148,18 +148,21 @@ bool FATMetadata::isMounted() const {
 }
 
 void FATMetadata::initialize(FilesystemReader& reader) {
+    // Get the actual sector size from the reader
+    uint32_t sectorSize = reader.getSectorSize();
+    if (sectorSize < sizeof(FATBootSectorCommon)) {
+        throw std::runtime_error("Sector size too small for FAT boot sector");
+    }
+
     // Read the boot sector (sector 0 of the FAT filesystem)
-    uint8_t buffer[512] = {0}; // Assume 512 bytes for now, but we should get the sector size from the reader
-    // We need to know the sector size. Since we don't have it yet, we'll assume 512.
-    // In a real implementation, we would get the sector size from the reader or from the disk parameters.
-    // For now, we'll use 512 as a placeholder.
-    uint32_t bytesRead = reader.readSector(0, buffer, 512);
+    std::vector<uint8_t> buffer(sectorSize);
+    uint32_t bytesRead = reader.readSector(0, buffer.data(), sectorSize);
     if (bytesRead < sizeof(FATBootSectorCommon)) {
         throw std::runtime_error("Failed to read FAT boot sector");
     }
 
     // Copy the boot sector data
-    std::memcpy(&bootSector_, buffer, sizeof(FATBootSectorCommon));
+    std::memcpy(&bootSector_, buffer.data(), sizeof(FATBootSectorCommon));
 
     // Validate the boot sector signature
     if (bootSector_.bootSignature != FAT_BOOT_SIGNATURE) {

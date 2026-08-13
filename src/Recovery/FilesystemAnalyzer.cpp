@@ -89,8 +89,7 @@ bool FilesystemAnalyzer::analyzeFilesystem(
     }
 
     // Copy data from std::byte vector to uint8_t vector
-    std::copy(byteBuffer.begin(), byteBuffer.end(),
-              reinterpret_cast<std::byte*>(bootSectorData.data()));
+    std::memcpy(bootSectorData.data(), byteBuffer.data(), byteBuffer.size());
 
     // Analyze based on filesystem type detected
     std::string filesystemType = detectFilesystemType(bootSectorData);
@@ -170,8 +169,7 @@ bool FilesystemAnalyzer::getFilesystemInfo(
     }
 
     // Copy data from std::byte vector to uint8_t vector
-    std::copy(byteBuffer.begin(), byteBuffer.end(),
-              reinterpret_cast<std::byte*>(bootSectorData.data()));
+    std::memcpy(bootSectorData.data(), byteBuffer.data(), byteBuffer.size());
 
     // Analyze based on filesystem type
     if (filesystemType == "FAT12" || filesystemType == "FAT16" || filesystemType == "FAT32") {

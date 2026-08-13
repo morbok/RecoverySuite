@@ -59,6 +59,9 @@ struct FATBootSectorCommon {
         } fat32;
     };
 
+    // Reserved to position bootSignature at offset 0x1FE
+    uint8_t reserved[420];
+
     // Boot sector signature
     uint16_t bootSignature;         // 0x1FE-0x1FF: Boot sector signature (0xAA55)
 };

@@ -116,3 +116,54 @@ target_link_libraries(test_fat
 # Add the test to CTest
 add_test(NAME test_fat
          COMMAND test_fat)
+
+# Carving robustness test
+add_executable(test_carving_robustness
+    test_carving_robustness.cpp
+)
+
+# Link with core, disk, and recovery libraries
+target_link_libraries(test_carving_robustness
+    PRIVATE
+        RecoverySuite_Core
+        RecoverySuite_Disk
+        RecoverySuite_Recovery
+)
+
+# Add the test to CTest
+add_test(NAME test_carving_robustness
+         COMMAND test_carving_robustness)
+
+# Output failure handling test
+add_executable(test_output_failure_handling
+    test_output_failure_handling.cpp
+)
+
+# Link with core, disk, and recovery libraries
+target_link_libraries(test_output_failure_handling
+    PRIVATE
+        RecoverySuite_Core
+        RecoverySuite_Disk
+        RecoverySuite_Recovery
+)
+
+# Add the test to CTest
+add_test(NAME test_output_failure_handling
+         COMMAND test_output_failure_handling)
+
+# Cancellation handling test
+add_executable(test_cancellation_handling
+    test_cancellation_handling.cpp
+)
+
+# Link with core, disk, and recovery libraries
+target_link_libraries(test_cancellation_handling
+    PRIVATE
+        RecoverySuite_Core
+        RecoverySuite_Disk
+        RecoverySuite_Recovery
+)
+
+# Add the test to CTest
+add_test(NAME test_cancellation_handling
+         COMMAND test_cancellation_handling)
