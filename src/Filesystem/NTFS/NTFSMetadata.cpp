@@ -42,10 +42,11 @@ std::string NTFSMetadata::getVersion() const {
     if (bytesRead != sectorSize) {
         return "Unknown";
     }
-    
+
     const BootSector* bootSector = reinterpret_cast<const BootSector*>(buffer.data());
     // NTFS version is in the boot sector (bytes 0x4A-0x4B for major/minor)
     // For simplicity, we'll return a fixed version
+    (void)bootSector; // Suppress unused variable warning
     return "3.1"; // Most common NTFS version
 }
 

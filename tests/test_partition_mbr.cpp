@@ -16,7 +16,7 @@ class MockDiskReader : public recoverysuite::disk::IDiskReader {
 public:
     MockDiskReader(const std::vector<std::byte>& sectorData) : sectorData_(sectorData) {}
 
-    void open(const std::string& devicePath) override {
+    void open(const std::string& /*devicePath*/) override {
         // For the mock, we ignore the devicePath and just mark as open.
         isOpen_ = true;
     }
@@ -46,7 +46,7 @@ public:
         return true;
     }
 
-    bool writeSectors(uint64_t startSector, uint64_t sectorCount, const std::vector<std::byte>& buffer) override {
+    bool writeSectors(uint64_t /*startSector*/, uint64_t /*sectorCount*/, const std::vector<std::byte>& /*buffer*/) override {
         // Mock implementation: pretend to write successfully
         // We don't actually write data, but we can check that the request is valid
         if (!isOpen_) {

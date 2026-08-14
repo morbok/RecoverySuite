@@ -81,7 +81,7 @@ public:
         throw recoverysuite::disk::DiskException("Unsupported sector read in mock");
     }
 
-    bool writeSectors(uint64_t startSector, uint64_t sectorCount, const std::vector<std::byte>& buffer) override {
+    bool writeSectors(uint64_t /*startSector*/, uint64_t /*sectorCount*/, const std::vector<std::byte>& /*buffer*/) override {
         // Mock implementation: pretend to write successfully
         // We don't actually write data, but we can check that the request is valid
         if (!isOpen_) {
@@ -164,7 +164,7 @@ int main() {
         headerPtr->signature = {'E','F','I',' ','P','A','R','T'};
         std::cout << "Signature: ";
         for (char c : headerPtr->signature) {
-            std::cout << std::hex << (int)(unsigned char)c << " ";
+            std::cout << std::hex << static_cast<int>(static_cast<unsigned char>(c)) << " ";
         }
         std::cout << std::dec << std::endl;
         // Set revision 1.0

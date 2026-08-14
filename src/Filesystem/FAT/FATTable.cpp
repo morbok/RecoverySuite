@@ -13,10 +13,10 @@ namespace fat {
 FATTable::FATTable(FATType fatType, uint32_t sectorsPerFat, uint32_t bytesPerSector,
                    uint32_t clusterCount, uint32_t reservedSectorCount, std::shared_ptr<FilesystemReader> reader)
     : fatType_(fatType),
+      reservedSectorCount_(reservedSectorCount),
       sectorsPerFat_(sectorsPerFat),
       bytesPerSector_(bytesPerSector),
       clusterCount_(clusterCount),
-      reservedSectorCount_(reservedSectorCount),
       reader_(reader) {
     if (!reader_) {
         throw std::invalid_argument("Reader cannot be null");

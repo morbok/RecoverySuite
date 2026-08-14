@@ -130,7 +130,7 @@ bool FATValidator::isValidClusterNumber(uint32_t clusterNumber) const {
     return recoverysuite::filesystem::fat::isValidClusterNumber(clusterNumber, fatTable_->getClusterCount());
 }
 
-bool FATValidator::isReservedCluster(uint32_t clusterNumber, const FATEntry& entry) const {
+bool FATValidator::isReservedCluster(uint32_t /*clusterNumber*/, const FATEntry& entry) const {
     switch (fatTable_->getFatType()) {
         case FATType::FAT12:
             // In FAT12, clusters 0xFF0 to 0xFF6 are reserved

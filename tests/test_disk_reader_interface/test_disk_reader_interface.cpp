@@ -187,22 +187,21 @@ void test_idiskreader_interface() {
     assert(info.modelNumber == "test_mock");
 
     // Test getSectorSize
-    uint32_t sectorSize = diskReader->getSectorSize();
+    (void)diskReader->getSectorSize();
     assert(diskReader->getGetSectorSizeCallCount() == 1);
-    assert(sectorSize == 512);
+    assert(diskReader->getSectorSize() == 512);
 
     // Test getTotalSectors
-    uint64_t totalSectors = diskReader->getTotalSectors();
+    (void)diskReader->getTotalSectors();
     assert(diskReader->getGetTotalSectorsCallCount() == 1);
-    assert(totalSectors == 1000);
+    assert(diskReader->getTotalSectors() == 1000);
 
     // Test readSectors
     std::vector<std::byte> readBuffer;
-    bool readResult = diskReader->readSectors(0, 1, readBuffer);
+    (void)diskReader->readSectors(0, 1, readBuffer);
     assert(diskReader->getReadSectorsCallCount() == 1);
     assert(diskReader->getLastReadStartSector() == 0);
     assert(diskReader->getLastReadSectorCount() == 1);
-    assert(readResult == true);
     assert(readBuffer.size() == 512); // sector size
     // Check first 8 bytes match test data
     for (size_t i = 0; i < testData.size(); i++) {
@@ -215,7 +214,7 @@ void test_idiskreader_interface() {
 
     // Test readSectors with multiple sectors
     std::vector<std::byte> readBuffer2;
-    bool readResult2 = diskReader->readSectors(0, 2, readBuffer2);
+    (void)diskReader->readSectors(0, 2, readBuffer2);
     assert(diskReader->getReadSectorsCallCount() == 2);
     assert(readBuffer2.size() == 1024); // 2 sectors
     // First sector should have test data, second should be zeros

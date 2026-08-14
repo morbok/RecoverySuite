@@ -20,7 +20,7 @@ public:
         return {};
     }
 
-    recoverysuite::disk::DeviceInformation getDiskInfo(uint64_t diskNumber) override {
+    recoverysuite::disk::DeviceInformation getDiskInfo(uint64_t /*diskNumber*/) override {
         // Return mock device info
         recoverysuite::disk::DeviceInformation info;
         info.modelNumber = "Mock Disk";

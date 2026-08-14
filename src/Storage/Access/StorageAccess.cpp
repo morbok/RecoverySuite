@@ -132,19 +132,19 @@ uint32_t StorageAccess::sendVendorCommand(
     }
 }
 
-TRIMStatus StorageAccess::getTrimStatus(uint64_t diskNumber) {
+TRIMStatus StorageAccess::getTrimStatus(uint64_t /*diskNumber*/) {
     // Default implementation: unknown
     // Platform-specific implementations should override this method
     return TRIMStatus::UNKNOWN;
 }
 
-WearLevelingQuality StorageAccess::getWearLevelingQuality(uint64_t diskNumber) {
+WearLevelingQuality StorageAccess::getWearLevelingQuality(uint64_t /*diskNumber*/) {
     // Default implementation: unknown
     // Platform-specific implementations should override this method
     return WearLevelingQuality::UNKNOWN;
 }
 
-GarbageCollectionAggressiveness StorageAccess::getGcAggressiveness(uint64_t diskNumber) {
+GarbageCollectionAggressiveness StorageAccess::getGcAggressiveness(uint64_t /*diskNumber*/) {
     // Default implementation: unknown
     // Platform-specific implementations should override this method
     return GarbageCollectionAggressiveness::UNKNOWN;
