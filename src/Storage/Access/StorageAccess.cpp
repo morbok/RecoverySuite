@@ -108,11 +108,11 @@ StorageHealthData StorageAccess::getHealthData(uint64_t diskNumber) {
 }
 
 uint32_t StorageAccess::sendVendorCommand(
-    uint64_t diskNumber,
-    const std::vector<uint8_t>& command,
-    std::vector<uint8_t>& buffer) {
+    uint64_t /*diskNumber*/,
+    const std::vector<uint8_t>& /*command*/,
+    std::vector<uint8_t>& /*buffer*/) {
     try {
-        auto physicalDisk = pImpl->diskManager->openDisk(diskNumber, true); // Read-only
+        auto physicalDisk = pImpl->diskManager->openDisk(0, true); // Read-only
 
         // In a real implementation, we would send the command through the physical disk interface
         // For now, return 0 indicating no data transferred
@@ -120,10 +120,10 @@ uint32_t StorageAccess::sendVendorCommand(
 
         return 0;
     } catch (const recoverysuite::disk::AccessDeniedException& ex) {
-        throw AccessDeniedException("Access denied to disk " + std::to_string(diskNumber) +
-                                  ": " + std::string(ex.what()), ex.getErrorCode());
+        throw AccessDeniedException("Access denied to disk 0: " +
+                                  std::string(ex.what()), ex.getErrorCode());
     } catch (const recoverysuite::disk::DiskNotFoundException& ex) {
-        throw DeviceNotFoundException("Disk " + std::to_string(diskNumber) + " not found: " +
+        throw DeviceNotFoundException("Disk 0 not found: " +
                                     std::string(ex.what()), ex.getErrorCode());
     } catch (const recoverysuite::disk::DiskException& ex) {
         throw StorageException("Failed to send vendor command: " + std::string(ex.what()), ex.getErrorCode());

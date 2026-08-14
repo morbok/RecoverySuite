@@ -19,14 +19,14 @@ void GPTValidator::validateHeader(const GPTHeader& header) const {
     // Debug: print the partitionEntryArrayCRC32 field (offset 88-91) after copying
     std::cout << "Validator: partitionEntryArrayCRC32 field (offset 88-91) after copy: ";
     for (size_t i = 0; i < 4; ++i) {
-        std::cout << std::hex << (int)(unsigned char)(((uint8_t*)&headerBytes)[88 + i]) << " ";
+        std::cout << std::hex << static_cast<int>(static_cast<unsigned char>(headerBytes[88 + i])) << " ";
     }
     std::cout << std::dec << std::endl;
 
     // Print the headerBytes (first 32 bytes) after copying, before zeroing
     std::cout << "Validator: headerBytes after copy (first 32 bytes): ";
     for (size_t i = 0; i < 32 && i < headerBytes.size(); ++i) {
-        std::cout << std::hex << (int)(unsigned char)headerBytes[i] << " ";
+        std::cout << std::hex << static_cast<int>(static_cast<unsigned char>(headerBytes[i])) << " ";
     }
     std::cout << std::dec << std::endl;
 
@@ -40,20 +40,20 @@ void GPTValidator::validateHeader(const GPTHeader& header) const {
     // Print the headerBytes (first 32 bytes) after zeroing
     std::cout << "Validator: headerBytes after zeroing (first 32 bytes): ";
     for (size_t i = 0; i < 32 && i < headerBytes.size(); ++i) {
-        std::cout << std::hex << (int)(unsigned char)headerBytes[i] << " ";
+        std::cout << std::hex << static_cast<int>(static_cast<unsigned char>(headerBytes[i])) << " ";
     }
     std::cout << std::dec << std::endl;
     // Compute simple sum of all bytes for debugging
     uint64_t sum = 0;
     for (size_t i = 0; i < headerBytes.size(); ++i) {
-        sum += static_cast<uint64_t>(headerBytes[i]);
+        sum += static_cast<uint64_t>(static_cast<unsigned char>(headerBytes[i]));
     }
     std::cout << "Validator headerBytes sum: " << sum << std::endl;
     // Print sums in 64-byte chunks
     for (size_t chunk = 0; chunk < headerBytes.size() / 64; ++chunk) {
         uint64_t chunkSum = 0;
         for (size_t i = 0; i < 64; ++i) {
-            chunkSum += static_cast<uint64_t>(headerBytes[chunk * 64 + i]);
+            chunkSum += static_cast<uint64_t>(static_cast<unsigned char>(headerBytes[chunk * 64 + i]));
         }
         std::cout << "  Chunk " << chunk << " (offset " << chunk * 64 << "): " << chunkSum << std::endl;
     }
@@ -61,14 +61,14 @@ void GPTValidator::validateHeader(const GPTHeader& header) const {
         uint64_t chunkSum = 0;
         size_t start = (headerBytes.size() / 64) * 64;
         for (size_t i = start; i < headerBytes.size(); ++i) {
-            chunkSum += static_cast<uint64_t>(headerBytes[i]);
+            chunkSum += static_cast<uint64_t>(static_cast<unsigned char>(headerBytes[i]));
         }
         std::cout << "  Last chunk (offset " << start << "): " << chunkSum << std::endl;
     }
 
     uint32_t crc = computeCRC32(headerBytes.data(), headerBytes.size());
     std::cout << "Validator computed header CRC32: 0x" << std::hex << crc << std::dec << std::endl;
-    std::cout << "Header's headerCRC32: 0x" << std::hex << header.headerCRC32 << std::dec << std::endl;
+    std::cout << "Header's headerCRC32: 0x" << std::hex << static_cast<unsigned int>(header.headerCRC32) << std::dec << std::endl;
     if (crc != header.headerCRC32) {
         throw InvalidGPTCRCException("Invalid GPT header CRC");
     }
@@ -162,7 +162,7 @@ uint32_t GPTValidator::computeCRC32(const void* data, size_t length) {
     const std::byte* ptr = static_cast<const std::byte*>(data);
     std::cout << "First 10 bytes: ";
     for (size_t i = 0; i < 10 && i < length; ++i) {
-        std::cout << std::hex << (int)(unsigned char)ptr[i] << " ";
+        std::cout << std::hex << static_cast<int>(static_cast<unsigned char>(ptr[i])) << " ";
     }
     std::cout << std::dec << std::endl;
 
@@ -172,8 +172,8 @@ uint32_t GPTValidator::computeCRC32(const void* data, size_t length) {
         crc = (crc >> 8) ^ crc32_table[index];
         // Uncomment to see progress
         // if (i < 10) {
-        //     std::cout << "i=" << i << ", byte=" << (int)(unsigned char)ptr[i]
-        //               << ", index=" << (int)index << ", crc=" << std::hex << crc << std::dec << std::endl;
+        //     std::cout << "i=" << i << ", byte=" << static_cast<int>(static_cast<unsigned char>(ptr[i]))
+        //               << ", index=" << static_cast<int>(index) << ", crc=" << std::hex << crc << std::dec << std::endl;
         // }
     }
     uint32_t result = ~crc;

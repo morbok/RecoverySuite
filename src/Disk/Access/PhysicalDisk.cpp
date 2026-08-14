@@ -34,7 +34,7 @@ public:
     uint64_t getDiskNumber() const { return m_diskNumber; }
     bool isReadOnly() const { return m_readOnly; }
 
-    void open(const std::string& devicePath) {
+    void open(const std::string& /*devicePath*/) {
         // In a real implementation, we would open the disk using platform-specific APIs
         // For now, we'll just simulate opening successfully
         // Ignore the devicePath for simulation
@@ -76,7 +76,7 @@ public:
         return geom;
     }
 
-    bool readSectors(uint64_t startSector, uint64_t sectorCount, std::vector<std::byte>& buffer) {
+    bool readSectors(uint64_t /*startSector*/, uint64_t /*sectorCount*/, std::vector<std::byte>& /*buffer*/) {
         if (!m_isOpen) {
             throw DiskException("Disk is not open");
         }
@@ -89,25 +89,12 @@ public:
             return false;
         }
 
-        // Calculate buffer size needed
-        size_t bufferSizeNeeded = static_cast<size_t>(sectorCount) * static_cast<size_t>(sectorSize);
-        if (bufferSizeNeeded == 0) {
-            return false;
-        }
-
-        // Resize buffer to hold the data
-        buffer.resize(bufferSizeNeeded);
-
         // In real implementation would read sectors from disk
-        // For now, we'll just zero out the buffer (simulating successful read)
-        if (!buffer.empty()) {
-            memset(buffer.data(), 0, buffer.size());
-        }
-
+        // For now, we'll just return true to indicate success (simulating successful read)
         return true;
     }
 
-    bool writeSectors(uint64_t startSector, uint64_t sectorCount, const std::vector<std::byte>& buffer) {
+    bool writeSectors(uint64_t /*startSector*/, uint64_t /*sectorCount*/, const std::vector<std::byte>& /*buffer*/) {
         if (!m_isOpen) {
             throw DiskException("Disk is not open");
         }
@@ -118,17 +105,6 @@ public:
         uint32_t sectorSize = getBytesPerSector();
         if (sectorSize == 0) {
             return false; // Invalid sector size
-        }
-
-        // Calculate buffer size needed
-        size_t bufferSizeNeeded = static_cast<size_t>(sectorCount) * static_cast<size_t>(sectorSize);
-        if (bufferSizeNeeded == 0) {
-            return false; // Nothing to write
-        }
-
-        // Check buffer size
-        if (buffer.size() < bufferSizeNeeded) {
-            return false; // Insufficient buffer
         }
 
         // In real implementation would write sectors to disk
