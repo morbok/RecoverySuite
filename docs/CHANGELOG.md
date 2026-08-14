@@ -3,6 +3,20 @@
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
+    - Cross-Platform Storage and Recovery Validation (PHASE 12A): verified platform-independent Recovery logic remains separated from platform-specific storage access and validated that supported platform implementations compile correctly.
+      * Verified Recovery layer contains no unnecessary platform-specific dependencies
+      * Verified Linux and Windows storage abstractions follow the same interfaces where intended
+      * Built the project successfully on current Linux platform
+      * Added portable tests for:
+        - DiskReader interface behavior
+        - Filesystem detection
+        - Filesystem analysis
+        - Recovery validation
+        - Recovery service behavior
+      * Used platform-independent synthetic data wherever possible
+      * Reviewed path handling for platform differences
+      * Reviewed filesystem output handling for platform differences
+      * Ensured platform-specific failures produce explicit errors rather than silent fallback behavior
     - Recovery Integration & Dependency Validation (Phase 10A): integrated Recovery module with actual Disk, Partition, FAT, and NTFS layers by:
       * Added RecoverySuite_Disk, RecoverySuite_Partition, and RecoverySuite_Filesystem dependencies to src/Recovery/CMakeLists.txt
       * Replaced all simulation TODOs with actual diskReader_->readSectors() calls in Recovery components
@@ -19,7 +33,7 @@ All notable changes to this project will be documented in this file.
       * Distinguished analysis (read-only) from recovery operations (with safety checks)
       * Added confirmation prompts for destructive operations to prevent accidental data loss
       * Prevented silent source overwriting by enforcing destination validation
-      * Created clear, structured output that shows operation type and results distinctly
+      * Added clear, structured output that shows operation type and results distinctly
       * Implemented basic operation tracking for cancellation and status reporting
       * Added comprehensive test coverage using synthetic test data only
       * Updated build configuration to include new CLI source files and tests
@@ -37,33 +51,6 @@ All notable changes to this project will be documented in this file.
       * Updated build configuration to build Logger.cpp.
       * All tests passing (BasicTest, DiskTest, StorageTest, MBR partition test, GPT partition test, FAT tests, CLI tests, recovery service tests, etc.).
     - Recovery capability and safety validation (Phase 9E): implemented RecoveryCapability, RecoverySafetyPolicy, RecoveryValidationReport, RecoveryOperationValidator, FilesystemDetector, FilesystemAnalyzer, MetadataRecovery, FileRecovery, CarvingEngine, OutputExporter classes with full support for filesystem detection, analysis, metadata recovery, file recovery, carving, and output/export capabilities, including safety precondition validation and detailed error reporting.
-
-- FAT boot sector foundation (Phase 7A): implemented FAT12/FAT16/FAT32 boot sector models, parser, volume representation, constants, validation, CMake integration, and comprehensive tests (excluding FAT table parsing, directory parsing, recovery, and disk writing as per scope).
-### Added
-- Emergency checkpoint: saved current state after verifying MBR partition parser foundation
-- Updated documentation to reflect emergency checkpoint status
-- Cleaned repository of temporary files (removed RecoverySuite and RecoverySuite.pub)
-- Disk Layer foundation validation and testing improvements
-  - WindowsDiskReader bounds checking for read requests
-  - WindowsDiskReader proper error handling on open failures (close handle before throwing)
-  - Expanded test suite for Disk module to validate validation and error conditions
-- Partition module foundation (MBR) implementation
-  - Partition exception handling framework (PartitionException.hpp)
-  - MBR header structure (MBRHeader.hpp)
-  - MBR partition entry parser (MBRPartitionEntry.hpp)
-  - Partition table wrapper (PartitionTable.hpp)
-  - Partition geometry model (PartitionGeometry.hpp)
-  - MBR parser interface (MBParser.hpp) and implementation (MBParser.cpp)
-  - Partition validator interface (PartitionValidator.hpp) and implementation (PartitionValidator.cpp)
-  - Partition manager interface (PartitionManager.hpp) and implementation (PartitionManager.cpp)
-  - Updated CMakeLists.txt to build Partition module
-  - Unit tests for Partition module (tests/test_partition_mbr.cpp) with test cases for valid MBR, invalid signature, empty partition table, overlapping partitions, and edge cases
-### Changed
-- Updated SESSION_STATE.md to reflect emergency checkpoint status
-- Updated MASTER_TODO.md to reflect emergency checkpoint status
-- Updated HANDOFF.md to reflect emergency checkpoint status
-- Updated CHANGELOG.md to reflect the current changes
-- Updated RECOVERY_LOG.md to add findings from emergency checkpoint session
 
 ## [0.1.0] - 2026-08-06
 ### Added

@@ -236,6 +236,23 @@ target_link_libraries(test_filesystem_analysis
 add_test(NAME test_filesystem_analysis
          COMMAND test_filesystem_analysis)
 
+# Metadata recovery security test
+	add_executable(test_metadata_recovery_security
+	    test_metadata_recovery_security/test_metadata_recovery_security.cpp
+	)
+
+	# Link with core, disk, and recovery libraries
+	target_link_libraries(test_metadata_recovery_security
+	    PRIVATE
+	    RecoverySuite_Core
+	    RecoverySuite_Disk
+	    RecoverySuite_Recovery
+	)
+
+	# Add the test to CTest
+	add_test(NAME test_metadata_recovery_security
+	         COMMAND test_metadata_recovery_security)
+
 # CLI test
 add_executable(RecoverySuite_CLI_Test
     test_cli/test_cli.cpp
