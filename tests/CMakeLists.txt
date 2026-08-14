@@ -272,6 +272,25 @@ add_test(NAME test_filesystem_analysis
 	add_test(NAME test_application_layer_readiness
 	         COMMAND test_application_layer_readiness)
 
+# GUI interface simulation test
+	add_executable(test_gui_interface_simulation
+	    test_application_layer_readiness/test_gui_interface_simulation.cpp
+	)
+
+	# Link with core, disk, recovery, application, and logging libraries
+	target_link_libraries(test_gui_interface_simulation
+	    PRIVATE
+	    RecoverySuite_Core
+	    RecoverySuite_Disk
+	    RecoverySuite_Recovery
+	    RecoverySuite_Application
+	    RecoverySuite_Logging
+	)
+
+	# Add the test to CTest
+	add_test(NAME test_gui_interface_simulation
+	         COMMAND test_gui_interface_simulation)
+
 # CLI test
 add_executable(RecoverySuite_CLI_Test
     test_cli/test_cli.cpp
