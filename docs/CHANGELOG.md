@@ -24,6 +24,18 @@ All notable changes to this project will be documented in this file.
       * Added comprehensive test coverage using synthetic test data only
       * Updated build configuration to include new CLI source files and tests
       * All tests passing (11/11 tests)
+    - Recovery Logging, Diagnostics & Audit Trail (PHASE 11C): integrated logging system with Recovery operations to provide reliable diagnostic information without leaking sensitive data.
+      * Implemented thread-safe singleton Logger class with DEBUG, INFO, WARN, ERROR levels.
+      * Integrated logging with RecoveryService and CLIHandler components.
+      * Logged meaningful lifecycle events (initialization, analysis start/completion, recovery start/completion, cancellation, validation failure, etc.).
+      * Logged useful diagnostic context (operation type, capability, filesystem type, stage, error category, safe offsets/ranges).
+      * Ensured no sensitive data is logged (API keys, credentials, passwords, raw recovered file contents, unnecessary personal data).
+      * Verified logging does not materially degrade recovery performance.
+      * Verified failures remain diagnosable even when exceptions occur.
+      * Added tests verifying important Recovery events are logged.
+      * Verified logging behavior for success/failure/cancellation/validation rejection.
+      * Updated build configuration to build Logger.cpp.
+      * All tests passing (BasicTest, DiskTest, StorageTest, MBR partition test, GPT partition test, FAT tests, CLI tests, recovery service tests, etc.).
     - Recovery capability and safety validation (Phase 9E): implemented RecoveryCapability, RecoverySafetyPolicy, RecoveryValidationReport, RecoveryOperationValidator, FilesystemDetector, FilesystemAnalyzer, MetadataRecovery, FileRecovery, CarvingEngine, OutputExporter classes with full support for filesystem detection, analysis, metadata recovery, file recovery, carving, and output/export capabilities, including safety precondition validation and detailed error reporting.
 
 - FAT boot sector foundation (Phase 7A): implemented FAT12/FAT16/FAT32 boot sector models, parser, volume representation, constants, validation, CMake integration, and comprehensive tests (excluding FAT table parsing, directory parsing, recovery, and disk writing as per scope).
