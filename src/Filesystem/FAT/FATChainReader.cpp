@@ -120,6 +120,7 @@ uint64_t FATChainReader::clusterToSector(uint32_t clusterNumber) const {
 uint32_t FATChainReader::readClusterSectors(uint32_t clusterNumber, uint8_t* buffer, uint32_t sectorCount,
                                            uint32_t sectorOffset, uint32_t bytesToRead) {
     // We need to convert the cluster number to a sector offset on disk.
+    (void)bytesToRead; // Suppress unused parameter warning
     uint64_t startSector = clusterToSector(clusterNumber);
     if (startSector == 0) {
         return 0; // Invalid cluster number (reserved cluster)
