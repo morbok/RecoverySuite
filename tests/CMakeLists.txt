@@ -186,6 +186,56 @@ target_link_libraries(test_recovery_service
 add_test(NAME test_recovery_service
          COMMAND test_recovery_service)
 
+# Filesystem detector test
+add_executable(test_filesystem_detector
+    test_filesystem_detector/test_filesystem_detector.cpp
+)
+
+# Link with core, disk, and recovery libraries
+target_link_libraries(test_filesystem_detector
+    PRIVATE
+        RecoverySuite_Core
+        RecoverySuite_Disk
+        RecoverySuite_Recovery
+)
+
+# Add the test to CTest
+add_test(NAME test_filesystem_detector
+         COMMAND test_filesystem_detector)
+
+# Disk reader interface test
+add_executable(test_disk_reader_interface
+    test_disk_reader_interface/test_disk_reader_interface.cpp
+)
+
+# Link with core and disk libraries
+target_link_libraries(test_disk_reader_interface
+    PRIVATE
+        RecoverySuite_Core
+        RecoverySuite_Disk
+)
+
+# Add the test to CTest
+add_test(NAME test_disk_reader_interface
+         COMMAND test_disk_reader_interface)
+
+# Filesystem analysis test
+add_executable(test_filesystem_analysis
+    test_filesystem_analysis/test_filesystem_analysis.cpp
+)
+
+# Link with core, disk, and recovery libraries
+target_link_libraries(test_filesystem_analysis
+    PRIVATE
+        RecoverySuite_Core
+        RecoverySuite_Disk
+        RecoverySuite_Recovery
+)
+
+# Add the test to CTest
+add_test(NAME test_filesystem_analysis
+         COMMAND test_filesystem_analysis)
+
 # CLI test
 add_executable(RecoverySuite_CLI_Test
     test_cli/test_cli.cpp
