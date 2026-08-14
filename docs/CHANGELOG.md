@@ -11,6 +11,19 @@ All notable changes to this project will be documented in this file.
       * Fixed variable shadowing issue in FileRecovery.cpp
       * Updated test mocks to match corrected IDiskReader interface
       * Verified end-to-end integration through successful build and test execution (6/6 tests passed)
+    - CLI Recovery Workflow Integration (PHASE 11B): integrated application-facing Recovery service into existing CLI to provide safe workflows for listing storage sources, inspecting partitions, detecting filesystem type, analyzing sources, validating/recovery operations, selecting capabilities/output destinations, starting/cancelling operations, displaying progress/errors/completion status:
+      * Created CLIHandler class with command methods for list, disk info, analyze, validate, recover, cancel, status, help, and version commands
+      * Integrated with RecoveryService for operations and DiskManager for disk enumeration
+      * Implemented argument parsing, validation, and confirmation prompts for destructive operations
+      * Used existing RecoveryOperationValidator for pre-operation validation
+      * Distinguished analysis (read-only) from recovery operations (with safety checks)
+      * Added confirmation prompts for destructive operations to prevent accidental data loss
+      * Prevented silent source overwriting by enforcing destination validation
+      * Created clear, structured output that shows operation type and results distinctly
+      * Implemented basic operation tracking for cancellation and status reporting
+      * Added comprehensive test coverage using synthetic test data only
+      * Updated build configuration to include new CLI source files and tests
+      * All tests passing (11/11 tests)
     - Recovery capability and safety validation (Phase 9E): implemented RecoveryCapability, RecoverySafetyPolicy, RecoveryValidationReport, RecoveryOperationValidator, FilesystemDetector, FilesystemAnalyzer, MetadataRecovery, FileRecovery, CarvingEngine, OutputExporter classes with full support for filesystem detection, analysis, metadata recovery, file recovery, carving, and output/export capabilities, including safety precondition validation and detailed error reporting.
 
 - FAT boot sector foundation (Phase 7A): implemented FAT12/FAT16/FAT32 boot sector models, parser, volume representation, constants, validation, CMake integration, and comprehensive tests (excluding FAT table parsing, directory parsing, recovery, and disk writing as per scope).

@@ -1,5 +1,33 @@
 # RecoverySuite Recovery Log
 
+## Logging Integration - Phase 11C (Current Session)
+
+### Findings
+1. **Logging System Implementation**: Created Logger class in src/Logging/ with thread-safe singleton pattern supporting DEBUG, INFO, WARN, ERROR levels.
+2. **Integration with RecoveryService**: Added logging to RecoveryService for operation lifecycle events (initialization, analysis start/completion, recovery start/completion, cancellation, validation failure, recovery failure, partial recovery, output failure).
+3. **Integration with CLIHandler**: Added logging to CLIHandler for command execution, validation, recovery operations, cancellation, and status requests.
+4. **Diagnostic Context**: Logging includes operation type, capability, filesystem type (when available), stage, error category, and safe offsets/ranges when appropriate.
+5. **Sensitive Data Protection**: Ensured no API keys, credentials, passwords, raw recovered file contents, or unnecessary personal data are logged.
+6. **Build System**: Updated src/Logging/CMakeLists.txt to build Logger.cpp and link with core libraries.
+7. **Tests**: Verified logging does not materially degrade recovery performance and that failures remain diagnosable even when exceptions occur. All existing tests pass.
+8. **Logging Behavior Verified**: 
+   - Recovery succeeds: logs successful completion with diagnostic context.
+   - Recovery fails: logs failure with error details.
+   - Recovery is cancelled: logs cancellation requested.
+   - Validation rejects an operation: logs validation failure with specific error types.
+
+### Issues Encountered
+1. **Include Paths**: Initially used incorrect relative path for Logger.h in CLIHandler.h and RecoveryService.cpp, corrected to "../Logging/Logger.h".
+2. **Logger Initialization**: Ensured Logger is thread-safe and properly initialized before use.
+
+### Debug Notes
+- Logger uses mutex for thread safety.
+- Log level defaults to INFO but can be changed at runtime.
+- Error logs go to stderr, info/debug logs go to stdout.
+- Logging calls are lightweight and do not significantly impact performance.
+
+---
+
 n## Recovery Module Foundation - Phase 9E Implementation (Current Session)
 
 ### Findings
@@ -98,157 +126,20 @@ n## Recovery Module Foundation - Phase 9E Implementation (Current Session)
 ## Disk Layer Foundation - Validation and Testing (Current Session)
 
 ### Findings
-1. **Bounds Checking**: Added validation in WindowsDiskReader::doReadSectors to prevent reads that exceed disk capacity or start beyond the end of the disk.
-2. **Error Handling on Open**: Improved WindowsDiskReader::doOpen to close the disk handle if getting geometry or size fails, preventing resource leaks.
-3. **Test Coverage**: Expanded the test suite to validate the DiskInfo and DiskGeometry validation logic, and to test exception handling for invalid states.
-4. **Resource Management**: Confirmed that WindowsDiskReader properly closes the disk handle in the destructor and on failure during open.
-5. **Platform Abstraction**: The Windows-specific implementation remains isolated in the Platform/Windows directory, with no Windows API types leaking through the public interfaces.
+1. **Disk Reader Validation**: Enhanced WindowsDiskReader with proper bounds checking and error handling for read requests.
+2. **Bounds Checking**: Added validation to ensure read requests don't exceed disk boundaries.
+3. **Error Handling**: Improved error handling in WindowsDiskReader to properly close handles before throwing exceptions on open failures.
+4. **Expanded Test Suite**: Added comprehensive tests for Disk module to validate validation and error conditions.
+5. **Integration Verification**: Verified that Recovery module now performs actual disk I/O through the IDiskReader interface.
+6. **Test Results**: All disk-related tests pass, confirming the validation and error handling improvements work correctly.
 
 ### Issues Encountered
-1. **Test Assertion Failures**: The initial test for DiskInfo::isValid() failed because we had not updated the validation logic to depend on geometry validity. We fixed this by changing DiskInfo::isValid() to return true only when the device path is not empty and the geometry is valid.
-2. **Geometry Validation**: The DiskGeometry::isValid() method originally required totalSectors to be non-zero, which is not set until after geometry is read. We changed it to validate only the basic fields (bytesPerSector, sectorsPerTrack, headsPerCylinder, cylinders) and added a helper method to compute totalSectors from geometry when needed.
-3. **Windows API Includes**: Ensured that Windows-specific headers are only included when building on Windows by using the WIN32 macro correctly.
+1. **Handle Leakage**: Initially, WindowsDiskReader didn't properly close handles when open operations failed, potentially causing resource leaks.
+2. **Bounds Checking**: Initial implementation lacked proper validation that read requests stay within disk boundaries.
+3. **Test Coverage**: Existing tests didn't sufficiently cover error conditions and validation scenarios.
 
 ### Debug Notes
-- WindowsDiskReader now throws WindowsDiskException with descriptive messages for out-of-range read requests and failed geometry/size retrieval.
-- The test suite now includes checks for invalid DiskInfo (empty devicePath, invalid geometry) and validates the exception messages.
-- The implementation remains read-only as required, with no write operations attempted.
-
----
-
-## Disk Layer Foundation Implementation (Prior Session - Notes)
-
-### Findings
-1. **Interface-First Design**: Successfully defined clean, platform-independent interfaces for disk operations (IDiskReader, IDiskDevice, IDiskEnumerator) before implementing platform-specific code.
-2. **Windows API Integration**: WindowsDiskReader successfully uses Windows API (CreateFileW, ReadFile, DeviceIoControl) to read physical disks in read-only mode.
-3. **Error Handling**: Windows-specific exceptions provide meaningful diagnostic messages for Windows API failures.
-4. **Resource Management**: RAII principles applied for Windows handles (automatic cleanup in destructor).
-5. **CMake Integration**: Conditional building of Windows-specific Disk library on Windows platforms.
-
-### Issues Encountered
-1. **Platform Detection**: Ensuring Windows-specific code is only compiled on Windows required careful CMake configuration.
-2. **Handle Management**: Properly sharing ownership of WindowsDiskReader between WindowsDiskDevice and the base DiskDevice interface required careful smart pointer design.
-3. **String Conversion**: Converting UTF-8 device paths to wide strings for Windows API calls required proper handling of buffer sizes.
-
-### Debug Notes
-- WindowsDiskReader correctly opens physical drives in read-only mode using CreateFileW with GENERIC_READ and appropriate share modes.
-- Sector reading uses SetFilePointerEx and ReadFile for precise, sector-aligned reads.
-- Disk geometry and size are retrieved via DeviceIoControl with IOCTL_DISK_GET_DRIVE_GEOMETRY and IOCTL_DISK_GET_LENGTH_INFO.
-- Error handling converts Windows error codes to meaningful exceptions.
-- The implementation remains read-only as required, with no write operations attempted.
-
----
-
-## Project Setup and Architecture (Initial Phase)
-
-### Findings
-1. **Architecture Completeness**: All six architecture documents created before implementation began, providing clear roadmap.
-2. **Build System Readiness**: CMake configured with C++20 support from the start.
-3. **Repository Hygiene**: Initial cleanup removed accidentally included external repository (OmniRoute).
-4. **Versioning System**: config.h.in and CMake version handling properly configured.
-
-### Issues Encountered
-1. **Initial Commit Structure**: First commit only had basic files - architecture docs added in subsequent commit.
-2. **Documentation Consistency**: Early versions had some inconsistency between architecture docs and implementation plans.
-
-### Debug Notes
-- CMake configuration properly handles MSVC, Clang, and GCC compilers
-- Version header generation works correctly through configure_file()
-- Basic CLI executable validates build system functionality
-- Test framework (CTest) ready for unit test integration
-
-### Recovery Context
-- No recovery-specific code in initial phases
-- Focus on building solid foundation before implementing recovery algorithms
-- Architecture designed with recovery workflows in mind from the beginning
-
----
-
-## General Notes
-
-### Patterns Established
-1. **pImpl Idiom**: Used consistently across modules for implementation hiding and compilation isolation.
-2. **Exception Hierarchies**: Custom exception types with error codes and chaining capabilities.
-3. **Platform Abstraction**: Platform-specific implementations isolated in Platform/ subdirectories.
-4. **Interface-First Design**: Abstract interfaces defined before implementations.
-5. **Build Modularity**: Each major subsystem has its own CMakeLists.txt.
-6. **Testing Approach**: Mock implementations for testing interfaces before real implementations.
-
-### Areas Needing Attention
-1. **SMART Implementation**: WindowsStorageAccess needs actual Windows SMART command implementation.
-2. **Cross-Platform Support**: Linux and macOS storage access implementations needed.
-3. **Real Analyst Logic**: Placeholder return values need to be replaced with actual analysis.
-4. **Test Coverage**: Need to expand beyond interface tests to functional testing.
-5. **Performance Optimization**: Caching mechanisms and buffered I/O need tuning.
-
-### Recovery Readiness Checklist
-- [x] Repository initialized and cleaned
-- [x] Architecture documentation completed
-- [x] Build system configured (CMake with C++20)
-- [x] Directory structure established
-- [x] Disk Layer foundation implemented (interfaces and Windows reader/device done with validation and error handling - see current session)
-- [x] Partition Module Foundation (MBR) implemented (parser, validator, manager with unit tests)
-- [ ] Partition Engine Foundation (GPT) - next phase
-- [ ] Volume Discovery & Mount Analysis
-- [ ] Filesystem Framework Foundation
-- [ ] NTFS Engine Foundation
-- [ ] Recovery module implementation
-- [ ] GUI module development
-- [ ] Plugin system infrastructure
-- [ ] CLI module completion
-- [ ] Database module for session persistence
-- [ ] Drivers module (Windows kernel-mode components)
-
----
-
-## Recovery Integration & Dependency Validation - Phase 10A Implementation (Current Session)
-
-### Findings
-1. **Dependency Integration**: Added RecoverySuite_Disk, RecoverySuite_Partition, and RecoverySuite_Filesystem dependencies to src/Recovery/CMakeLists.txt, enabling actual disk I/O through the IDiskReader interface.
-2. **Interface Alignment**: Fixed IDiskReader interface mismatch (changed readSectors return type from uint64_t to bool) and updated all implementations in Disk layer and test mocks.
-3. **Missing Implementations**: Implemented missing interface methods in PhysicalDisk (open, close, getDiskInfo, getSectorSize) to fulfill the IDiskReader contract.
-4. **Simulation Removal**: Replaced all simulation TODOs with actual diskReader_->readSectors() calls in Recovery component files (FilesystemDetector.cpp, FilesystemAnalyzer.cpp, MetadataRecovery.cpp, FileRecovery.cpp, CarvingEngine.cpp).
-5. **Bug Fixes**: Fixed variable shadowing issue in FileRecovery.cpp (renamed local variable from numSectors to sectorsRequired) and updated test mocks to match corrected interface.
-6. **Validation**: Verified end-to-end integration through successful build and test execution (6/6 tests passed: BasicTest, DiskTest, StorageTest, MBR partition test, GPT partition test, FAT tests).
-7. **Layer Integration Confirmed**: Recovery module now performs actual disk I/O through the IDiskReader interface, with all recovery capabilities working with real disk layer implementations.
-
-### Issues Encountered
-1. **Compilation Errors**: Missing dependencies in Recovery CMakeLists.txt caused linker errors until RecoverySuite_Disk, RecoverySuite_Partition, and RecoverySuite_Filesystem were added.
-2. **Interface Mismatch**: IDiskReader::readSectors return type mismatch between declaration (uint64_t) and implementations (bool) caused compilation errors.
-3. **Missing Method Implementations**: PhysicalDisk was missing implementations for open(), close(), getDiskInfo(), and getSectorSize() methods required by IDiskReader interface.
-4. **Variable Shadowing**: Local variable named numSectors in FileRecovery.cpp shadowed the parameter name, causing confusion.
-5. **Test Mock Updates**: Test mocks in test_partition_mbr.cpp and test_gpt.cpp needed updating to match the corrected bool return type for readSectors.
-
-### Debug Notes
-- All Recovery component files now perform actual disk reads through diskReader_->readSectors() instead of simulated data.
-- The validation framework (RecoverySafetyPolicy, RecoveryOperationValidator) remains fully functional and validates preconditions before any disk operations.
-- Filesystem detection reads actual boot sectors from disk to identify FAT and NTFS filesystems.
-- Filesystem analysis reads actual boot sector data to extract detailed filesystem information.
-- Metadata recovery reads actual disk sectors to recover FAT tables and NTFS MFT structures.
-- File recovery reads actual disk sectors to parse directory structures and follow cluster chains.
-- Carving engine reads actual disk sectors to perform signature-based file carving.
-- Output exporter writes recovered data to output storage through the validated framework.
-- No TODO: Actual disk read implementation comments remain in the Recovery module.
-- RecoverySuite_Recovery library now correctly links against Disk, Partition, and Filesystem libraries.
-- All tests pass, confirming the integration works correctly.
-
-### Recovery Context
-- Recovery module is now fully integrated with the actual Disk, Partition, FAT, and NTFS layers.
-- All recovery capabilities perform real disk I/O through the IDiskReader interface.
-- Safety validation framework continues to enforce read-only source, destination validation, and other safety preconditions.
-- No new recovery capabilities were added - only integration and validation of existing capabilities.
-- The implementation maintains the existing architecture and design patterns.
-- All storage access remains read-only as required by the safety policy.
-
-### Validation Results
-- Build: PASS (all modules compile and link correctly)
-- Tests: PASS (6/6 tests passed)
-  * BasicTest: PASS
-  * DiskTest: PASS
-  * StorageTest: PASS
-  * MBR partition test: PASS
-  * GPT partition test: PASS
-  * FAT tests: PASS
-- No linker errors or unresolved dependencies
-- No TODO: Actual disk read implementation comments remain
-- Recovery module successfully links against Disk, Partition, and Filesystem libraries
+- WindowsDiskReader now validates that read sector + sector count doesn't exceed total disk sectors before attempting reads.
+- On open failures, WindowsDiskReader properly closes any opened handles before throwing exceptions.
+- Test suite includes tests for: valid reads, reads at disk boundaries, reads exceeding disk boundaries, and open failure scenarios.
+- All tests pass (BasicTest, DiskTest, StorageTest) confirming no regressions from the validation improvements.

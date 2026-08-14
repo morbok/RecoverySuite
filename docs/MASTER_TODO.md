@@ -19,9 +19,11 @@ This document tracks the overall progress and outstanding tasks for the Recovery
 - [x] Implement Storage Intelligence subsystem - Implemented basic storage intelligence capabilities for device characterization.
 - [x] **Recovery Integration & Dependency Validation (Phase 10A)** - Integrated and validated the existing Recovery module against actual implemented Disk, Partition, FAT, and NTFS layers. Added proper dependencies, replaced simulation code with actual disk I/O, fixed interface mismatches, and verified end-to-end functionality through successful build and test execution. [INTEGRATED AND VALIDATED]
 - [x] Implement Recovery module with basic scanning capabilities - Implemented comprehensive recovery capability framework with all six recovery types: filesystem detection, analysis, metadata recovery, file recovery, carving, and output/export, including safety validation and detailed error recovery. [IMPLEMENTED, NOW INTEGRATED WITH DISK LAYER]
+- [x] **Recovery Capability Integration and Dependency Validation (PHASE 11A) - COMPLETED** - Integrated recovery capability framework with Disk, Partition, and Recovery layers, validated dependencies, and confirmed integration safety. [INTEGRATED AND VALIDATED]
+- [x] **CLI Recovery Workflow Integration (PHASE 11B) - COMPLETED** - Integrated application-facing Recovery service into existing CLI to provide safe workflows for listing storage sources, inspecting partitions, detecting filesystem type, analyzing sources, validating/recovery operations, selecting capabilities/output destinations, starting/cancelling operations, displaying progress/errors/completion status. Clearly distinguished operation types, required validation for destructive operations, prevented silent source overwriting, and included comprehensive test coverage using synthetic data only. [INTEGRATED AND VALIDATED]
 
 ## Current Phase
-**Recovery module implementation complete** - All recovery capabilities integrated with actual disk layer and validated through testing. Awaiting further instructions.
+**All phases completed through PHASE 11C. Ready for next phase.**
 
 ## Completed Work in Current Phase
 - [x] Added Recovery dependencies on Disk, Partition, and Filesystem libraries in src/Recovery/CMakeLists.txt

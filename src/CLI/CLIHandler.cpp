@@ -12,10 +12,12 @@ CLIHandler::CLIHandler()
       recoveryService_(nullptr) {
     // Initialize recovery service with a null disk reader initially
     // It will be properly initialized when we have a disk to work with
+    recoverysuite::logging::Logger::instance().debug("CLIHandler created");
 }
 
 CLIHandler::~CLIHandler() {
     // Cleanup handled by unique_ptr
+    recoverysuite::logging::Logger::instance().debug("CLIHandler destroyed");
 }
 
 int CLIHandler::run(int argc, char* argv[]) {
@@ -127,15 +129,18 @@ void CLIHandler::handleDiskInfo(const std::vector<std::string>& args) {
     if (args.empty()) {
         printError("Missing disk number");
         showHelp({});
+        recoverysuite::logging::Logger::instance().warn("Disk info command failed: missing disk number");
         return;
     }
 
     uint64_t diskNumber;
     if (!parseUint64(args[0], diskNumber)) {
         printError("Invalid disk number: " + args[0]);
+        recoverysuite::logging::Logger::instance().warn("Disk info command failed: invalid disk number: " + args[0]);
         return;
     }
 
+    recoverysuite::logging::Logger::instance().info("Disk info command started: disk_number=" + std::to_string(diskNumber));
     printInfo("Getting information for disk #" + std::to_string(diskNumber) + "...");
 
     try {
@@ -181,11 +186,14 @@ void CLIHandler::handleDiskInfo(const std::vector<std::string>& args) {
         }
 
         printSeparator();
+        recoverysuite::logging::Logger::instance().info("Disk info command completed successfully: disk_number=" + std::to_string(diskNumber));
 
     } catch (const recoverysuite::disk::DiskNotFoundException& e) {
         printError("Disk #" + std::to_string(diskNumber) + " not found");
+        recoverysuite::logging::Logger::instance().error("Disk info command failed: disk #" + std::to_string(diskNumber) + " not found");
     } catch (const std::exception& e) {
         printError("Failed to get disk info: " + std::string(e.what()));
+        recoverysuite::logging::Logger::instance().error("Disk info command failed: disk_number=" + std::to_string(diskNumber) + ", exception=" + std::string(e.what()));
     }
 }
 
@@ -265,6 +273,7 @@ void CLIHandler::handleValidate(const std::vector<std::string>& args) {
     if (args.size() < 2) {
         printError("Missing capability or disk number");
         showHelp({});
+        recoverysuite::logging::Logger::instance().warn("Validation failed: missing capability or disk number");
         return;
     }
 
@@ -273,6 +282,7 @@ void CLIHandler::handleValidate(const std::vector<std::string>& args) {
     if (capability == recoverysuite::recovery::RecoveryCapability::NONE) {
         printError("Unsupported capability: " + args[0]);
         showHelp({});
+        recoverysuite::logging::Logger::instance().warn("Validation failed: unsupported capability: " + args[0]);
         return;
     }
 
@@ -280,6 +290,7 @@ void CLIHandler::handleValidate(const std::vector<std::string>& args) {
     uint64_t diskNumber;
     if (!parseUint64(args[1], diskNumber)) {
         printError("Invalid disk number: " + args[1]);
+        recoverysuite::logging::Logger::instance().warn("Validation failed: invalid disk number: " + args[1]);
         return;
     }
 
@@ -290,6 +301,7 @@ void CLIHandler::handleValidate(const std::vector<std::string>& args) {
     if (args.size() >= 3) {
         if (!parseUint64(args[2], startSector)) {
             printError("Invalid start sector: " + args[2]);
+            recoverysuite::logging::Logger::instance().warn("Validation failed: invalid start sector: " + args[2]);
             return;
         }
     }
@@ -297,9 +309,15 @@ void CLIHandler::handleValidate(const std::vector<std::string>& args) {
     if (args.size() >= 4) {
         if (!parseUint64(args[3], numSectors)) {
             printError("Invalid number of sectors: " + args[3]);
+            recoverysuite::logging::Logger::instance().warn("Validation failed: invalid number of sectors: " + args[3]);
             return;
         }
     }
+
+    recoverysuite::logging::Logger::instance().info("Validation started: capability=" + capabilityToString(capability) +
+              ", disk_number=" + std::to_string(diskNumber) +
+              ", start_sector=" + std::to_string(startSector) +
+              ", num_sectors=" + std::to_string(numSectors));
 
     printInfo("Validating " + capabilityToString(capability) +
               " operation on disk #" + std::to_string(diskNumber) +
@@ -311,6 +329,7 @@ void CLIHandler::handleValidate(const std::vector<std::string>& args) {
         auto disk = diskManager_->openDisk(diskNumber, true);
         if (!disk) {
             printError("Failed to open disk #" + std::to_string(diskNumber));
+            recoverysuite::logging::Logger::instance().error("Validation failed: failed to open disk #" + std::to_string(diskNumber));
             return;
         }
 
@@ -344,17 +363,25 @@ void CLIHandler::handleValidate(const std::vector<std::string>& args) {
         printSeparator();
         if (report.validationPassed()) {
             printSuccess("Validation PASSED - Operation is safe to proceed");
+            recoverysuite::logging::Logger::instance().info("Validation PASSED: capability=" + capabilityToString(capability) +
+              ", disk_number=" + std::to_string(diskNumber));
         } else {
             printError("Validation FAILED");
             auto errors = report.getValidationErrors();
             for (const auto& error : errors) {
                 std::cout << "  - [" << static_cast<int>(error.type) << "] " << error.description << std::endl;
             }
+            recoverysuite::logging::Logger::instance().warn("Validation FAILED: capability=" + capabilityToString(capability) +
+              ", disk_number=" + std::to_string(diskNumber) +
+              ", errors=" + std::to_string(errors.size()));
         }
         printSeparator();
 
     } catch (const std::exception& e) {
         printError("Exception during validation: " + std::string(e.what()));
+        recoverysuite::logging::Logger::instance().error("Exception during validation: capability=" + capabilityToString(capability) +
+          ", disk_number=" + std::to_string(diskNumber) +
+          ", exception=" + std::string(e.what()));
     }
 }
 
@@ -561,6 +588,7 @@ void CLIHandler::handleCancel(const std::vector<std::string>& args) {
     if (args.empty()) {
         printError("Missing operation ID");
         showHelp({});
+        recoverysuite::logging::Logger::instance().warn("Cancel command failed: missing operation ID");
         return;
     }
 
@@ -569,24 +597,29 @@ void CLIHandler::handleCancel(const std::vector<std::string>& args) {
 
     if (it == activeOperations_.end()) {
         printError("Operation not found: " + operationId);
+        recoverysuite::logging::Logger::instance().warn("Cancel command failed: operation not found: " + operationId);
         return;
     }
 
     auto& opInfo = it->second;
     if (!opInfo.cancellable) {
         printError("Operation cannot be cancelled: " + operationId);
+        recoverysuite::logging::Logger::instance().warn("Cancel command failed: operation cannot be cancelled: " + operationId);
         return;
     }
 
     if (opInfo.status == "Completed successfully" ||
         opInfo.status.rfind("Failed:", 0) == 0) {
         printError("Operation already finished: " + operationId);
+        recoverysuite::logging::Logger::instance().warn("Cancel command failed: operation already finished: " + operationId);
         return;
     }
 
     printInfo("Cancelling operation: " + operationId);
     opInfo.cancelled = true;
     opInfo.status = "Cancelling...";
+    recoverysuite::logging::Logger::instance().info("Cancellation requested for operation: " + operationId +
+      ", type=" + opInfo.type);
 
     // In a full implementation, we would signal the operation to stop
     // For this MVP, we'll just mark it as cancelled
@@ -596,6 +629,7 @@ void CLIHandler::handleCancel(const std::vector<std::string>& args) {
 void CLIHandler::handleStatus(const std::vector<std::string>& args) {
     if (activeOperations_.empty()) {
         printInfo("No active operations");
+        recoverysuite::logging::Logger::instance().debug("Status command: no active operations");
         return;
     }
 
@@ -605,6 +639,7 @@ void CLIHandler::handleStatus(const std::vector<std::string>& args) {
         auto it = activeOperations_.find(operationId);
         if (it == activeOperations_.end()) {
             printError("Operation not found: " + operationId);
+            recoverysuite::logging::Logger::instance().warn("Status command failed: operation not found: " + operationId);
             return;
         }
 
@@ -623,6 +658,7 @@ void CLIHandler::handleStatus(const std::vector<std::string>& args) {
             std::cout << "Cancellation:   Requested" << std::endl;
         }
         printSeparator();
+        recoverysuite::logging::Logger::instance().debug("Status command executed for operation: " + operationId);
     } else {
         // Show all operations
         printSeparator();
@@ -649,6 +685,7 @@ void CLIHandler::handleStatus(const std::vector<std::string>& args) {
         }
 
         printSeparator();
+        recoverysuite::logging::Logger::instance().debug("Status command executed: showing " + std::to_string(activeOperations_.size()) + " active operations");
     }
 }
 
@@ -687,6 +724,7 @@ void CLIHandler::showHelp(const std::vector<std::string>& args) {
     std::cout << "  recoverysuite validate file_recovery 0 0 100" << std::endl;
     std::cout << "  recoverysuite recover file_recovery 0 0 100 1000 ./recovered" << std::endl;
     printSeparator();
+    recoverysuite::logging::Logger::instance().debug("Help command executed");
 }
 
 void CLIHandler::showVersion(const std::vector<std::string>& args) {
@@ -695,6 +733,7 @@ void CLIHandler::showVersion(const std::vector<std::string>& args) {
     // We would normally get this from a version header
     printInfo("RecoverySuite Version 1.0.0");
     printInfo("Build system initialized successfully!");
+    recoverysuite::logging::Logger::instance().debug("Version command executed");
 }
 
 // Helper methods implementation

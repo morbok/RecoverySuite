@@ -19,6 +19,7 @@
 #include "../Recovery/RecoveryCapability.h"
 #include "../Recovery/RecoverySafetyPolicy.h"
 #include "../Recovery/RecoveryOperationValidator.h"
+#include "../Logging/Logger.h"
 
 namespace recoverysuite {
 namespace cli {

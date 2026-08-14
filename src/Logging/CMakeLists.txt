@@ -1,6 +1,6 @@
 # RecoverySuite Logging Module
 add_library(RecoverySuite_Logging STATIC
-    dummy.cpp
+    Logger.cpp
 )
 
 target_include_directories(RecoverySuite_Logging
