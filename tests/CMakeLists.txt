@@ -253,6 +253,25 @@ add_test(NAME test_filesystem_analysis
 	add_test(NAME test_metadata_recovery_security
 	         COMMAND test_metadata_recovery_security)
 
+# Application layer readiness test
+	add_executable(test_application_layer_readiness
+	    test_application_layer_readiness/test_application_layer_readiness.cpp
+	)
+
+	# Link with core, disk, recovery, application, and logging libraries
+	target_link_libraries(test_application_layer_readiness
+	    PRIVATE
+	    RecoverySuite_Core
+	    RecoverySuite_Disk
+	    RecoverySuite_Recovery
+	    RecoverySuite_Application
+	    RecoverySuite_Logging
+	)
+
+	# Add the test to CTest
+	add_test(NAME test_application_layer_readiness
+	         COMMAND test_application_layer_readiness)
+
 # CLI test
 add_executable(RecoverySuite_CLI_Test
     test_cli/test_cli.cpp

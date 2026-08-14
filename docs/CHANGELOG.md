@@ -3,6 +3,25 @@
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
+    - Application-Layer Readiness Validation (PHASE 13B): verified that the backend and application-facing APIs are stable enough to support the future GUI without requiring direct access to low-level implementation details.
+      * Verified the application service layer provides clean operations for source discovery, partition inspection, filesystem detection, filesystem analysis, recovery validation, recovery execution, progress, cancellation, errors, and completion
+      * Verified the service layer does not duplicate engine logic
+      * Verified all results are represented by stable application-facing models
+      * Verified errors are structured and actionable
+      * Verified long-running operations do not block the caller unnecessarily where asynchronous execution is already supported by the architecture
+      * Verified cancellation works through the complete application layer
+      * Verified progress information is accurate
+      * Verified logging and diagnostics remain available to application clients
+      * Added integration tests that exercise the service layer from start to finish using controlled data
+      * Built the complete project and ran all tests
+      * Updated documentation
+    - Recovery Security and Safety Audit (PHASE 12B): performed a security-focused audit of the existing RecoverySuite implementation, especially around untrusted disk data, malformed filesystem structures, paths, arithmetic, memory, and output handling.
+      * Audited recovery inputs as untrusted data - validated all operations begin with validator_.validateOperation() call
+      * Checked for boundary condition vulnerabilities in sector range validation and arithmetic overflow protection
+      * Verified proper resource release in cancellation/failure paths
+      * Confirmed exception handling does not leak sensitive information
+      * Added regression tests for security vulnerabilities discovered
+      * Updated documentation with actual findings and fixes
     - Cross-Platform Storage and Recovery Validation (PHASE 12A): verified platform-independent Recovery logic remains separated from platform-specific storage access and validated that supported platform implementations compile correctly.
       * Verified Recovery layer contains no unnecessary platform-specific dependencies
       * Verified Linux and Windows storage abstractions follow the same interfaces where intended
