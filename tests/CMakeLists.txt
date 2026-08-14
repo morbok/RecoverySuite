@@ -167,3 +167,21 @@ target_link_libraries(test_cancellation_handling
 # Add the test to CTest
 add_test(NAME test_cancellation_handling
          COMMAND test_cancellation_handling)
+
+# Recovery service test
+add_executable(test_recovery_service
+    test_recovery_service/test_recovery_service.cpp
+)
+
+# Link with core, disk, recovery, and application libraries
+target_link_libraries(test_recovery_service
+    PRIVATE
+        RecoverySuite_Core
+        RecoverySuite_Disk
+        RecoverySuite_Recovery
+        RecoverySuite_Application
+)
+
+# Add the test to CTest
+add_test(NAME test_recovery_service
+         COMMAND test_recovery_service)

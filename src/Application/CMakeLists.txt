@@ -1,6 +1,6 @@
 # RecoverySuite Application Module
 add_library(RecoverySuite_Application STATIC
-    dummy.cpp
+    Service/RecoveryService.cpp
 )
 
 target_include_directories(RecoverySuite_Application
@@ -22,6 +22,11 @@ target_link_libraries(RecoverySuite_Application
         RecoverySuite_Logging
         RecoverySuite_Config
         RecoverySuite_Errors
+        RecoverySuite_Recovery
+        RecoverySuite_Disk
+        RecoverySuite_Filesystem
+        RecoverySuite_Partition
+        RecoverySuite_Storage
 )
 
 # Install headers
