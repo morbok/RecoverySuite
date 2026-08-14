@@ -185,3 +185,29 @@ target_link_libraries(test_recovery_service
 # Add the test to CTest
 add_test(NAME test_recovery_service
          COMMAND test_recovery_service)
+
+# CLI test
+add_executable(RecoverySuite_CLI_Test
+    test_cli/test_cli.cpp
+    ${CMAKE_SOURCE_DIR}/src/CLI/CLIHandler.cpp
+)
+
+target_include_directories(RecoverySuite_CLI_Test
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/src/CLI
+)
+
+target_link_libraries(RecoverySuite_CLI_Test
+    PRIVATE
+        RecoverySuite_Application
+        RecoverySuite_Logging
+        RecoverySuite_Config
+        RecoverySuite_Utilities
+        RecoverySuite_Core
+        RecoverySuite_Disk
+        RecoverySuite_Recovery
+)
+
+# Add the test to CTest
+add_test(NAME RecoverySuite_CLI_Test
+         COMMAND RecoverySuite_CLI_Test)

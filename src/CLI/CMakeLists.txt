@@ -1,6 +1,7 @@
 # RecoverySuite CLI Module
 add_executable(RecoverySuite_CLI
     main.cpp
+    CLIHandler.cpp
 )
 
 target_include_directories(RecoverySuite_CLI
@@ -24,6 +25,8 @@ target_link_libraries(RecoverySuite_CLI
         RecoverySuite_Config
         RecoverySuite_Utilities
         RecoverySuite_Core
+        RecoverySuite_Disk
+        RecoverySuite_Recovery
 )
 
 # Install executable
