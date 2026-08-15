@@ -272,6 +272,25 @@ add_test(NAME test_filesystem_analysis
 	add_test(NAME test_application_layer_readiness
 	         COMMAND test_application_layer_readiness)
 
+# Phase 13D Product Integration Validation Test
+	add_executable(test_phase13d_product_integration
+	    test_phase13d_product_integration.cpp
+	)
+
+	# Link with core, disk, recovery, application, and filesystem libraries
+	target_link_libraries(test_phase13d_product_integration
+	    PRIVATE
+	    RecoverySuite_Core
+	    RecoverySuite_Disk
+	    RecoverySuite_Recovery
+	    RecoverySuite_Application
+	    RecoverySuite_Filesystem
+	)
+
+	# Add the test to CTest
+	add_test(NAME test_phase13d_product_integration
+	         COMMAND test_phase13d_product_integration)
+
 # GUI interface simulation test
 	add_executable(test_gui_interface_simulation
 	    test_application_layer_readiness/test_gui_interface_simulation.cpp
