@@ -2,6 +2,9 @@
 add_library(RecoverySuite_GUI STATIC
     main.cpp
     core/Application.cpp
+    core/ApplicationState.cpp
+    core/StateManager.cpp
+    widgets/WorkflowController.cpp
 )
 
 target_include_directories(RecoverySuite_GUI

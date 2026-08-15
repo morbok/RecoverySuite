@@ -100,3 +100,18 @@ third_party/
 # Graphify analysis output
 graphify-out/
 */graphify-out/
+
+# Local build directories
+build*/
+bin/
+lib/
+
+# Local build directories
+build*/
+bin/
+lib/
+
+# Local build directories
+build*/
+bin/
+lib/
