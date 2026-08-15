@@ -182,7 +182,7 @@ bool FilesystemAnalyzer::getFilesystemInfo(
     return false;
 }
 
-bool FilesystemAnalyzer::isSectorRangeValid(uint64_t startSector, uint64_t numSectors) const {
+bool FilesystemAnalyzer::isSectorRangeValid(uint64_t /*startSector*/, uint64_t numSectors) const {
     // Validate that we have a disk reader
     if (diskReader_ == nullptr) {
         return false;
@@ -198,14 +198,14 @@ bool FilesystemAnalyzer::isSectorRangeValid(uint64_t startSector, uint64_t numSe
 
     // Check for overflow in startSector + numSectors
     // If startSector + numSectors < startSector, overflow occurred
-    if (startSector > std::numeric_limits<uint64_t>::max() - numSectors) {
+    if (startSector_ > std::numeric_limits<uint64_t>::max() - numSectors) {
         return false; // Overflow would occur
     }
 
-    uint64_t endSector = startSector + numSectors;
+    uint64_t endSector = startSector_ + numSectors;
 
     // Check if start is beyond the disk
-    if (startSector >= totalSectors) {
+    if (startSector_ >= totalSectors) {
         return false;
     }
 
@@ -269,15 +269,18 @@ std::string FilesystemAnalyzer::detectFilesystemType(const std::vector<uint8_t>&
     if (bootSectorData.size() >= 512) {
         if (bootSectorData[0x1FE] == 0x55 && bootSectorData[0x1FF] == 0xAA) {
             // Check FAT type based on BPB fields
-            uint16_t bytesPerSector = *(uint16_t*)&bootSectorData[0x0B];
+            uint16_t bytesPerSector = *reinterpret_cast<const uint16_t*>(&bootSectorData[0x0B]);
             uint8_t sectorsPerCluster = bootSectorData[0x0D];
-            uint16_t reservedSectorCount = *(uint16_t*)&bootSectorData[0x0E];
+            (void)sectorsPerCluster; // unused variable
+            uint16_t reservedSectorCount = *reinterpret_cast<const uint16_t*>(&bootSectorData[0x0E]);
+            (void)reservedSectorCount; // unused variable
             uint8_t numFATs = bootSectorData[0x10];
-            uint16_t rootEntryCount = *(uint16_t*)&bootSectorData[0x11];
-            uint16_t totalSectors16 = *(uint16_t*)&bootSectorData[0x13];
-            uint32_t totalSectors32 = *(uint32_t*)&bootSectorData[0x20];
-            uint32_t FATSize16 = *(uint16_t*)&bootSectorData[0x16];
-            uint32_t FATSize32 = *(uint32_t*)&bootSectorData[0x24];
+            (void)numFATs; // unused variable
+            uint16_t rootEntryCount = *reinterpret_cast<const uint16_t*>(&bootSectorData[0x11]);
+            uint16_t totalSectors16 = *reinterpret_cast<const uint16_t*>(&bootSectorData[0x13]);
+            uint32_t totalSectors32 = *reinterpret_cast<const uint32_t*>(&bootSectorData[0x20]);
+            uint32_t FATSize16 = *reinterpret_cast<const uint16_t*>(&bootSectorData[0x16]);
+            uint32_t FATSize32 = *reinterpret_cast<const uint32_t*>(&bootSectorData[0x24]);
 
             uint32_t totalSectors = (totalSectors16 != 0) ? totalSectors16 : totalSectors32;
             uint32_t fatSize = (FATSize16 != 0) ? FATSize16 : FATSize32;
@@ -323,6 +326,7 @@ std::string FilesystemAnalyzer::detectFilesystemType(const std::vector<uint8_t>&
 bool FilesystemAnalyzer::analyzeFatFilesystem(
     const std::vector<uint8_t>& bootSectorData,
     std::map<std::string, std::string>& analysisResults) const {
+    (void)bootSectorData; // unused parameter
 
     // Create a filesystem reader from the disk reader
     // We need to determine the volume start offset and sector size
@@ -346,6 +350,7 @@ bool FilesystemAnalyzer::analyzeFatFilesystem(
     analysisResults["Bytes Per Sector"] = std::to_string(fatMetadata.getBytesPerSector());
     analysisResults["Sectors Per Cluster"] = std::to_string(fatMetadata.getSectorsPerCluster());
     analysisResults["Reserved Sector Count"] = std::to_string(fatMetadata.getReservedSectorCount());
+    (void)fatMetadata.getFatCount(); // unused variable
     analysisResults["Number of FATs"] = std::to_string(fatMetadata.getFatCount());
     analysisResults["Root Entry Count"] = std::to_string(fatMetadata.getRootEntryCount());
     analysisResults["Total Sectors (16-bit)"] = std::to_string(fatMetadata.getTotalSectors16());
@@ -385,7 +390,7 @@ bool FilesystemAnalyzer::analyzeFatFilesystem(
 }
 
 bool FilesystemAnalyzer::analyzeNtfsFilesystem(
-    const std::vector<uint8_t>& bootSectorData,
+    const std::vector<uint8_t>& /*bootSectorData*/,
     std::map<std::string, std::string>& analysisResults) const {
 
     // Create a filesystem reader from the disk reader

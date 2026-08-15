@@ -96,7 +96,7 @@ bool FilesystemDetector::detectFilesystems(
     return false;
 }
 
-bool FilesystemDetector::isSectorRangeValid(uint64_t startSector, uint64_t numSectors) const {
+bool FilesystemDetector::isSectorRangeValid(uint64_t /*startSector*/, uint64_t numSectors) const {
     // In a real implementation, we would check against the disk's actual size
     // For now, we'll do a basic validation
     if (numSectors == 0) {
@@ -114,15 +114,18 @@ std::string FilesystemDetector::detectFilesystemType(const std::vector<uint8_t>&
     if (bootSectorData.size() >= 512) {
         if (bootSectorData[0x1FE] == 0x55 && bootSectorData[0x1FF] == 0xAA) {
             // Check FAT type based on BPB fields
-            uint16_t bytesPerSector = *(uint16_t*)&bootSectorData[0x0B];
+            uint16_t bytesPerSector = *reinterpret_cast<const uint16_t*>(&bootSectorData[0x0B]);
             uint8_t sectorsPerCluster = bootSectorData[0x0D];
-            uint16_t reservedSectorCount = *(uint16_t*)&bootSectorData[0x0E];
+            (void)sectorsPerCluster; // unused variable
+            uint16_t reservedSectorCount = *reinterpret_cast<const uint16_t*>(&bootSectorData[0x0E]);
+            (void)reservedSectorCount; // unused variable
             uint8_t numFATs = bootSectorData[0x10];
-            uint16_t rootEntryCount = *(uint16_t*)&bootSectorData[0x11];
-            uint16_t totalSectors16 = *(uint16_t*)&bootSectorData[0x13];
-            uint32_t totalSectors32 = *(uint32_t*)&bootSectorData[0x20];
-            uint32_t FATSize16 = *(uint16_t*)&bootSectorData[0x16];
-            uint32_t FATSize32 = *(uint32_t*)&bootSectorData[0x24];
+            (void)numFATs; // unused variable
+            uint16_t rootEntryCount = *reinterpret_cast<const uint16_t*>(&bootSectorData[0x11]);
+            uint16_t totalSectors16 = *reinterpret_cast<const uint16_t*>(&bootSectorData[0x13]);
+            uint32_t totalSectors32 = *reinterpret_cast<const uint32_t*>(&bootSectorData[0x20]);
+            uint32_t FATSize16 = *reinterpret_cast<const uint16_t*>(&bootSectorData[0x16]);
+            uint32_t FATSize32 = *reinterpret_cast<const uint32_t*>(&bootSectorData[0x24]);
 
             uint32_t totalSectors = (totalSectors16 != 0) ? totalSectors16 : totalSectors32;
             uint32_t fatSize = (FATSize16 != 0) ? FATSize16 : FATSize32;

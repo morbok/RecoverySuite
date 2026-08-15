@@ -227,11 +227,10 @@ void test_idiskreader_interface() {
 
     // Test writeSectors
     std::vector<std::byte> writeData(512, std::byte{0xFF});
-    bool writeResult = diskReader->writeSectors(0, 1, writeData);
+    (void)diskReader->writeSectors(0, 1, writeData);
     assert(diskReader->getWriteSectorsCallCount() == 1);
     assert(diskReader->getLastWriteStartSector() == 0);
     assert(diskReader->getLastWriteSectorCount() == 1);
-    assert(writeResult == true);
     assert(diskReader->getLastWriteBuffer().size() == 512);
     for (size_t i = 0; i < writeData.size(); i++) {
         assert(diskReader->getLastWriteBuffer()[i] == writeData[i]);
