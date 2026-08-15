@@ -1,6 +1,7 @@
 # RecoverySuite GUI Module
 add_library(RecoverySuite_GUI STATIC
-    dummy.cpp
+    main.cpp
+    core/Application.cpp
 )
 
 target_include_directories(RecoverySuite_GUI
@@ -9,6 +10,7 @@ target_include_directories(RecoverySuite_GUI
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/src
 )
 
 # Set C++20 standard for this target
