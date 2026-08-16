@@ -17,6 +17,7 @@
 #include <QStackedWidget>
 #include <QVBoxLayout>
 #include "widgets/SourceDiscoveryWidget.h"
+#include "widgets/RecoveryConfigurationWidget.h"
 
 namespace recoverysuite {
 namespace gui {
@@ -171,6 +172,11 @@ void MainWindow::setupWorkflowContainer() {
     progressWidget_ = new recoverysuite::gui::widgets::OperationProgressWidget();
     workflowLayout->addWidget(progressWidget_);
 
+    // Create and add the recovery configuration widget
+    recoveryConfigurationWidget_ = new recoverysuite::gui::widgets::RecoveryConfigurationWidget();
+    recoveryConfigurationWidget_->setRecoveryService(recoveryService_);
+    workflowLayout->addWidget(recoveryConfigurationWidget_);
+
     // Add the container to the stacked widget
     stackedWidget_->addWidget(workflowContainer_);
 }
@@ -187,6 +193,10 @@ void MainWindow::setupConnections() {
     // Connect source discovery widget signals
     connect(sourceDiscoveryWidget_, &recoverysuite::gui::widgets::SourceDiscoveryWidget::sourceSelected,
             this, &MainWindow::onSourceSelected);
+
+    // Connect recovery configuration widget signals
+    connect(recoveryConfigurationWidget_, &recoverysuite::gui::widgets::RecoveryConfigurationWidget::configurationReady,
+            this, &MainWindow::onConfigurationReady);
 }
 
 void MainWindow::handleWorkflowOperation(const QString& operationType) {
@@ -354,20 +364,99 @@ void MainWindow::handleDetectFilesystem() {
         return;
     }
 
-    // TODO: Implement actual filesystem detection using GUIRecoveryService
-    // For now, show placeholder
-    QMessageBox::information(this, "Filesystem Detection",
-        QString("Selected partition: %1\n\n"
-                "Detected filesystem: NTFS\n"
-                "Version: 3.1\n"
-                "Cluster size: 4096 bytes\n"
-                "Serial number: 0x1a2b3c4d")
-        .arg(selectedDevice_));
-    statusLabel_->setText("Ready");
-    isOperationRunning_ = false;
+    // For filesystem detection, we analyze the first few sectors (boot sector area)
+    // to determine the filesystem type
+    const uint64_t startSector = 0;
+    const uint64_t numSectors = 16; // Analyze first 16 sectors for detection
+
+    // Update UI for operation start
+    statusLabel_->setText(QString("Detecting filesystem on %1...").arg(selectedDevice_));
     if (stackedWidget_->currentIndex() == 1) {
-        workflowWidget_->setOperationRunning(false);
+        workflowWidget_->setOperationRunning(true);
     }
+    isOperationRunning_ = true;
+
+    // Set up progress callback
+    auto progressCallback = [this](const recoverysuite::application::service::models::RecoveryProgress& progress) {
+        // Update progress widget directly (we're in the GUI thread)
+        updateProgressFromService(QString::fromStdString(progress.operationType),
+                                 progress.percentage,
+                                 QString::fromStdString(progress.currentStep));
+    };
+
+    // Set up cancellation token
+    auto cancellationToken = [this]() -> bool {
+        // Allow cancellation if we're still in FILESYSTEM_DETECTION state
+        return stateManager_.getCurrentState() == ApplicationState::FILESYSTEM_DETECTION;
+    };
+
+    // Start detection in a way that doesn't block the UI
+    QTimer::singleShot(100, this, [this, startSector, numSectors, progressCallback, cancellationToken]() {
+        try {
+            // Call the actual recovery service
+            auto result = recoveryService_->analyzeFilesystem(selectedDevice_.toStdString(), startSector, numSectors);
+
+            // Handle result
+            if (result.success) {
+                // Transition to results state on success
+                stateManager_.transitionTo(ApplicationState::FILESYSTEM_ANALYSIS);
+                updateUIForState();
+
+                // Format the filesystem information for display
+                QString message = QString("Filesystem detection completed for %1\n\n")
+                    .arg(QString::fromStdString(result.filesystemInfo.type));
+
+                if (!result.filesystemInfo.version.empty()) {
+                    message += QString("Version: %1\n").arg(QString::fromStdString(result.filesystemInfo.version));
+                }
+                message += QString("Cluster Size: %1 bytes\n")
+                    .arg(result.filesystemInfo.clusterSizeBytes);
+                if (!result.filesystemInfo.volumeLabel.empty()) {
+                    message += QString("Volume Label: %1\n").arg(QString::fromStdString(result.filesystemInfo.volumeLabel));
+                }
+                if (!result.filesystemInfo.serialNumber.empty()) {
+                    message += QString("Serial Number: %1\n").arg(QString::fromStdString(result.filesystemInfo.serialNumber));
+                }
+                message += QString("Total Size: %1 bytes\n")
+                    .arg(result.filesystemInfo.totalSizeBytes);
+                message += QString("Used Space: %1 bytes (%2%)")
+                    .arg(result.filesystemInfo.usedSizeBytes)
+                    .arg(result.filesystemInfo.totalSizeBytes > 0 ?
+                           QString::number((result.filesystemInfo.usedSizeBytes * 100.0) / result.filesystemInfo.totalSizeBytes, 'f', 1) : "0");
+                message += QString("Free Space: %1 bytes (%2%)")
+                    .arg(result.filesystemInfo.freeSizeBytes)
+                    .arg(result.filesystemInfo.totalSizeBytes > 0 ?
+                           QString::number((result.filesystemInfo.freeSizeBytes * 100.0) / result.filesystemInfo.totalSizeBytes, 'f', 1) : "0");
+                message += QString("Read-Only: %1\n")
+                    .arg(result.filesystemInfo.isReadOnly ? "Yes" : "No");
+                message += QString("Corrupted: %1\n")
+                    .arg(result.filesystemInfo.isCorrupted ? "Yes" : "No");
+
+                QMessageBox::information(this, "Filesystem Detection Results", message);
+            } else {
+                // Transition to error state on failure
+                stateManager_.transitionTo(ApplicationState::ERROR);
+                updateUIForState();
+
+                QMessageBox::warning(this, "Filesystem Detection Failed",
+                    QString("Detection failed: %1").arg(QString::fromStdString(result.errorMessage)));
+            }
+        } catch (const std::exception& e) {
+            // Transition to error state on exception
+            stateManager_.transitionTo(ApplicationState::ERROR);
+            updateUIForState();
+
+            QMessageBox::critical(this, "Detection Error",
+                QString("Error during detection: %1").arg(QString::fromStdString(e.what())));
+        }
+
+        // Reset UI
+        statusLabel_->setText("Ready");
+        isOperationRunning_ = false;
+        if (stackedWidget_->currentIndex() == 1) {
+            workflowWidget_->setOperationRunning(false);
+        }
+    });
 }
 
 void MainWindow::handleAnalyzeFilesystem() {
@@ -747,6 +836,42 @@ void MainWindow::onSourceSelected(const QString& devicePath) {
     } else {
         QMessageBox::warning(this, "State Transition Error",
             "Failed to transition to storage partition inspection state.");
+        statusLabel_->setText("Ready");
+    }
+}
+
+// Slot to handle configuration ready from recovery configuration widget
+void MainWindow::onConfigurationReady(const recoverysuite::application::service::models::RecoveryOperation& operation) {
+    // Store the operation for later use (in a real implementation, we'd pass it to the recovery service)
+    // For now, we'll just transition to validation state and show a message
+
+    // Transition to validation state
+    if (stateManager_.transitionTo(ApplicationState::VALIDATION)) {
+        // Update the status
+        statusLabel_->setText(tr("Configuration validated. Ready to execute: %1")
+                              .arg(QString::fromStdString(operation.operationType)));
+
+        // Show a message box with the configuration details
+        QString message = QString("Recovery operation configured:\n\n"
+                                 "Operation: %1\n"
+                                 "Device: %2\n"
+                                 "Start Sector: %3\n"
+                                 "Number of Sectors: %4\n"
+                                 "Output Path: %5\n"
+                                 "Verify After Recovery: %6\n"
+                                 "Create Log File: %7")
+            .arg(QString::fromStdString(operation.operationType))
+            .arg(QString::fromStdString(operation.targetDevicePath))
+            .arg(operation.startSector)
+            .arg(operation.numSectors)
+            .arg(QString::fromStdString(operation.outputPath))
+            .arg(operation.verifyAfterRecovery ? "Yes" : "No")
+            .arg(operation.createLogFile ? "Yes" : "No");
+
+        QMessageBox::information(this, "Configuration Ready", message);
+    } else {
+        QMessageBox::warning(this, "State Transition Error",
+            "Failed to transition to validation state.");
         statusLabel_->setText("Ready");
     }
 }

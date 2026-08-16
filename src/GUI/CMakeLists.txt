@@ -13,6 +13,7 @@ add_library(RecoverySuite_GUI STATIC
     widgets/RecoveryWorkflowWidget.cpp
     widgets/OperationProgressWidget.cpp
     widgets/SourceDiscoveryWidget.cpp
+    widgets/RecoveryConfigurationWidget.cpp
     core/MainWindow.cpp
 )
 
@@ -22,6 +23,7 @@ set(GUI_MOC_HEADERS
     widgets/RecoveryWorkflowWidget.h
     widgets/OperationProgressWidget.h
     widgets/SourceDiscoveryWidget.h
+    widgets/RecoveryConfigurationWidget.h
 )
 
 # Generate moc files

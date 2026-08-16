@@ -14,6 +14,7 @@
 #include "widgets/RecoveryWorkflowWidget.h"
 #include "widgets/OperationProgressWidget.h"
 #include "widgets/SourceDiscoveryWidget.h"
+#include "widgets/RecoveryConfigurationWidget.h"
 
 namespace recoverysuite {
 namespace gui {
@@ -69,6 +70,12 @@ public slots:
      * @param devicePath The path of the selected device
      */
     void onSourceSelected(const QString& devicePath);
+
+    /**
+     * @brief Handle configuration ready from recovery configuration widget
+     * @param operation The configured recovery operation
+     */
+    void onConfigurationReady(const recoverysuite::application::service::models::RecoveryOperation& operation);
 
 private slots:
     /**
@@ -162,6 +169,7 @@ private:
     recoverysuite::gui::widgets::SourceDiscoveryWidget* sourceDiscoveryWidget_;
     recoverysuite::gui::widgets::RecoveryWorkflowWidget* workflowWidget_;
     recoverysuite::gui::widgets::OperationProgressWidget* progressWidget_;
+    recoverysuite::gui::widgets::RecoveryConfigurationWidget* recoveryConfigurationWidget_;
     QWidget* workflowContainer_;
 
     // Application State Management
