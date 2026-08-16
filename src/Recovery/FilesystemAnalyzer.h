@@ -87,6 +87,18 @@ private:
         std::map<std::string, std::string>& analysisResults
     ) const;
 
+    // Helper to analyze FAT filesystem from boot sector only
+    bool analyzeFatFromBootSector(
+        const std::vector<uint8_t>& bootSectorData,
+        std::map<std::string, std::string>& analysisResults
+    ) const;
+
+    // Helper to analyze NTFS filesystem from boot sector only
+    bool analyzeNtfsFromBootSector(
+        const std::vector<uint8_t>& bootSectorData,
+        std::map<std::string, std::string>& analysisResults
+    ) const;
+
     // Helper to read sectors from disk
     bool readSectors(
         uint64_t startSector,

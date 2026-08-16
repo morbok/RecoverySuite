@@ -185,9 +185,9 @@ void test_gui_progress_callback() {
     std::cout << "Testing GUI progress callback..." << std::endl;
 
     bool callbackCalled = false;
-    models::RecoveryProgress lastProgress;
+    recoverysuite::application::service::models::RecoveryProgress lastProgress;
 
-    auto progressCallback = [&](const models::RecoveryProgress& progress) {
+    auto progressCallback = [&](const recoverysuite::application::service::models::RecoveryProgress& progress) {
         callbackCalled = true;
         lastProgress = progress;
     };

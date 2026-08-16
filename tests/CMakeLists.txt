@@ -51,7 +51,7 @@ target_link_libraries(RecoverySuite_StorageTest
 if(UNIX AND NOT APPLE)
     target_link_libraries(RecoverySuite_StorageTest
         PRIVATE
-            /usr/lib/x86_64-linux-gnu/libudev.so.1
+            /usr/lib64/libudev.so.1
     )
 elseif(APPLE)
     target_link_libraries(RecoverySuite_StorageTest
@@ -357,13 +357,14 @@ add_executable(test_gui_recovery_service
     test_gui_recovery_service.cpp
 )
 
-# Link with core, disk, recovery, application, and logging libraries
+# Link with core, disk, recovery, application, GUI, and logging libraries
 target_link_libraries(test_gui_recovery_service
     PRIVATE
         RecoverySuite_Core
         RecoverySuite_Disk
         RecoverySuite_Recovery
         RecoverySuite_Application
+        RecoverySuite_GUI
         RecoverySuite_Logging
 )
 

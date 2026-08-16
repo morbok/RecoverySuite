@@ -1,5 +1,5 @@
 #include "GUIRecoveryService.h"
-#include "../RecoveryService.h"
+#include "RecoveryService.h"
 #include "../../Logging/Logger.h"
 #include <stdexcept>
 #include <chrono>
@@ -11,7 +11,7 @@ namespace service {
 
 GUIRecoveryService::GUIRecoveryService(std::shared_ptr<recoverysuite::disk::IDiskReader> diskReader,
                                        const recoverysuite::recovery::RecoverySafetyPolicy& safetyPolicy)
-    : recoveryService_(std::make_unique<RecoveryService>(diskReader, safetyPolicy)) {
+    : recoveryService_(diskReader ? std::make_unique<RecoveryService>(diskReader, safetyPolicy) : nullptr) {
     recoverysuite::logging::Logger::instance().info("GUIRecoveryService initialized");
 }
 
@@ -26,6 +26,13 @@ std::vector<models::StorageDevice> GUIRecoveryService::enumerateStorageDevices()
     // In a real implementation, we would use the DiskManager or similar
     // to enumerate actual storage devices.
 
+    if (!recoveryService_) {
+        recoverysuite::logging::Logger::instance().info("No recovery service available, returning empty device list");
+        // For now, return an empty vector as we don't have access to the disk manager here
+        // A full implementation would delegate to the underlying recovery service or disk manager
+        return std::vector<models::StorageDevice>();
+    }
+
     recoverysuite::logging::Logger::instance().info("Enumerating storage devices (GUI level)");
 
     // For now, return an empty vector as we don't have access to the disk manager here
@@ -37,7 +44,20 @@ models::StorageDevice GUIRecoveryService::getStorageDeviceInfo(const std::string
     models::StorageDevice device;
     device.devicePath = devicePath;
 
+    if (!recoveryService_) {
+        recoverysuite::logging::Logger::instance().info("No recovery service available, returning default device info");
+        return device;
+    }
+
     try {
+        // Check if we have a valid disk reader first
+        auto diskReader = recoveryService_->getDiskReader();
+        if (!diskReader) {
+            // Return default device info when no disk reader is available
+            recoverysuite::logging::Logger::instance().info("No disk reader available, returning default device info");
+            return device;
+        }
+
         // Get disk info from the underlying recovery service
         auto diskInfo = recoveryService_->getDiskInfo();
 
@@ -47,7 +67,7 @@ models::StorageDevice GUIRecoveryService::getStorageDeviceInfo(const std::string
         device.sectorSizeBytes = diskInfo.bytesPerSector;
         // Note: isRemovable and isReadOnly would need to be determined from platform-specific info
         device.isRemovable = false;  // Placeholder
-        device.isReadOnly = diskInfo.readOnly;  // Assuming this field exists
+        device.isReadOnly = diskInfo.isReadOnly;  // Corrected field name
 
     } catch (const std::exception& e) {
         recoverysuite::logging::Logger::instance().error("Error getting storage device info: " + std::string(e.what()));
@@ -71,6 +91,13 @@ std::vector<models::Partition> GUIRecoveryService::getDevicePartitions(const std
 
 models::AnalysisResult GUIRecoveryService::analyzeFilesystem(const std::string& devicePath, uint64_t startSector, uint64_t numSectors) {
     models::AnalysisResult result;
+    result.success = false;
+    result.errorMessage = "Recovery service not available";
+
+    if (!recoveryService_) {
+        recoverysuite::logging::Logger::instance().info("No recovery service available for filesystem analysis");
+        return result;
+    }
 
     try {
         recoverysuite::logging::Logger::instance().info("GUI requesting filesystem analysis: " + devicePath +
@@ -117,6 +144,13 @@ models::RecoveryResult GUIRecoveryService::recoverFiles(const std::string& devic
                                                        std::function<void(const models::RecoveryProgress&)> progressCallback,
                                                        std::function<bool()> cancellationToken) {
     models::RecoveryResult result;
+    result.success = false;
+    result.errorMessage = "Recovery service not available";
+
+    if (!recoveryService_) {
+        recoverysuite::logging::Logger::instance().info("No recovery service available for file recovery");
+        return result;
+    }
 
     try {
         recoverysuite::logging::Logger::instance().info("GUI requesting file recovery: " + devicePath +
@@ -195,6 +229,13 @@ models::RecoveryResult GUIRecoveryService::recoverMetadata(const std::string& de
                                                           std::function<void(const models::RecoveryProgress&)> progressCallback,
                                                           std::function<bool()> cancellationToken) {
     models::RecoveryResult result;
+    result.success = false;
+    result.errorMessage = "Recovery service not available";
+
+    if (!recoveryService_) {
+        recoverysuite::logging::Logger::instance().info("No recovery service available for metadata recovery");
+        return result;
+    }
 
     try {
         recoverysuite::logging::Logger::instance().info("GUI requesting metadata recovery: " + devicePath +
@@ -270,6 +311,13 @@ models::RecoveryResult GUIRecoveryService::carveFiles(const std::string& deviceP
                                                      std::function<void(const models::RecoveryProgress&)> progressCallback,
                                                      std::function<bool()> cancellationToken) {
     models::RecoveryResult result;
+    result.success = false;
+    result.errorMessage = "Recovery service not available";
+
+    if (!recoveryService_) {
+        recoverysuite::logging::Logger::instance().info("No recovery service available for carving");
+        return result;
+    }
 
     try {
         recoverysuite::logging::Logger::instance().info("GUI requesting carving: " + devicePath +
@@ -341,6 +389,11 @@ models::RecoveryResult GUIRecoveryService::carveFiles(const std::string& deviceP
 }
 
 bool GUIRecoveryService::isSectorRangeValid(const std::string& devicePath, uint64_t startSector, uint64_t numSectors) const {
+    if (!recoveryService_) {
+        recoverysuite::logging::Logger::instance().info("No recovery service available, assuming sector range is invalid");
+        return false;
+    }
+
     try {
         // Get the disk reader for this device and delegate to the underlying service
         auto diskReader = getDiskReaderForDevice(devicePath);
@@ -357,6 +410,13 @@ bool GUIRecoveryService::isSectorRangeValid(const std::string& devicePath, uint6
 }
 
 recoverysuite::disk::DeviceInformation GUIRecoveryService::getDiskInfo(const std::string& devicePath) const {
+    if (!recoveryService_) {
+        recoverysuite::logging::Logger::instance().info("No recovery service available, returning empty disk info");
+        // Return empty device information on error
+        recoverysuite::disk::DeviceInformation info;
+        return info;
+    }
+
     try {
         // Get the disk reader for this device and delegate to the underlying service
         auto diskReader = getDiskReaderForDevice(devicePath);
@@ -375,7 +435,7 @@ recoverysuite::disk::DeviceInformation GUIRecoveryService::getDiskInfo(const std
     return info;
 }
 
-uint64_t GUIRecoveryService::extractDiskNumber(const std::string& devicePath) const {
+uint64_t GUIRecoveryService::extractDiskNumber(const std::string& /*devicePath*/) const {
     // Simple implementation - in reality this would be platform-specific
     // For Linux: /dev/sda -> 0, /dev/sdb -> 1, etc.
     // For Windows: \\\\.\\PhysicalDrive0 -> 0, etc.
@@ -384,7 +444,7 @@ uint64_t GUIRecoveryService::extractDiskNumber(const std::string& devicePath) co
     return 0;
 }
 
-std::shared_ptr<recoverysuite::disk::IDiskReader> GUIRecoveryService::getDiskReaderForDevice(const std::string& devicePath) const {
+std::shared_ptr<recoverysuite::disk::IDiskReader> GUIRecoveryService::getDiskReaderForDevice(const std::string& /*devicePath*/) const {
     // Delegate to the underlying recovery service's disk reader
     // In a more complex implementation, we might need to create a new reader
     // specific to this device path

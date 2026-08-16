@@ -1,5 +1,8 @@
 #include "WorkflowController.h"
+#include "../core/ApplicationState.h"
 #include <iostream>
+
+using recoverysuite::gui::core::ApplicationState;
 
 namespace recoverysuite {
 namespace gui {

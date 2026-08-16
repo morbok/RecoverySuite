@@ -67,7 +67,7 @@ elseif(UNIX AND NOT APPLE)
     target_link_libraries(RecoverySuite_Storage
         PUBLIC
             pthread
-            /usr/lib/x86_64-linux-gnu/libudev.so.1
+            /usr/lib64/libudev.so.1
     )
 elseif(APPLE)
     # macOS-specific libraries

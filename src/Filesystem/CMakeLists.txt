@@ -10,6 +10,7 @@ add_library(RecoverySuite_Filesystem STATIC
     FilesystemMetadata.h
     FilesystemVolume.h
     FilesystemManager.h
+    FilesystemManager.cpp
     SimpleFilesystemRegistry.h
     SimpleFilesystemRegistry.cpp
 

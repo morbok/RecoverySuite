@@ -47,6 +47,9 @@ private:
     QProgressBar* progressBar_;
     QLabel* statusLabel_;
     QLabel* detailsLabel_;
+
+    // Private methods
+    void setupUI();
 };
 
 } // namespace widgets

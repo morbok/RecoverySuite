@@ -86,7 +86,7 @@ public:
 
 private:
     // State management
-    StateManager stateManager_;
+    recoverysuite::gui::core::StateManager stateManager_;
     std::shared_ptr<recoverysuite::application::service::RecoveryService> recoveryService_;
 
     // Callbacks

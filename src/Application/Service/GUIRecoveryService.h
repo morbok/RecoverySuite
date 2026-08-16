@@ -8,8 +8,8 @@
 #include <cstdint>
 #include <functional>
 #include <chrono>
-#include "../Models/GUIModels.h"
-#include "../RecoveryService.h"
+#include "Models/GUIModels.h"
+#include "RecoveryService.h"
 
 namespace recoverysuite {
 namespace application {

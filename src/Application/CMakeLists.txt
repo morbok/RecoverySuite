@@ -1,6 +1,7 @@
 # RecoverySuite Application Module
 add_library(RecoverySuite_Application STATIC
     Service/RecoveryService.cpp
+    Service/GUIRecoveryService.cpp
 )
 
 target_include_directories(RecoverySuite_Application

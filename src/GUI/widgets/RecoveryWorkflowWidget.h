@@ -55,6 +55,18 @@ private:
     QPushButton* cancelOperationButton_;
 
     QLabel* statusLabel_;
+
+    // Private methods
+    void setupUI();
+    void setupConnections();
+    void setOperationCompleted(bool success, const QString& message);
+
+public:
+    /**
+     * @brief Set the operation running state
+     * @param running True if operation is running, false otherwise
+     */
+    void setOperationRunning(bool running);
 };
 
 } // namespace widgets
