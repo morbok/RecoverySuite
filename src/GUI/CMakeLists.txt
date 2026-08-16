@@ -1,10 +1,18 @@
 # RecoverySuite GUI Module
+cmake_minimum_required(VERSION 3.16...3.20)
+
+# Find Qt6 packages
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
+
 add_library(RecoverySuite_GUI STATIC
     main.cpp
     core/Application.cpp
     core/ApplicationState.cpp
     core/StateManager.cpp
     widgets/WorkflowController.cpp
+    widgets/RecoveryWorkflowWidget.cpp
+    widgets/OperationProgressWidget.cpp
+    core/MainWindow.cpp
 )
 
 target_include_directories(RecoverySuite_GUI
@@ -27,6 +35,9 @@ target_link_libraries(RecoverySuite_GUI
         RecoverySuite_Config
         RecoverySuite_Utilities
         RecoverySuite_Common
+        Qt6::Core
+        Qt6::Gui
+        Qt6::Widgets
 )
 
 # Install headers

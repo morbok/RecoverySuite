@@ -153,6 +153,15 @@ private:
     mutable std::unique_ptr<recoverysuite::recovery::MetadataRecovery> metadataRecovery_;
     mutable std::unique_ptr<recoverysuite::recovery::CarvingEngine> carvingEngine_;
 
+public:
+    /**
+     * @brief Get the disk reader used by this service
+     * @return Shared pointer to the disk reader
+     */
+    std::shared_ptr<recoverysuite::disk::IDiskReader> getDiskReader() const {
+        return diskReader_;
+    }
+
     /**
      * Initialize internal recovery components if needed
      */

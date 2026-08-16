@@ -351,3 +351,22 @@ target_link_libraries(test_gui_state_management
 # Add the test to CTest
 add_test(NAME test_gui_state_management
          COMMAND test_gui_state_management)
+
+# GUI recovery service test
+add_executable(test_gui_recovery_service
+    test_gui_recovery_service.cpp
+)
+
+# Link with core, disk, recovery, application, and logging libraries
+target_link_libraries(test_gui_recovery_service
+    PRIVATE
+        RecoverySuite_Core
+        RecoverySuite_Disk
+        RecoverySuite_Recovery
+        RecoverySuite_Application
+        RecoverySuite_Logging
+)
+
+# Add the test to CTest
+add_test(NAME test_gui_recovery_service
+         COMMAND test_gui_recovery_service)
