@@ -237,78 +237,78 @@ add_test(NAME test_filesystem_analysis
          COMMAND test_filesystem_analysis)
 
 # Metadata recovery security test
-	add_executable(test_metadata_recovery_security
-	    test_metadata_recovery_security/test_metadata_recovery_security.cpp
-	)
+    add_executable(test_metadata_recovery_security
+        test_metadata_recovery_security/test_metadata_recovery_security.cpp
+    )
 
-	# Link with core, disk, and recovery libraries
-	target_link_libraries(test_metadata_recovery_security
-	    PRIVATE
-	    RecoverySuite_Core
-	    RecoverySuite_Disk
-	    RecoverySuite_Recovery
-	)
+    # Link with core, disk, and recovery libraries
+    target_link_libraries(test_metadata_recovery_security
+        PRIVATE
+        RecoverySuite_Core
+        RecoverySuite_Disk
+        RecoverySuite_Recovery
+    )
 
-	# Add the test to CTest
-	add_test(NAME test_metadata_recovery_security
-	         COMMAND test_metadata_recovery_security)
+    # Add the test to CTest
+    add_test(NAME test_metadata_recovery_security
+             COMMAND test_metadata_recovery_security)
 
 # Application layer readiness test
-	add_executable(test_application_layer_readiness
-	    test_application_layer_readiness/test_application_layer_readiness.cpp
-	)
+    add_executable(test_application_layer_readiness
+        test_application_layer_readiness/test_application_layer_readiness.cpp
+    )
 
-	# Link with core, disk, recovery, application, and logging libraries
-	target_link_libraries(test_application_layer_readiness
-	    PRIVATE
-	    RecoverySuite_Core
-	    RecoverySuite_Disk
-	    RecoverySuite_Recovery
-	    RecoverySuite_Application
-	    RecoverySuite_Logging
-	)
+    # Link with core, disk, recovery, application, and logging libraries
+    target_link_libraries(test_application_layer_readiness
+        PRIVATE
+        RecoverySuite_Core
+        RecoverySuite_Disk
+        RecoverySuite_Recovery
+        RecoverySuite_Application
+        RecoverySuite_Logging
+    )
 
-	# Add the test to CTest
-	add_test(NAME test_application_layer_readiness
-	         COMMAND test_application_layer_readiness)
+    # Add the test to CTest
+    add_test(NAME test_application_layer_readiness
+             COMMAND test_application_layer_readiness)
 
 # Phase 13D Product Integration Validation Test
-	add_executable(test_phase13d_product_integration
-	    test_phase13d_product_integration.cpp
-	)
+    add_executable(test_phase13d_product_integration
+        test_phase13d_product_integration.cpp
+    )
 
-	# Link with core, disk, recovery, application, and filesystem libraries
-	target_link_libraries(test_phase13d_product_integration
-	    PRIVATE
-	    RecoverySuite_Core
-	    RecoverySuite_Disk
-	    RecoverySuite_Recovery
-	    RecoverySuite_Application
-	    RecoverySuite_Filesystem
-	)
+    # Link with core, disk, recovery, application, and filesystem libraries
+    target_link_libraries(test_phase13d_product_integration
+        PRIVATE
+        RecoverySuite_Core
+        RecoverySuite_Disk
+        RecoverySuite_Recovery
+        RecoverySuite_Application
+        RecoverySuite_Filesystem
+    )
 
-	# Add the test to CTest
-	add_test(NAME test_phase13d_product_integration
-	         COMMAND test_phase13d_product_integration)
+    # Add the test to CTest
+    add_test(NAME test_phase13d_product_integration
+             COMMAND test_phase13d_product_integration)
 
 # GUI interface simulation test
-	add_executable(test_gui_interface_simulation
-	    test_application_layer_readiness/test_gui_interface_simulation.cpp
-	)
+    add_executable(test_gui_interface_simulation
+        test_application_layer_readiness/test_gui_interface_simulation.cpp
+    )
 
-	# Link with core, disk, recovery, application, and logging libraries
-	target_link_libraries(test_gui_interface_simulation
-	    PRIVATE
-	    RecoverySuite_Core
-	    RecoverySuite_Disk
-	    RecoverySuite_Recovery
-	    RecoverySuite_Application
-	    RecoverySuite_Logging
-	)
+    # Link with core, disk, recovery, application, and logging libraries
+    target_link_libraries(test_gui_interface_simulation
+        PRIVATE
+        RecoverySuite_Core
+        RecoverySuite_Disk
+        RecoverySuite_Recovery
+        RecoverySuite_Application
+        RecoverySuite_Logging
+    )
 
-	# Add the test to CTest
-	add_test(NAME test_gui_interface_simulation
-	         COMMAND test_gui_interface_simulation)
+    # Add the test to CTest
+    add_test(NAME test_gui_interface_simulation
+             COMMAND test_gui_interface_simulation)
 
 # CLI test
 add_executable(RecoverySuite_CLI_Test
@@ -386,3 +386,23 @@ target_link_libraries(test_recovery_configuration
 # Add the test to CTest
 add_test(NAME test_recovery_configuration
          COMMAND test_recovery_configuration)
+
+# Recovery operation progress test
+add_executable(test_recovery_operation_progress
+    test_recovery_operation_progress.cpp
+)
+
+# Link with core, disk, recovery, application, GUI, and logging libraries
+target_link_libraries(test_recovery_operation_progress
+    PRIVATE
+        RecoverySuite_Core
+        RecoverySuite_Disk
+        RecoverySuite_Recovery
+        RecoverySuite_Application
+        RecoverySuite_GUI
+        RecoverySuite_Logging
+)
+
+# Add the test to CTest
+add_test(NAME test_recovery_operation_progress
+         COMMAND test_recovery_operation_progress)

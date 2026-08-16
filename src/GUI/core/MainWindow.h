@@ -16,6 +16,7 @@
 #include "widgets/SourceDiscoveryWidget.h"
 #include "widgets/RecoveryConfigurationWidget.h"
 
+
 namespace recoverysuite {
 namespace gui {
 namespace core {
@@ -77,6 +78,12 @@ public slots:
      */
     void onConfigurationReady(const recoverysuite::application::service::models::RecoveryOperation& operation);
 
+signals:
+    /**
+     * @brief Signal to cancel the current recovery operation
+     */
+    void cancelRecovery();
+
 private slots:
     /**
      * @brief Handle list storage sources operation
@@ -121,6 +128,24 @@ private slots:
      */
     void updateProgressFromService(const QString& operationName, int progress, const QString& statusText);
 
+    /**
+     * @brief Update progress from service callbacks (overloaded version)
+     * @param progress Recovery progress information
+     */
+    void updateProgressFromService(const recoverysuite::application::service::models::RecoveryProgress& progress);
+
+    /**
+     * @brief Handle progress updates from recovery worker
+     * @param progress Recovery progress information
+     */
+    void handleRecoveryProgress(const recoverysuite::application::service::models::RecoveryProgress& progress);
+
+    /**
+     * @brief Handle finished recovery operation from worker
+     * @param result Recovery result
+     */
+    void handleRecoveryFinished(const recoverysuite::application::service::models::RecoveryResult& result);
+
 private:
     /**
      * @brief Setup the user interface components
@@ -133,27 +158,27 @@ private:
     void setupMenuBar();
 
     /**
-     * @brief Create status bar
+     * * @brief Create status bar
      */
     void setupStatusBar();
 
     /**
-     * @brief Setup central widget area with stacked widget for different views
+     * * @brief Setup central widget area with stacked widget for different views
      */
     void setupCentralWidget();
 
     /**
-     * @brief Setup the workflow container widget (contains workflow and progress widgets)
+     * * @brief Setup the workflow container widget (contains workflow and progress widgets)
      */
     void setupWorkflowContainer();
 
     /**
-     * @brief Connect signals and slots
+     * * @brief Connect signals and slots
      */
     void setupConnections();
 
     /**
-     * @brief Update the UI based on the current application state
+     * * @brief Update the UI based on the current application state
      */
     void updateUIForState();
 
@@ -181,10 +206,38 @@ private:
 
     // Selected device path
     QString selectedDevice_;
+
+    // Recovery worker for background operations
+class RecoveryWorker;
+
 };
 
 } // namespace core
 } // namespace gui
 } // namespace recoverysuite
+
+// Recovery worker for background operations
+class recoverysuite::gui::core::MainWindow::RecoveryWorker : public QObject {
+    Q_OBJECT
+public:
+    RecoveryWorker(recoverysuite::application::service::GUIRecoveryService* recoveryService,
+                   const std::string& devicePath,
+                   uint64_t startSector,
+                   uint64_t numSectors,
+                   const std::string& outputPath);
+public slots:
+    void process();
+    void cancel();
+signals:
+    void progressUpdated(const recoverysuite::application::service::models::RecoveryProgress& progress);
+    void finished(const recoverysuite::application::service::models::RecoveryResult& result);
+private:
+    recoverysuite::application::service::GUIRecoveryService* recoveryService_;
+    std::string devicePath_;
+    uint64_t startSector_;
+    uint64_t numSectors_;
+    std::string outputPath_;
+    bool isCancelled_;
+};
 
 #endif // RECOVERYSUITE_GUI_CORE_MAINWINDOW_H

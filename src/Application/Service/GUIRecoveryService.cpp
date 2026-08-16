@@ -61,13 +61,11 @@ models::StorageDevice GUIRecoveryService::getStorageDeviceInfo(const std::string
         // Get disk info from the underlying recovery service
         auto diskInfo = recoveryService_->getDiskInfo();
 
-        device.modelName = diskInfo.modelNumber;
+        device.modelNumber = diskInfo.modelNumber;
         device.serialNumber = diskInfo.serialNumber;
-        device.totalSizeBytes = static_cast<uint64_t>(diskInfo.totalSectors) * diskInfo.bytesPerSector;
-        device.sectorSizeBytes = diskInfo.bytesPerSector;
-        // Note: isRemovable and isReadOnly would need to be determined from platform-specific info
-        device.isRemovable = false;  // Placeholder
-        device.isReadOnly = diskInfo.isReadOnly;  // Corrected field name
+        device.totalBytes = static_cast<uint64_t>(diskInfo.totalSectors) * diskInfo.bytesPerSector;
+        device.bytesPerSector = diskInfo.bytesPerSector;
+        device.isReadOnly = diskInfo.isReadOnly;
 
     } catch (const std::exception& e) {
         recoverysuite::logging::Logger::instance().error("Error getting storage device info: " + std::string(e.what()));
@@ -119,16 +117,11 @@ models::AnalysisResult GUIRecoveryService::analyzeFilesystem(const std::string& 
             result.filesystemInfo.usedSizeBytes = std::stoull(serviceResult.analysisResults["used_size_bytes"]);
             result.filesystemInfo.freeSizeBytes = std::stoull(serviceResult.analysisResults["free_size_bytes"]);
             result.filesystemInfo.clusterSizeBytes = std::stoul(serviceResult.analysisResults["cluster_size_bytes"]);
-            result.filesystemInfo.totalClusters = std::stoull(serviceResult.analysisResults["total_clusters"]);
-            result.filesystemInfo.freeClusters = std::stoull(serviceResult.analysisResults["free_clusters"]);
             result.filesystemInfo.volumeLabel = serviceResult.analysisResults["volume_label"];
             result.filesystemInfo.serialNumber = serviceResult.analysisResults["serial_number"];
             result.filesystemInfo.isReadOnly = (serviceResult.analysisResults["is_read_only"] == "true");
             result.filesystemInfo.isCorrupted = (serviceResult.analysisResults["is_corrupted"] == "true");
         }
-
-        result.detailedAnalysis = serviceResult.analysisResults;
-        result.timestamp = std::chrono::system_clock::now();
 
     } catch (const std::exception& e) {
         result.success = false;

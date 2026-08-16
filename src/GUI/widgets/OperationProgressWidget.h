@@ -34,6 +34,28 @@ public slots:
     void updateProgress(const QString& operationName, int progress, const QString& statusText);
 
     /**
+     * Update the progress display with detailed information
+     * @param operationName Name of the current operation
+     * @param progress Percentage progress (0-100)
+     * @param statusText Detailed status message
+     * @param processedBytes Number of processed bytes
+     * @param totalBytes Total number of bytes (0 if unknown)
+     * @param elapsedSeconds Elapsed time in seconds
+     * @param recoveredItemsCount Number of recovered items
+     * @param failedItemsCount Number of failed items
+     * @param isCancellable Whether the operation can be cancelled
+     */
+    void updateProgress(const QString& operationName,
+                        int progress,
+                        const QString& statusText,
+                        uint64_t processedBytes,
+                        uint64_t totalBytes,
+                        uint64_t elapsedSeconds,
+                        uint64_t recoveredItemsCount,
+                        uint64_t failedItemsCount,
+                        bool isCancellable);
+
+    /**
      * Reset the progress display to initial state
      */
     void resetProgress();
@@ -47,6 +69,13 @@ private:
     QProgressBar* progressBar_;
     QLabel* statusLabel_;
     QLabel* detailsLabel_;
+    // Additional labels for detailed information
+    QLabel* processedBytesLabel_;
+    QLabel* totalBytesLabel_;
+    QLabel* elapsedTimeLabel_;
+    QLabel* recoveredItemsLabel_;
+    QLabel* failedItemsLabel_;
+    QLabel* cancellableLabel_;
 
     // Private methods
     void setupUI();

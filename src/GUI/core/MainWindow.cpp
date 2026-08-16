@@ -16,12 +16,14 @@
 #include <QObject>
 #include <QStackedWidget>
 #include <QVBoxLayout>
+#include <QThread>
 #include "widgets/SourceDiscoveryWidget.h"
 #include "widgets/RecoveryConfigurationWidget.h"
 
 namespace recoverysuite {
 namespace gui {
 namespace core {
+
 
 MainWindow::MainWindow(recoverysuite::application::service::GUIRecoveryService* recoveryService, QWidget *parent)
     : QMainWindow(parent),
@@ -378,7 +380,7 @@ void MainWindow::handleDetectFilesystem() {
 
     // Set up progress callback
     auto progressCallback = [this](const recoverysuite::application::service::models::RecoveryProgress& progress) {
-        // Update progress widget directly (we're in the GUI thread)
+        // Convert to the three-parameter version for compatibility
         updateProgressFromService(QString::fromStdString(progress.operationType),
                                  progress.percentage,
                                  QString::fromStdString(progress.currentStep));
@@ -681,113 +683,122 @@ void MainWindow::handleStartRecovery() {
         workflowWidget_->setOperationRunning(true);
     }
 
-    // Set up progress callback
-    auto progressCallback = [this](const recoverysuite::application::service::models::RecoveryProgress& progress) {
-        // Update progress widget directly (we're in the GUI thread)
-        updateProgressFromService(QString::fromStdString(progress.operationType),
-                                 progress.percentage,
-                                 QString::fromStdString(progress.currentStep));
-    };
+    // Create a thread and worker for the recovery operation
+    QThread* thread = new QThread(this);
+    RecoveryWorker* worker = new RecoveryWorker(recoveryService_,
+                                               selectedDevice_.toStdString(),
+                                               startSector,
+                                               numSectors,
+                                               outputPath.toStdString());
+    worker->moveToThread(thread);
 
-    // Set up cancellation token (simplified)
-    auto cancellationToken = [this]() -> bool {
-        // Allow cancellation if we're still in RECOVERY state
-        return stateManager_.getCurrentState() == ApplicationState::RECOVERY;
-    };
+    // Connect signals and slots
+    connect(thread, &QThread::started, worker, &RecoveryWorker::process);
+    connect(worker, &RecoveryWorker::progressUpdated,
+            this, &MainWindow::handleRecoveryProgress);
+    connect(worker, &RecoveryWorker::finished,
+            this, &MainWindow::handleRecoveryFinished);
+    connect(this, &MainWindow::cancelRecovery, worker, &RecoveryWorker::cancel);
 
-    // Start recovery in a way that doesn't block the UI
-    QTimer::singleShot(100, this, [this, startSector, numSectors, outputPath, progressCallback, cancellationToken]() {
-        try {
-            // Call the actual recovery service
-            auto result = recoveryService_->recoverFiles(
-                selectedDevice_.toStdString(),
-                startSector,
-                numSectors,
-                outputPath.toStdString(),
-                progressCallback,
-                cancellationToken);
+    // Start the thread
+    thread->start();
 
-            // Handle result
-            if (result.success) {
-                // Transition to results state on success
-                stateManager_.transitionTo(ApplicationState::RESULTS);
-                updateUIForState();
-
-                QString message = QString("Recovery completed successfully!\n\n"
-                    "Recovered: %1 files (%2 bytes)\n"
-                    "Failed: %3 files (%4 bytes)\n"
-                    "Time: %5 seconds")
-                    .arg(result.recoveredItemsCount)
-                    .arg(result.recoveredBytes)
-                    .arg(result.failedItemsCount)
-                    .arg(result.failedBytes)
-                    .arg(result.endTime > result.startTime ?
-                         std::chrono::duration_cast<std::chrono::seconds>(result.endTime - result.startTime).count() : 0);
-
-                QMessageBox::information(this, "Recovery Complete", message);
-            } else {
-                // Transition to error state on failure
-                stateManager_.transitionTo(ApplicationState::ERROR);
-                updateUIForState();
-
-                QMessageBox::warning(this, "Recovery Failed",
-                    QString("Recovery failed: %1").arg(QString::fromStdString(result.errorMessage)));
-            }
-        } catch (const std::exception& e) {
-            // Transition to error state on exception
-            stateManager_.transitionTo(ApplicationState::ERROR);
-            updateUIForState();
-
-            QMessageBox::critical(this, "Recovery Error",
-                QString("Error during recovery: %1").arg(QString::fromStdString(e.what())));
-        }
-
-        // Reset UI
-        statusLabel_->setText("Ready");
-        isOperationRunning_ = false;
-        if (stackedWidget_->currentIndex() == 1) {
-            workflowWidget_->setOperationRunning(false);
-        }
-    });
+    // We must clean up the thread and worker when finished
+    connect(worker, &RecoveryWorker::finished, thread, &QThread::quit);
+    connect(worker, &RecoveryWorker::finished, worker, &QObject::deleteLater);
+    connect(thread, &QThread::finished, thread, &QObject::deleteLater);
 }
 
 void MainWindow::handleCancelOperation() {
     // Only allow cancellation during recovery operation
     if (stateManager_.getCurrentState() == ApplicationState::RECOVERY) {
         statusLabel_->setText("Cancelling operation...");
-        // In a real implementation, we would signal the operation to cancel
-        // For now, just simulate
-        QTimer::singleShot(1000, this, [this]() {
-            statusLabel_->setText("Operation cancelled by user");
-            // Transition back to validation state after cancellation
-            stateManager_.transitionTo(ApplicationState::VALIDATION);
-            updateUIForState();
-            if (stackedWidget_->currentIndex() == 1) {
-                workflowWidget_->setOperationRunning(false);
-            }
-        });
+        // Emit the cancel recovery signal
+        emit cancelRecovery();
     } else {
         statusLabel_->setText("No operation to cancel");
     }
 }
 
-// Slot to update progress from service callbacks
+// Slot to update progress from service callbacks (kept for compatibility with existing code)
 void MainWindow::updateProgressFromService(const QString& operationName, int progress, const QString& statusText) {
+    // Create a default RecoveryProgress object and call the new version
+    recoverysuite::application::service::models::RecoveryProgress progressObj;
+    progressObj.operationType = operationName.toStdString();
+    progressObj.percentage = progress;
+    progressObj.currentStep = statusText.toStdString();
+    // Leave other fields as default (0, false, etc.)
+    updateProgressFromService(progressObj);
+}
+
+// New version of updateProgressFromService that takes a RecoveryProgress object
+void MainWindow::updateProgressFromService(const recoverysuite::application::service::models::RecoveryProgress& progress) {
     if (progressWidget_) {
-        progressWidget_->updateProgress(operationName, progress, statusText);
+        progressWidget_->updateProgress(QString::fromStdString(progress.operationType),
+                                        progress.percentage,
+                                        QString::fromStdString(progress.currentStep),
+                                        progress.processedBytes,
+                                        progress.totalBytes,
+                                        progress.elapsedSeconds,
+                                        progress.recoveredItemsCount,
+                                        progress.failedItemsCount,
+                                        progress.isCancellable);
     }
-    if (!statusText.isEmpty()) {
-        statusLabel_->setText(statusText);
+    if (!progress.currentStep.empty()) {
+        statusLabel_->setText(QString::fromStdString(progress.currentStep));
+    }
+}
+
+// Slot to handle progress updates from the recovery worker
+void MainWindow::handleRecoveryProgress(const recoverysuite::application::service::models::RecoveryProgress& progress) {
+    updateProgressFromService(progress);
+}
+
+// Slot to handle finished recovery operation from the worker
+void MainWindow::handleRecoveryFinished(const recoverysuite::application::service::models::RecoveryResult& result) {
+    // Reset UI
+    statusLabel_->setText("Ready");
+    isOperationRunning_ = false;
+    if (stackedWidget_->currentIndex() == 1) {
+        workflowWidget_->setOperationRunning(false);
+    }
+
+    // Handle the result
+    if (result.success) {
+        // Transition to results state on success
+        stateManager_.transitionTo(ApplicationState::RESULTS);
+        updateUIForState();
+
+        QString message = QString("Recovery completed successfully!\n\n"
+                                  "Recovered: %1 files (%2 bytes)\n"
+                                  "Failed: %3 files (%4 bytes)\n"
+                                  "Time: %5 seconds")
+                          .arg(result.recoveredItemsCount)
+                          .arg(result.recoveredBytes)
+                          .arg(result.failedItemsCount)
+                          .arg(result.failedBytes)
+                          .arg(result.endTime > result.startTime ?
+                               std::chrono::duration_cast<std::chrono::seconds>(result.endTime - result.startTime).count() : 0);
+
+        QMessageBox::information(this, "Recovery Complete", message);
+    } else {
+        // Transition to error state on failure
+        stateManager_.transitionTo(ApplicationState::ERROR);
+        updateUIForState();
+
+        QMessageBox::warning(this, "Recovery Failed",
+            QString("Recovery failed: %1").arg(QString::fromStdString(result.errorMessage)));
     }
 }
 
 void MainWindow::updateOperationProgress(const QString& operationName, int progress, const QString& statusText) {
-    if (progressWidget_) {
-        progressWidget_->updateProgress(operationName, progress, statusText);
-    }
-    if (!statusText.isEmpty()) {
-        statusLabel_->setText(statusText);
-    }
+    // Create a default RecoveryProgress object and call the new version
+    recoverysuite::application::service::models::RecoveryProgress progressObj;
+    progressObj.operationType = operationName.toStdString();
+    progressObj.percentage = progress;
+    progressObj.currentStep = statusText.toStdString();
+    // Leave other fields as default (0, false, etc.)
+    updateProgressFromService(progressObj);
 }
 
 void MainWindow::handleOperationCompleted(const QString& operationName, bool success, const QString& resultMessage) {
@@ -892,7 +903,7 @@ void MainWindow::updateUIForState() {
         stackedWidget_->setCurrentIndex(1);
     }
 
-    // Update the workflow widget's operation running state (if we are in the workflow view)
+    // Update the widget's operation running state (if we are in the workflow view)
     if (stackedWidget_->currentIndex() == 1) {
         workflowWidget_->setOperationRunning(isOperationRunning_);
     }
@@ -942,3 +953,67 @@ void MainWindow::updateUIForState() {
 } // namespace core
 } // namespace gui
 } // namespace recoverysuite
+
+// Implementation of RecoveryWorker class
+recoverysuite::gui::core::MainWindow::RecoveryWorker::RecoveryWorker(
+    recoverysuite::application::service::GUIRecoveryService* recoveryService,
+    const std::string& devicePath,
+    uint64_t startSector,
+    uint64_t numSectors,
+    const std::string& outputPath)
+    : QObject(),
+      recoveryService_(recoveryService),
+      devicePath_(devicePath),
+      startSector_(startSector),
+      numSectors_(numSectors),
+      outputPath_(outputPath),
+      isCancelled_(false) {
+}
+
+void recoverysuite::gui::core::MainWindow::RecoveryWorker::process() {
+    // Set up progress callback
+    auto progressCallback = [this](const recoverysuite::application::service::models::RecoveryProgress& progress) {
+        // Emit progress update if not cancelled
+        if (!isCancelled_) {
+            emit progressUpdated(progress);
+        }
+    };
+
+    // Set up cancellation token
+    auto cancellationToken = [this]() -> bool {
+        return isCancelled_;
+    };
+
+    try {
+        // Perform the recovery operation using the GUI recovery service
+        // For now, we'll implement a basic file recovery operation
+        // In a full implementation, we would determine the operation type from context
+        auto result = recoveryService_->recoverFiles(
+            devicePath_,
+            startSector_,
+            numSectors_,
+            outputPath_,
+            progressCallback,
+            cancellationToken
+        );
+
+        // Emit finished signal with result if not cancelled
+        if (!isCancelled_) {
+            emit finished(result);
+        }
+    } catch (const std::exception& e) {
+        // Create error result
+        recoverysuite::application::service::models::RecoveryResult result;
+        result.success = false;
+        result.errorMessage = "Exception during recovery: " + std::string(e.what());
+        result.operationType = "file_recovery";
+
+        if (!isCancelled_) {
+            emit finished(result);
+        }
+    }
+}
+
+void recoverysuite::gui::core::MainWindow::RecoveryWorker::cancel() {
+    isCancelled_ = true;
+}
