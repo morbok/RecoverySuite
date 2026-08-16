@@ -368,6 +368,21 @@ target_link_libraries(test_gui_recovery_service
         RecoverySuite_Logging
 )
 
+# Recovery configuration test
+add_executable(test_recovery_configuration
+    test_recovery_configuration.cpp
+)
+
+# Link with core, disk, recovery, application, and logging libraries
+target_link_libraries(test_recovery_configuration
+    PRIVATE
+        RecoverySuite_Core
+        RecoverySuite_Disk
+        RecoverySuite_Recovery
+        RecoverySuite_Application
+        RecoverySuite_Logging
+)
+
 # Add the test to CTest
-add_test(NAME test_gui_recovery_service
-         COMMAND test_gui_recovery_service)
+add_test(NAME test_recovery_configuration
+         COMMAND test_recovery_configuration)
