@@ -66,6 +66,7 @@ struct AnalysisResult {
     bool success{};
     std::string errorMessage;
     FilesystemInfo filesystemInfo;
+    std::map<std::string,std::string> properties; // Reported fields, including explicit unknown values.
 };
 
 /**

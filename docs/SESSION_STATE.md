@@ -68,3 +68,12 @@ regions, short reads, cancellation, exact carving offsets and output-file replac
 
 Recovery components now own their safety-policy values, so default temporary policies cannot leave
 dangling references in validators. CLI signal interception applies to image export operations only.
+
+## Boot-sector analysis checkpoint
+
+Added CLI image analyze for read-only FAT/NTFS boot-field inspection, including nonzero volume starts.
+Replaced unaligned integer casts and unchecked initial reads with bounded byte extraction. Removed
+false free/used-space, version and label defaults; report explicit unknowns and declared-size warnings.
+Fixed GUI service conversion of the backend's actual field names, preserved raw reported properties,
+and rejected requests naming a different opened image. Tests cover source binding, exact serial/label
+fields, NTFS 64-bit size overflow, unknown metrics, short reads and CLI subprocess output.

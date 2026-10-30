@@ -14,7 +14,7 @@ namespace recovery {
 
 /**
  * FilesystemAnalyzer
- * Analyzes filesystems on storage media to gather detailed information
+ * Reads validated FAT/NTFS boot-sector fields. Allocation/free-space/version analysis is unavailable.
  */
 class FilesystemAnalyzer {
 public:
@@ -99,13 +99,6 @@ private:
     bool analyzeNtfsFromBootSector(
         const std::vector<uint8_t>& bootSectorData,
         std::map<std::string, std::string>& analysisResults
-    ) const;
-
-    // Helper to read sectors from disk
-    bool readSectors(
-        uint64_t startSector,
-        uint64_t numSectors,
-        std::vector<uint8_t>& buffer
     ) const;
 
     // Helper to detect filesystem type from boot sector data

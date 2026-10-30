@@ -13,6 +13,7 @@
 #include "Recovery/MetadataRecovery.h"
 #include "Recovery/FileRecovery.h"
 #include "Recovery/source_bytes.h"
+#include "Recovery/FilesystemAnalyzer.h"
 #include "GUI/core/MainWindow.h"
 using namespace recoverysuite;
 class TestMetadataSnapshot : public QObject {
@@ -102,7 +103,11 @@ private slots:
         std::vector<uint8_t> bytes{1,2,3};
         for(const int delta:{-1,1}){reader.delta=delta;QVERIFY(!recovery::readSourceBytes(&reader,0,8,4095,100,bytes));QVERIFY(bytes.empty());}
         reader.delta=0;reader.ok=false;QVERIFY(!recovery::readSourceBytes(&reader,0,8,4095,100,bytes));QVERIFY(bytes.empty());
-        reader.ok=true;const int calls=reader.calls;QVERIFY(!recovery::readSourceBytes(&reader,0,100000,0,16*1024*1024+1,bytes));
+        reader.ok=true;reader.delta=-1;recovery::RecoveryCapabilityRegistry registry;
+        registry.registerCapability(recovery::RecoveryCapability::FILESYSTEM_ANALYSIS);recovery::RecoverySafetyPolicy policy;
+        recovery::FilesystemAnalyzer analyzer(registry,policy,&reader);std::map<std::string,std::string> fields;
+        QVERIFY(!analyzer.analyzeFilesystem(true,true,0,1,true,true,true,true,fields));QVERIFY(fields.empty());
+        reader.delta=0;const int calls=reader.calls;QVERIFY(!recovery::readSourceBytes(&reader,0,100000,0,16*1024*1024+1,bytes));
         QCOMPARE(reader.calls,calls);QVERIFY(bytes.empty());
     }
     void fat32SnapshotsDoNotInventRootChain(){
@@ -117,6 +122,32 @@ private slots:
         QCOMPARE(result.recoveredItemsCount,uint64_t{3});QCOMPARE(load(root.filePath("FAT32_FAT1")),QByteArray(600*512,char(0x77)));
         QVERIFY(!QFile::exists(root.filePath("RootDirectory")));
 #endif
+    }
+    void bootAnalysisReportsOnlyObservedFields(){
+        QTemporaryDir root;const auto path=root.filePath("boot.img");auto fat=volume();fat[38]=char(0x29);
+        le(fat,39,0x12345678,4);fat.replace(43,11,"MY_VOLUME  ");save(path,QByteArray(3*512,char{0})+fat);
+        application::service::GUIRecoveryService service(nullptr);auto source=service.openImage(path.toStdString());
+        auto result=service.analyzeFilesystem(source.devicePath,3,1);QVERIFY2(result.success,result.errorMessage.c_str());
+        QCOMPARE(result.filesystemInfo.type,std::string("FAT12"));QCOMPARE(result.filesystemInfo.totalSizeBytes,uint64_t{2880*512});
+        QCOMPARE(result.properties.at("Free Space"),std::string("unknown"));QCOMPARE(result.properties.at("Used Space"),std::string("unknown"));
+        QCOMPARE(result.properties.at("Volume Serial Number"),std::to_string(0x12345678));QCOMPARE(result.properties.at("Volume Label"),std::string("MY_VOLUME"));
+        QVERIFY(!service.analyzeFilesystem(root.filePath("missing.img").toStdString(),3,1).success);
+        QProcess process;process.start(QCoreApplication::applicationDirPath()+"/RecoverySuite_CLI",{"image","analyze",path,"--start","3","--count","1"});
+        QVERIFY(process.waitForFinished(5000));QCOMPARE(process.exitCode(),0);const auto text=process.readAllStandardOutput();
+        QVERIFY(text.contains("Filesystem Type: FAT12"));QVERIFY(text.contains("Free Space: unknown"));QVERIFY(text.contains("Boot-sector fields only"));
+        QByteArray ntfs(512*64,char{0});ntfs.replace(3,8,"NTFS    ");le(ntfs,11,512,2);ntfs[13]=8;
+        le(ntfs,40,64,8);le(ntfs,72,0x123456789abcdef0ULL,8);ntfs[510]=char(0x55);ntfs[511]=char(0xaa);save(path,ntfs);
+        source=service.openImage(path.toStdString());result=service.analyzeFilesystem(source.devicePath,0,1);QVERIFY(result.success);
+        QCOMPARE(result.properties.at("Volume Serial Number"),std::to_string(0x123456789abcdef0ULL));
+        QCOMPARE(result.properties.at("Version"),std::string("unknown"));QCOMPARE(result.filesystemInfo.totalSizeBytes,uint64_t{32768});
+        le(ntfs,40,std::numeric_limits<uint64_t>::max(),8);save(path,ntfs);source=service.openImage(path.toStdString());
+        result=service.analyzeFilesystem(source.devicePath,0,1);QVERIFY(result.success);QCOMPARE(result.properties.at("Total Size"),std::string("unknown"));
+        QVERIFY(result.properties.count("Geometry Warning"));
+        auto reader=std::make_shared<disk::DiskImageReader>();reader->open(path.toStdString());
+        recovery::RecoveryCapabilityRegistry registry;registry.registerCapability(recovery::RecoveryCapability::FILESYSTEM_ANALYSIS);
+        recovery::RecoverySafetyPolicy policy;recovery::FilesystemAnalyzer analyzer(registry,policy,reader.get());
+        std::map<std::string,std::string> fields;
+        QVERIFY(!analyzer.getFilesystemInfo(true,true,0,1,true,true,true,true,"FAT32",fields));QVERIFY(fields.empty());
     }
     void noSyntheticRecoveredFiles(){
         QTemporaryDir root;const auto path=root.filePath("fat.img");save(path,volume());disk::DiskImageReader reader;reader.open(path.toStdString());

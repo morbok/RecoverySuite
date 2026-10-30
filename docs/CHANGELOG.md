@@ -1,3 +1,11 @@
+# 2026-10-30 — Honest image boot-sector analysis
+
+Added CLI image analyze with validated boot-sector reads and explicit unknown metrics. Removed
+unaligned reads, fake version/free-space defaults and unintended full-metadata traversal; report
+declared geometry warnings and sanitize boot labels for terminal output. Fixed source binding and
+GUI service field conversion. NTFS boot layout reference:
+https://github.com/torvalds/linux/blob/master/fs/ntfs3/ntfs.h
+
 # 2026-10-30 — Real FAT snapshots and shared carving
 
 Added safe GUI/CLI export of actual FAT boot sectors, FAT copies and FAT12/16 root entries. Removed

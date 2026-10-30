@@ -206,47 +206,28 @@ std::vector<models::Partition> GUIRecoveryService::getDevicePartitions(const std
 }
 
 models::AnalysisResult GUIRecoveryService::analyzeFilesystem(const std::string& devicePath, uint64_t startSector, uint64_t numSectors) {
-    models::AnalysisResult result;
-    result.success = false;
-    result.errorMessage = "Recovery service not available";
-
-    if (!recoveryService_) {
-        recoverysuite::logging::Logger::instance().info("No recovery service available for filesystem analysis");
-        return result;
-    }
-
+    models::AnalysisResult result{};
+    std::unique_lock lock(imageMutex_, std::try_to_lock);
+    if (!lock.owns_lock()) {result.errorMessage="A recovery operation is already active";return result;}
     try {
-        recoverysuite::logging::Logger::instance().info("GUI requesting filesystem analysis: " + devicePath +
-                                                       ", start_sector=" + std::to_string(startSector) +
-                                                       ", num_sectors=" + std::to_string(numSectors));
-
-        // Call the underlying recovery service
-        auto serviceResult = recoveryService_->analyzeFilesystem(startSector, numSectors);
-
-        // Convert to GUI model
-        result.success = serviceResult.success;
-        result.errorMessage = serviceResult.errorMessage;
-
-        // Populate basic filesystem info from analysis results
-        if (serviceResult.success && !serviceResult.analysisResults.empty()) {
-            result.filesystemInfo.type = serviceResult.analysisResults["filesystem_type"];
-            result.filesystemInfo.version = serviceResult.analysisResults["version"];
-            result.filesystemInfo.totalSizeBytes = std::stoull(serviceResult.analysisResults["total_size_bytes"]);
-            result.filesystemInfo.usedSizeBytes = std::stoull(serviceResult.analysisResults["used_size_bytes"]);
-            result.filesystemInfo.freeSizeBytes = std::stoull(serviceResult.analysisResults["free_size_bytes"]);
-            result.filesystemInfo.clusterSizeBytes = std::stoul(serviceResult.analysisResults["cluster_size_bytes"]);
-            result.filesystemInfo.volumeLabel = serviceResult.analysisResults["volume_label"];
-            result.filesystemInfo.serialNumber = serviceResult.analysisResults["serial_number"];
-            result.filesystemInfo.isReadOnly = (serviceResult.analysisResults["is_read_only"] == "true");
-            result.filesystemInfo.isCorrupted = (serviceResult.analysisResults["is_corrupted"] == "true");
+        const auto reader=getDiskReaderForDevice(devicePath);
+        if (!reader) throw std::runtime_error("Recovery service not available");
+        if (imageReader_) imageReader_->validateIdentity();
+        const auto backend=recoveryService_->analyzeFilesystem(startSector,numSectors);
+        result.success=backend.success;result.errorMessage=backend.errorMessage;result.properties=backend.analysisResults;
+        if (result.success) {
+            const auto number=[&](const std::string& key) -> uint64_t {
+                const auto it=result.properties.find(key);
+                if (it==result.properties.end() || it->second=="unknown") return 0;
+                return std::stoull(it->second);
+            };
+            auto& info=result.filesystemInfo;
+            info.type=result.properties["Filesystem Type"];info.version=result.properties["Version"];
+            info.volumeLabel=result.properties["Volume Label"];info.serialNumber=result.properties["Volume Serial Number"];
+            info.totalSizeBytes=number("Total Size");info.clusterSizeBytes=number("Bytes Per Sector")*number("Sectors Per Cluster");
+            info.isReadOnly=reader->getDiskInfo().isReadOnly;
         }
-
-    } catch (const std::exception& e) {
-        result.success = false;
-        result.errorMessage = "Exception during analysis: " + std::string(e.what());
-        recoverysuite::logging::Logger::instance().error("Exception during filesystem analysis: " + std::string(e.what()));
-    }
-
+    } catch(const std::exception& failure) {result.success=false;result.errorMessage=failure.what();}
     return result;
 }
 

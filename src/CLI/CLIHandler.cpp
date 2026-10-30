@@ -82,9 +82,10 @@ int CLIHandler::run(int argc, char* argv[]) {
 
 int CLIHandler::handleImage(const std::vector<std::string>& args) {
     const auto usageError = [&](const std::string& message) { printError(message); return 2; };
-    if (args.size() < 2 || (args[0] != "info" && args[0] != "carve" && args[0] != "metadata"))
-        return usageError("Use image info <path>, image carve <path> or image metadata <path> --output <existing-directory>");
-    const bool carve = args[0] != "info";
+    if (args.size() < 2 || (args[0] != "info" && args[0] != "carve" && args[0] != "metadata" && args[0] != "analyze"))
+        return usageError("Use image info/analyze <path> or image carve/metadata <path> --output <existing-directory>");
+    const bool carve = args[0] == "carve" || args[0] == "metadata";
+    const bool analyze = args[0] == "analyze";
     uint64_t start = 0, count = 0, sectorSize = 512;
     bool countGiven = false, verify = true;
     std::string output;
@@ -93,7 +94,7 @@ int CLIHandler::handleImage(const std::vector<std::string>& args) {
         const auto& option = args[i];
         if (!seen.insert(option).second) return usageError("Duplicate option: " + option);
         if (carve && option == "--no-verify") { verify = false; continue; }
-        if (option != "--sector-size" && (!carve || (option != "--start" && option != "--count" && option != "--output")))
+        if (option != "--sector-size" && !((carve || analyze) && (option == "--start" || option == "--count")) && !(carve && option == "--output"))
             return usageError("Unknown option: " + option);
         if (++i == args.size()) return usageError("Missing value for " + option);
         if (option == "--output") { output = args[i]; continue; }
@@ -110,7 +111,7 @@ int CLIHandler::handleImage(const std::vector<std::string>& args) {
         application::service::GUIRecoveryService service(nullptr);
         const auto source = service.openImage(args[1], static_cast<uint32_t>(sectorSize));
         const uint64_t total = source.totalBytes / sectorSize;
-        if (!carve) {
+        if (args[0] == "info") {
             std::cout << "Source: " << source.devicePath << "\nRead-only: yes\nSector size: " << sectorSize
                       << "\nSectors: " << total << "\nBytes: " << source.totalBytes << '\n';
             return 0;
@@ -118,6 +119,12 @@ int CLIHandler::handleImage(const std::vector<std::string>& args) {
         if (start >= total) return usageError("Start sector is outside the image");
         if (!countGiven) count = total - start;
         if (!count || count > total - start) return usageError("Sector range is outside the image");
+        if (analyze) {
+            const auto result=service.analyzeFilesystem(source.devicePath,start,count);
+            if (!result.success) {printError(result.errorMessage);return 1;}
+            for (const auto& [key,value]:result.properties) std::cout<<key<<": "<<value<<'\n';
+            return 0;
+        }
         application::service::models::RecoveryOperation operation{};
         operation.operationType = args[0] == "metadata" ? "metadata_recovery" : "carving"; operation.targetDevicePath = source.devicePath;
         operation.startSector = start; operation.numSectors = count; operation.outputPath = output;
@@ -472,6 +479,7 @@ void CLIHandler::showHelp(const std::vector<std::string>&) {
 Usage: RecoverySuite_CLI <command> [arguments]
 
   image info <image> [--sector-size 512|1024|2048|4096]
+  image analyze <image> [--start <sector>] [--count <sectors>] [--sector-size <bytes>]
   image carve <image> --output <existing-folder>
   image metadata <image> --output <existing-folder>
       [--start <sector>] [--count <sectors>] [--sector-size <bytes>] [--no-verify]

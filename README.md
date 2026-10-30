@@ -39,6 +39,7 @@ are reported; completed files remain available after cancellation or partial fai
 
 ```sh
 ./build/bin/RecoverySuite_CLI image info source.img
+./build/bin/RecoverySuite_CLI image analyze source.img --start 0 --count 1
 ./build/bin/RecoverySuite_CLI image carve source.img --output /existing/empty-folder --start 0
 ./build/bin/RecoverySuite_CLI image metadata fat-volume.img --output /another/existing-folder
 ```
@@ -48,6 +49,10 @@ Use `--sector-size 4096` for a 4 KiB-sector image, `--count N` to bound the scan
 completed outputs. Exit codes: 0 complete, 1 failed/partial, 2 invalid arguments, 130 cancelled.
 Physical-device export and background operation tracking are unavailable; the legacy recovery
 command returns an error instead of reporting unsaved buffers as recovered files.
+
+`image analyze` reports FAT/NTFS boot-sector fields, declared geometry and source-size warnings.
+Free/used space, filesystem version and other unexamined properties remain `unknown`. It does not
+traverse allocation tables, validate the whole filesystem, or repair the image.
 
 ## FAT metadata snapshots
 
