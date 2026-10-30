@@ -43,6 +43,10 @@ public:
     void showHelp(const std::vector<std::string>& args);
     void showVersion(const std::vector<std::string>& args);
 
+    // Parse user input without starting an operation or touching a disk.
+    bool parseUint64(const std::string& str, uint64_t& value);
+    recoverysuite::recovery::RecoveryCapability parseCapability(const std::string& capStr);
+
 private:
     // Helper methods
     void printSeparator();
@@ -51,10 +55,10 @@ private:
     void printWarning(const std::string& message);
     void printInfo(const std::string& message);
 
-    bool parseUint64(const std::string& str, uint64_t& value);
+
     bool parseBool(const std::string& str, bool& value);
 
-    recoverysuite::recovery::RecoveryCapability parseCapability(const std::string& capStr);
+
     std::string capabilityToString(recoverysuite::recovery::RecoveryCapability capability);
 
     bool confirmAction(const std::string& message);

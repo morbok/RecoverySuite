@@ -1,4 +1,5 @@
 #include "CLIHandler.h"
+#include <charconv>
 #include <algorithm>
 #include <cctype>
 #include <sstream>
@@ -758,13 +759,11 @@ void CLIHandler::printInfo(const std::string& message) {
 }
 
 bool CLIHandler::parseUint64(const std::string& str, uint64_t& value) {
-    try {
-        size_t pos;
-        value = std::stoull(str, &pos);
-        return pos == str.length();
-    } catch (...) {
-        return false;
-    }
+    uint64_t parsed{};
+    const auto [end, error] = std::from_chars(str.data(), str.data() + str.size(), parsed);
+    if (error != std::errc{} || end != str.data() + str.size()) return false;
+    value = parsed;
+    return true;
 }
 
 bool CLIHandler::parseBool(const std::string& str, bool& value) {

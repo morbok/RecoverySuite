@@ -3,10 +3,10 @@
 #include <vector>
 #include <cassert>
 #include <cstring>
-#include "../../src/CLI/CLIHandler.h"
-#include "../../src/Disk/IDiskReader.hpp"
-#include "../../src/Recovery/RecoveryCapability.h"
-#include "../../src/Recovery/RecoverySafetyPolicy.h"
+#include "CLI/CLIHandler.h"
+#include "Disk/IDiskReader.hpp"
+#include "Recovery/RecoveryCapability.h"
+#include "Recovery/RecoverySafetyPolicy.h"
 
 // Mock disk reader for testing - simplified version that returns test data
 class TestMockDiskReader : public recoverysuite::disk::IDiskReader {
@@ -187,6 +187,10 @@ void test_uint64_parsing() {
     assert(!cli.parseUint64("abc", value));
     assert(!cli.parseUint64("123abc", value));
     assert(!cli.parseUint64("-1", value));
+    assert(!cli.parseUint64("+1", value));
+    assert(!cli.parseUint64(" 1", value));
+    assert(!cli.parseUint64("18446744073709551616", value));
+    assert(value == 18446744073709551615ULL); // Failed parses preserve the caller's value.
 
     std::cout << "[PASS] Uint64 parsing tests passed" << std::endl;
 }
