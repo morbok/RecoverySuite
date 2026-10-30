@@ -1,3 +1,11 @@
+# 2026-10-31 — Allocated FAT12/16 root-file recovery
+
+Added actual root-file copying with ASCII 8.3 aliases, fragmented allocated chains, zero-byte files,
+FAT mirror validation, chain/name/resource checks and cancellation. Integrated GUI/CLI export and
+legacy buffered recovery. Added FAT12/4 KiB FAT16 fixtures, dirty flags, corruption/cross-link tests,
+GUI/CLI execution, no-overwrite and source preservation. Deleted entries and subdirectories remain
+outside this mode.
+
 # 2026-10-30 — Honest image boot-sector analysis
 
 Added CLI image analyze with validated boot-sector reads and explicit unknown metrics. Removed

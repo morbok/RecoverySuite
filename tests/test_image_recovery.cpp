@@ -136,7 +136,7 @@ private slots:
         auto wrong=op; wrong.targetDevicePath=root.filePath("missing.img").toStdString(); QVERIFY(!service.validateOperation(wrong).empty());
         wrong=op; wrong.startSector=std::numeric_limits<uint64_t>::max(); QVERIFY(!service.validateOperation(wrong).empty());
         wrong=op; wrong.numSectors=0; QVERIFY(!service.validateOperation(wrong).empty());
-        wrong=op; wrong.operationType="file_recovery"; QVERIFY(!service.validateOperation(wrong).empty());
+        wrong=op; wrong.operationType="unsupported_recovery"; QVERIFY(!service.validateOperation(wrong).empty());
         wrong=op; wrong.createLogFile=true; QVERIFY(!service.validateOperation(wrong).empty());
         wrong=op; wrong.outputPath=source.toStdString(); QVERIFY(!service.validateOperation(wrong).empty());
         std::filesystem::create_directory_symlink(root.path().toStdString(),root.filePath("alias").toStdString());

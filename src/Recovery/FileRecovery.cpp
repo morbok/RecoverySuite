@@ -1,5 +1,6 @@
 #include "FileRecovery.h"
 #include "source_bytes.h"
+#include "fat_root_files.h"
 #include <limits>
 
 namespace recoverysuite {
@@ -43,9 +44,16 @@ bool FileRecovery::recoverFiles(
         return false;
     }
 
-    // Directory/cluster-chain reconstruction is unavailable. Never fabricate recovered files.
-    (void)startSector; (void)numSectors;
-    return false;
+    if (!diskReader_) return false;
+    uint64_t total=0;
+    try {
+        const auto summary=recoverFatRootFiles(*diskReader_,startSector,numSectors,[&](const auto& name,const auto& data){
+            if(data.size()>64*1024*1024-total || recoveredFiles.count(name))throw std::runtime_error("Buffered file result limit or duplicate name");
+            total+=data.size();recoveredFiles.emplace(name,data);
+        });
+        return !summary.invalidFiles;
+    }catch(const std::exception&){recoveredFiles.clear();return false;}
+
 }
 
 bool FileRecovery::recoverFile(

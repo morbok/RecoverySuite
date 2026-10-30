@@ -7,7 +7,7 @@ Updated: 2026-10-30. Historical phase summaries are not the release checklist.
 - [x] Recover Claude's unfinished results interface and restore a buildable Linux checkout.
 - [x] Show completed, failed, cancelled and partial results with backend item names/sizes.
 - [x] Remove fabricated duration/recovered-byte statistics and distinguish requested output from saved output.
-- [x] Restore and run the 26 registered CTest targets with assertions enabled.
+- [x] Restore and run the 27 registered CTest targets with assertions enabled.
 - [x] Repair the input-validation and partition parsing bugs uncovered by active assertions.
 - [x] Add Debug/Release Linux CI and reproducible build instructions.
 
@@ -17,7 +17,8 @@ Updated: 2026-10-30. Historical phase summaries are not the release checklist.
 2. [x] Bind opened images to GUIRecoveryService and reject operations on another source.
 3. [x] Execute the configured carving operation and replace hard-coded validation with actual checks.
        [x] Add verified CLI export and bounded FAT metadata snapshots.
-       [ ] Implement directory/cluster-chain file reconstruction and NTFS MFT recovery.
+       [x] Copy allocated FAT12/16 root files with 8.3 aliases and fragmented cluster chains.
+       [ ] Add recursive directories/long names, deleted-chain inference, FAT32 files and NTFS MFT recovery.
 4. [x] Export signature candidates safely on POSIX, preserving bytes and rejecting traversal, symlinks,
        overwrite and invalid destinations; verify saved bytes in integration tests.
 5. [x] Propagate cancellation/progress into image scan/export loops and test worker shutdown.

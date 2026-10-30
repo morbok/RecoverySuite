@@ -82,9 +82,9 @@ int CLIHandler::run(int argc, char* argv[]) {
 
 int CLIHandler::handleImage(const std::vector<std::string>& args) {
     const auto usageError = [&](const std::string& message) { printError(message); return 2; };
-    if (args.size() < 2 || (args[0] != "info" && args[0] != "carve" && args[0] != "metadata" && args[0] != "analyze"))
+    if (args.size() < 2 || (args[0] != "info" && args[0] != "carve" && args[0] != "metadata" && args[0] != "analyze" && args[0] != "files"))
         return usageError("Use image info/analyze <path> or image carve/metadata <path> --output <existing-directory>");
-    const bool carve = args[0] == "carve" || args[0] == "metadata";
+    const bool carve = args[0] == "carve" || args[0] == "metadata" || args[0] == "files";
     const bool analyze = args[0] == "analyze";
     uint64_t start = 0, count = 0, sectorSize = 512;
     bool countGiven = false, verify = true;
@@ -126,7 +126,7 @@ int CLIHandler::handleImage(const std::vector<std::string>& args) {
             return 0;
         }
         application::service::models::RecoveryOperation operation{};
-        operation.operationType = args[0] == "metadata" ? "metadata_recovery" : "carving"; operation.targetDevicePath = source.devicePath;
+        operation.operationType = args[0] == "metadata" ? "metadata_recovery" : (args[0] == "files" ? "file_recovery" : "carving"); operation.targetDevicePath = source.devicePath;
         operation.startSector = start; operation.numSectors = count; operation.outputPath = output;
         operation.verifyAfterRecovery = verify;
         unsigned lastPercent = std::numeric_limits<unsigned>::max();
@@ -482,6 +482,7 @@ Usage: RecoverySuite_CLI <command> [arguments]
   image analyze <image> [--start <sector>] [--count <sectors>] [--sector-size <bytes>]
   image carve <image> --output <existing-folder>
   image metadata <image> --output <existing-folder>
+  image files <image> --output <existing-folder>
       [--start <sector>] [--count <sectors>] [--sector-size <bytes>] [--no-verify]
   list
   disk info <disk-number>
@@ -494,6 +495,8 @@ Existing files are not replaced. Limits: 16 MiB per candidate, 10,000 attempted 
 Candidates may contain damaged data; names and fragmented files are not reconstructed.
 Omitted --count scans from --start to the end of the image. Press Ctrl+C to cancel;
 completed output files are kept. Exit: 0 complete, 1 failed/partial, 2 usage, 130 cancelled.
+Files copies allocated FAT12/16 root files using 8.3 aliases and cluster chains (16 MiB/file).
+Deleted entries, subdirectories and FAT32/NTFS files are skipped or unsupported.
 Metadata saves actual FAT boot/FAT copies and FAT12/16 fixed root entries (16 MiB per region).
 No NTFS MFT or FAT32 root-chain reconstruction. Safe output export currently requires POSIX. Physical-device export is unavailable.
 )";

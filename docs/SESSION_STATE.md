@@ -1,6 +1,6 @@
 # RecoverySuite session state
 
-Updated: 2026-10-30
+Updated: 2026-10-31
 
 ## Checkpoint
 
@@ -25,7 +25,7 @@ the recovery product. README.md describes the supported workflow and MASTER_TODO
 
 ## Validation
 
-26 CTest executables pass locally in Debug and Release with assertions active. The image integration
+27 CTest executables pass locally in Debug and Release with assertions active. The image integration
 suite also passes AddressSanitizer/UBSan. Tests cover source mutation, invalid ranges/destinations,
 symlinks/hardlinks/traversal, no-overwrite/partial output, cancellation, incomplete/oversized candidates,
 GUI clicks and closing during recovery. Source hashes and saved bytes are checked on synthetic images.
@@ -77,3 +77,16 @@ false free/used-space, version and label defaults; report explicit unknowns and 
 Fixed GUI service conversion of the backend's actual field names, preserved raw reported properties,
 and rejected requests naming a different opened image. Tests cover source binding, exact serial/label
 fields, NTFS 64-bit size overflow, unknown metrics, short reads and CLI subprocess output.
+
+## 2026-10-31 — Allocated FAT12/16 root files
+
+Added a bounded FAT root-file reader shared by GUI file_recovery, CLI image files and the legacy
+FileRecovery buffer API. Follows actual allocated chains (including fragmentation), preserves ASCII
+8.3 aliases and zero-byte files, compares mirrored FATs, accepts FAT16 dirty/error flags, and rejects
+invalid geometry, unsafe names, loops, invalid cluster links, short/overlong and cross-linked root
+file chains. Cancellation reaches reads and writes; saved files survive later failures. Limits remain
+16 MiB/file, 10,000 items; legacy buffered files are capped at 64 MiB. Deleted entries, LFN records
+and subdirectories are skipped. FAT32/NTFS file reconstruction remains unsupported.
+
+27 registered CTest executables now include a real fragmented-chain fixture on FAT12 and 4 KiB FAT16,
+corruption cases, GUI/CLI output, no-overwrite, source preservation and cancellation.

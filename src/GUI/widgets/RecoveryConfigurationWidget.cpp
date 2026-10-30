@@ -19,8 +19,9 @@ RecoveryConfigurationWidget::RecoveryConfigurationWidget(QWidget* parent) : QWid
     method_ = new QComboBox(this); method_->setObjectName("recoveryMethod");
     method_->addItem(tr("Signature carving"),"carving");
     method_->addItem(tr("FAT metadata snapshot"),"metadata_recovery");
+    method_->addItem(tr("FAT12/16 allocated root files (8.3)"),"file_recovery");
     form->addRow(tr("Recovery method"),method_);
-    auto* metadataHelp = new QLabel(tr("FAT snapshot saves the boot sector and FAT copies, plus the fixed root directory on FAT12/16. Each region is limited to 16 MiB. It does not repair metadata or reconstruct FAT32 root chains or NTFS MFT."),this);
+    auto* metadataHelp = new QLabel(tr("FAT snapshot saves the boot sector and FAT copies, plus the fixed root directory on FAT12/16. Root-file mode follows allocated FAT12/16 chains using 8.3 aliases; deleted entries and subdirectories are skipped. Each region/file is limited to 16 MiB. It does not repair metadata or reconstruct FAT32 root chains or NTFS MFT."),this);
     metadataHelp->setWordWrap(true); layout->addWidget(metadataHelp);
     start_ = new QLineEdit("0", this); start_->setObjectName("recoveryStart");
     count_ = new QLineEdit(this); count_->setObjectName("recoveryCount");

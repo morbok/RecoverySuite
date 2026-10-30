@@ -155,7 +155,7 @@ RecoveryService::FileRecoveryResult RecoveryService::recoverFiles(uint64_t start
             result = convertFileRecoveryResult(success, "", recoveredFiles);
             recoverysuite::logging::Logger::instance().info("File recovery completed successfully: recovered " + std::to_string(recoveredFiles.size()) + " files");
         } else {
-            result.errorMessage = "Directory/cluster-chain file reconstruction is unavailable; use signature carving or a FAT metadata snapshot";
+            result.errorMessage = "FAT12/16 allocated root-file recovery failed or is unsupported; check geometry, FAT copies, names and cluster chains";
             recoverysuite::logging::Logger::instance().warn("File recovery failed");
         }
     } catch (const std::exception& e) {

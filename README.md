@@ -42,6 +42,7 @@ are reported; completed files remain available after cancellation or partial fai
 ./build/bin/RecoverySuite_CLI image analyze source.img --start 0 --count 1
 ./build/bin/RecoverySuite_CLI image carve source.img --output /existing/empty-folder --start 0
 ./build/bin/RecoverySuite_CLI image metadata fat-volume.img --output /another/existing-folder
+./build/bin/RecoverySuite_CLI image files fat-volume.img --output /existing/files-folder
 ```
 
 Use `--sector-size 4096` for a 4 KiB-sector image, `--count N` to bound the scan, and
@@ -63,15 +64,27 @@ cluster chains, NTFS MFT reconstruction, deleted-file recovery and metadata repa
 The reader sector size must match the BPB. Each region is limited to 16 MiB; malformed geometry,
 short reads and out-of-range regions fail before any output is saved. Existing outputs are preserved.
 
+## FAT12/16 root files
+
+Choose **FAT12/16 allocated root files (8.3)** or run `image files`. Select the volume boot sector
+and its complete declared sector range. This copies allocated root files, including fragmented
+cluster chains, with ASCII 8.3 aliases. Zero-byte files are preserved. Deleted entries, long-name
+records and subdirectories are skipped; subdirectories are not traversed. FAT32/NTFS files and
+guessed deleted-file chains are unsupported. Each file is limited to 16 MiB.
+
+FAT copies must agree. Invalid names, cyclic/short/overlong/bad/out-of-range/cross-linked chains
+are reported as skipped invalid files. Completed outputs are kept after a later error or cancellation.
+Readback verification checks saved bytes; it does not prove that the source filesystem is intact.
+
 ## Current state
 
-- GUI and CLI compile on Linux; all 26 registered CTest executables pass locally in Debug and Release.
+- GUI and CLI compile on Linux; all 27 registered CTest executables pass locally in Debug and Release.
 - The GUI connects real image selection, range/output validation, worker scanning, safe file export
   and results. Progress and cancellation reach the streaming scan and output loops.
 - POSIX output export rejects traversal, symlink components, unsafe names and existing files. It
   anchors the selected directory with a file descriptor; incomplete writes are removed on failure.
-- The image workflow supports signature carving and FAT metadata snapshots. Directory/cluster-chain
-  file reconstruction and NTFS MFT recovery remain unavailable; legacy buffer APIs do not export files.
+- The image workflow supports signature carving, FAT metadata snapshots and allocated FAT12/16 root
+  files. Recursive directories, deleted FAT chains, FAT32 files and NTFS MFT recovery remain unavailable.
 - Windows safe export is unavailable; Windows builds and recovery against real devices remain unvalidated.
 - Integration tests use synthetic images; the image workflow also passes AddressSanitizer/UBSan locally.
 
