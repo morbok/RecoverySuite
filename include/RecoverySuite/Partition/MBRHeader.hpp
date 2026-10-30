@@ -11,14 +11,14 @@ namespace partition {
  * @brief Master Boot Record (MBR) header structure
  *
  * The MBR is located in the first sector (512 bytes) of a disk:
- * - Bytes 0-443: Boot code
- * - Bytes 444-509: Partition table (4 entries of 16 bytes each)
+ * - Bytes 0-445: Boot code
+ * - Bytes 446-509: Partition table (4 entries of 16 bytes each)
  * - Bytes 510-511: Boot signature (0x55AA)
  */
 class MBRHeader {
 public:
     /** Size of MBR boot code area */
-    static constexpr size_t BOOT_CODE_SIZE = 444;
+    static constexpr size_t BOOT_CODE_SIZE = 446;
     /** Size of MBR partition table (4 entries * 16 bytes) */
     static constexpr size_t PARTITION_TABLE_SIZE = 64;
     /** Offset of boot signature in MBR */
@@ -26,7 +26,7 @@ public:
     /** Size of boot signature */
     static constexpr size_t BOOT_SIGNATURE_SIZE = 2;
     /** Expected boot signature value (0x55AA) */
-    static constexpr uint16_t EXPECTED_BOOT_SIGNATURE = 0x55AA;
+    static constexpr uint16_t EXPECTED_BOOT_SIGNATURE = 0xAA55;
     /** Total size of MBR */
     static constexpr size_t SIZE = 512;
 

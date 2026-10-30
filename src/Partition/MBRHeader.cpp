@@ -6,10 +6,10 @@ namespace recoverysuite {
 namespace partition {
 
 MBRHeader::MBRHeader(const std::array<std::byte, SIZE>& data) {
-    // Copy boot code (bytes 0-443)
+    // Copy boot code (bytes 0-445)
     std::memcpy(m_bootCode.data(), data.data(), BOOT_CODE_SIZE);
 
-    // Copy partition table (bytes 444-509)
+    // Copy partition table (bytes 446-509)
     std::memcpy(m_partitionTable.data(), data.data() + BOOT_CODE_SIZE, PARTITION_TABLE_SIZE);
 
     // Copy boot signature (bytes 510-511)
@@ -17,7 +17,7 @@ MBRHeader::MBRHeader(const std::array<std::byte, SIZE>& data) {
 }
 
 bool MBRHeader::hasValidSignature() const noexcept {
-    // Check boot signature bytes for 0x55AA (stored little-endian: low byte first)
+    // Check boot signature bytes for bytes 55 AA (little-endian value 0xAA55)
     if (m_bootSignature.size() < BOOT_SIGNATURE_SIZE) return false;
 
     std::byte low = m_bootSignature[0];  // First byte of boot signature (offset 510)

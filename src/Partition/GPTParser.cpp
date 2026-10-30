@@ -86,6 +86,15 @@ std::pair<GPTHeader, GPTPartitionTable> GPTParser::parseGPT() const {
         throw PartitionException("GPT has zero partition entries");
     }
 
+    constexpr uint64_t kMaxEntryArrayBytes = 64 * 1024 * 1024;
+    const uint64_t totalSectors = m_reader->getTotalSectors();
+    const uint64_t sectorsNeeded = (entryArrayBytes + sectorSize - 1) / sectorSize;
+    if (entrySize < GPTPartitionEntry::SIZE || entrySize % GPTPartitionEntry::SIZE != 0 ||
+        entryArrayBytes > kMaxEntryArrayBytes || entryArrayLBA >= totalSectors ||
+        sectorsNeeded > totalSectors - entryArrayLBA ||
+        headerToUse.firstUsableLBA > headerToUse.lastUsableLBA || headerToUse.lastUsableLBA >= totalSectors) {
+        throw PartitionException("Invalid or excessive GPT entry array or usable range");
+    }
     // Read the entry array
     std::vector<std::byte> entryArrayBuffer;
     entryArrayBuffer.resize(static_cast<size_t>(entryArrayBytes));
@@ -102,9 +111,9 @@ std::pair<GPTHeader, GPTPartitionTable> GPTParser::parseGPT() const {
     std::vector<GPTPartitionEntry> entries;
     entries.reserve(numEntries);
     for (uint32_t i = 0; i < numEntries; ++i) {
-        size_t offset = i * entrySize;
+        size_t offset = static_cast<size_t>(i) * entrySize;
         std::array<std::byte, GPTPartitionEntry::SIZE> entryData{};
-        std::memcpy(entryData.data(), entryArrayBuffer.data() + offset, entrySize);
+        std::memcpy(entryData.data(), entryArrayBuffer.data() + offset, GPTPartitionEntry::SIZE);
         entries.emplace_back(entryData);
     }
 
@@ -131,7 +140,7 @@ bool GPTParser::hasProtectiveMBR() const {
     if (mbrBuffer.size() < 512) {
         return false;
     }
-    if (mbrBuffer[510] != std::byte{0xAA} || mbrBuffer[511] != std::byte{0x55}) {
+    if (mbrBuffer[510] != std::byte{0x55} || mbrBuffer[511] != std::byte{0xAA}) {
         return false;
     }
 
@@ -168,8 +177,8 @@ void GPTParser::readSectors(uint64_t startLba, uint32_t sectorCount, std::vector
         throw PartitionException("Disk reader is null");
     }
     buffer.resize(sectorCount * m_reader->getSectorSize());
-    uint64_t sectorsRead = m_reader->readSectors(startLba, sectorCount, buffer);
-    if (sectorsRead != sectorCount) {
+    const size_t requiredBytes = static_cast<size_t>(sectorCount) * m_reader->getSectorSize();
+    if (!m_reader->readSectors(startLba, sectorCount, buffer) || buffer.size() < requiredBytes) {
         throw PartitionException("Failed to read sectors");
     }
 }

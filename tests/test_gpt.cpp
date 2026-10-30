@@ -128,8 +128,8 @@ int main() {
         // Sector 0: Protective MBR
         std::vector<std::byte> mbrBuffer(sectorSize, std::byte{0});
         // Set the boot signature
-        mbrBuffer[510] = std::byte{0xAA};
-        mbrBuffer[511] = std::byte{0x55};
+        mbrBuffer[510] = std::byte{0x55};
+        mbrBuffer[511] = std::byte{0xAA};
         // Set one partition entry (the first one) as type 0xEE (protective MBR)
         // Partition table starts at offset 446
         mbrBuffer[446] = std::byte{0x80}; // boot indicator (active)
@@ -179,7 +179,7 @@ int main() {
         // Set myLBA to 1 (primary header)
         headerPtr->myLBA = 1;
         // Set backup LBA to totalSectors-1 (we'll set totalSectors to 1000 later)
-        headerPtr->alternateLBA = 999;
+        headerPtr->alternateLBA = 131071;
         // Set first usable LBA to 2048 (typical)
         headerPtr->firstUsableLBA = 2048;
         // Set last usable LBA to 2048+100000-1 = 102047
@@ -207,10 +207,10 @@ int main() {
         recoverysuite::partition::GPTPartitionEntry* entryPtr = reinterpret_cast<recoverysuite::partition::GPTPartitionEntry*>(entryArrayBuffer.data());
         // Set partition type GUID to EF00 (EFI System Partition)
         std::array<uint8_t,16> efGuid = {{0x28,0x73,0x2A,0xC1,0x1F,0xF8,0xD2,0x11,0xBA,0x4B,0x00,0xA0,0xC9,0x3E,0xC9,0x3B}};
-        std::copy(efGuid.begin(), efGuid.end(), entryPtr->getPartitionTypeGUID().begin());
+        std::memcpy(entryArrayBuffer.data(), efGuid.data(), efGuid.size());
         // Set unique partition GUID to something
         std::array<uint8_t,16> partGuid = {{0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0A,0x0B,0x0C,0x0D,0x0E,0x0F,0x10}};
-        std::copy(partGuid.begin(), partGuid.end(), entryPtr->getUniquePartitionGUID().begin());
+        std::memcpy(entryArrayBuffer.data() + 16, partGuid.data(), partGuid.size());
         // Set starting LBA to 2048
         uint64_t startLba = 2048;
         ::memcpy(entryArrayBuffer.data()+0x20, &startLba, 8);
@@ -275,7 +275,7 @@ int main() {
             }
             std::cout << "  Last chunk (offset " << start << "): " << chunkSum << std::endl;
         }
-        uint32_t headerCrc = validator.computeCRC32(headerCopy.data(), headerCopy.size());
+        uint32_t headerCrc = validator.computeCRC32(headerCopy.data(), headerPtr->headerSize);
         std::cout << "Computed header CRC32: 0x" << std::hex << headerCrc << std::dec << std::endl;
 
 
@@ -307,7 +307,7 @@ int main() {
             gptHeaderBuffer,    // sector1
             std::vector<std::byte>(), // backup header (we won't use backup in this test, but we need to provide something)
             entryArrayBuffer,   // entry array data (we'll pass the whole sector, but the reader will use only the needed bytes)
-            1000                // total sectors
+            131072              // total sectors
         );
         mockReader->open("mock");
 
@@ -318,7 +318,7 @@ int main() {
         // Check the header
         assert(gptHeader.hasValidSignature());
         assert(gptHeader.myLBA == 1);
-        assert(gptHeader.alternateLBA == 999);
+        assert(gptHeader.alternateLBA == 131071);
         assert(gptHeader.firstUsableLBA == 2048);
         assert(gptHeader.lastUsableLBA == 102047);
         assert(gptHeader.numPartitionEntries == 1);
@@ -339,6 +339,47 @@ int main() {
         // Check name
         std::u16string nameFromEntry = entry.getName();
         assert(nameFromEntry == u"Test");
+
+        // Regression: names occupy exactly 36 UTF-16 code units in a 128-byte entry.
+        std::array<std::byte, recoverysuite::partition::GPTPartitionEntry::SIZE> fullName{};
+        fullName[0] = std::byte{1};
+        for (size_t i = 0; i < 36; ++i) fullName[56 + 2 * i] = std::byte{'X'};
+        assert(recoverysuite::partition::GPTPartitionEntry(fullName).getName() == std::u16string(36, u'X'));
+        fullName[0] = std::byte{0};
+        assert(recoverysuite::partition::GPTPartitionEntry(fullName).isEmpty());
+        assert(validator.computeCRC32("123456789", 9) == 0xCBF43926);
+
+        // CRC covers only the declared header, not padding to the end of the sector.
+        auto paddedHeader = gptHeader;
+        paddedHeader.reserved2[0] = 42;
+        validator.validateHeader(paddedHeader);
+        auto rejected = [](auto action) {
+            try { action(); } catch (const recoverysuite::partition::PartitionException&) { return true; }
+            return false;
+        };
+        auto badHeader = gptHeader;
+        badHeader.headerSize = 513;
+        assert(rejected([&] { validator.validateHeader(badHeader); }));
+        badHeader = gptHeader;
+        badHeader.headerCRC32 ^= 1;
+        assert(rejected([&] { validator.validateHeader(badHeader); }));
+
+        // Extended entries can span multiple sectors; only the 128-byte common prefix is parsed.
+        auto extendedHeader = gptHeader;
+        extendedHeader.sizeofPartitionEntry = 1024;
+        std::vector<std::byte> extendedEntries(1024);
+        std::copy(entryArrayBuffer.begin(), entryArrayBuffer.begin() + 128, extendedEntries.begin());
+        extendedHeader.partitionEntryArrayCRC32 = validator.computeCRC32(extendedEntries.data(), extendedEntries.size());
+        extendedHeader.headerCRC32 = 0;
+        extendedHeader.headerCRC32 = validator.computeCRC32(&extendedHeader, extendedHeader.headerSize);
+        std::vector<std::byte> extendedHeaderBytes(512);
+        std::memcpy(extendedHeaderBytes.data(), &extendedHeader, sizeof(extendedHeader));
+        auto extendedReader = std::make_shared<MockDiskReader>(mbrBuffer, extendedHeaderBytes,
+            std::vector<std::byte>{}, extendedEntries, 131072);
+        extendedReader->open("mock");
+        const auto extendedResult = recoverysuite::partition::GPTParser(extendedReader).parseGPT();
+        assert(extendedResult.second.getEntry(0).getName() == u"Test");
+        assert(extendedResult.second.getEntry(0).getStartingLBA() == 2048);
 
         std::cout << "GPT test passed!" << std::endl;
         return 0;

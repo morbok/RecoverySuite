@@ -12,63 +12,14 @@ void GPTValidator::validateHeader(const GPTHeader& header) const {
         throw InvalidGPTSignatureException("Invalid GPT signature");
     }
 
-    // Compute CRC32 of the header, setting the headerCRC32 field to 0 during computation
+    constexpr uint32_t kMinimumHeaderSize = 92;
+    if (header.headerSize < kMinimumHeaderSize || header.headerSize > sizeof(GPTHeader)) {
+        throw InvalidGPTCRCException("Unsupported GPT header size");
+    }
     std::array<std::byte, sizeof(GPTHeader)> headerBytes{};
     std::memcpy(headerBytes.data(), &header, sizeof(GPTHeader));
-
-    // Debug: print the partitionEntryArrayCRC32 field (offset 88-91) after copying
-    std::cout << "Validator: partitionEntryArrayCRC32 field (offset 88-91) after copy: ";
-    for (size_t i = 0; i < 4; ++i) {
-        std::cout << std::hex << static_cast<int>(static_cast<unsigned char>(headerBytes[88 + i])) << " ";
-    }
-    std::cout << std::dec << std::endl;
-
-    // Print the headerBytes (first 32 bytes) after copying, before zeroing
-    std::cout << "Validator: headerBytes after copy (first 32 bytes): ";
-    for (size_t i = 0; i < 32 && i < headerBytes.size(); ++i) {
-        std::cout << std::hex << static_cast<int>(static_cast<unsigned char>(headerBytes[i])) << " ";
-    }
-    std::cout << std::dec << std::endl;
-
-    // Zero out the headerCRC32 field (offset 0x10, 4 bytes)
-    // In the GPTHeader struct, headerCRC32 is at offset 16 (after signature 8, revision 4, headerSize 4)
-    // So we set bytes 16-19 to 0.
-    for (size_t i = 16; i < 20; ++i) {
-        headerBytes[i] = std::byte{0};
-    }
-
-    // Print the headerBytes (first 32 bytes) after zeroing
-    std::cout << "Validator: headerBytes after zeroing (first 32 bytes): ";
-    for (size_t i = 0; i < 32 && i < headerBytes.size(); ++i) {
-        std::cout << std::hex << static_cast<int>(static_cast<unsigned char>(headerBytes[i])) << " ";
-    }
-    std::cout << std::dec << std::endl;
-    // Compute simple sum of all bytes for debugging
-    uint64_t sum = 0;
-    for (size_t i = 0; i < headerBytes.size(); ++i) {
-        sum += static_cast<uint64_t>(static_cast<unsigned char>(headerBytes[i]));
-    }
-    std::cout << "Validator headerBytes sum: " << sum << std::endl;
-    // Print sums in 64-byte chunks
-    for (size_t chunk = 0; chunk < headerBytes.size() / 64; ++chunk) {
-        uint64_t chunkSum = 0;
-        for (size_t i = 0; i < 64; ++i) {
-            chunkSum += static_cast<uint64_t>(static_cast<unsigned char>(headerBytes[chunk * 64 + i]));
-        }
-        std::cout << "  Chunk " << chunk << " (offset " << chunk * 64 << "): " << chunkSum << std::endl;
-    }
-    if (headerBytes.size() % 64 != 0) {
-        uint64_t chunkSum = 0;
-        size_t start = (headerBytes.size() / 64) * 64;
-        for (size_t i = start; i < headerBytes.size(); ++i) {
-            chunkSum += static_cast<uint64_t>(static_cast<unsigned char>(headerBytes[i]));
-        }
-        std::cout << "  Last chunk (offset " << start << "): " << chunkSum << std::endl;
-    }
-
-    uint32_t crc = computeCRC32(headerBytes.data(), headerBytes.size());
-    std::cout << "Validator computed header CRC32: 0x" << std::hex << crc << std::dec << std::endl;
-    std::cout << "Header's headerCRC32: 0x" << std::hex << static_cast<unsigned int>(header.headerCRC32) << std::dec << std::endl;
+    std::fill(headerBytes.begin() + 16, headerBytes.begin() + 20, std::byte{0});
+    const uint32_t crc = computeCRC32(headerBytes.data(), header.headerSize);
     if (crc != header.headerCRC32) {
         throw InvalidGPTCRCException("Invalid GPT header CRC");
     }
@@ -87,7 +38,8 @@ void GPTValidator::validateEntryArray(const GPTHeader& header,
     size_t entrySize = header.sizeofPartitionEntry;
     size_t numEntries = header.numPartitionEntries;
 
-    if (entrySize < sizeof(GPTPartitionEntry::SIZE)) {
+    if (entrySize < GPTPartitionEntry::SIZE || entrySize % GPTPartitionEntry::SIZE != 0 ||
+        numEntries == 0 || numEntries > entryArrayData.size() / entrySize) {
         throw InvalidGPTLBAException("GPT partition entry size too small");
     }
 
@@ -101,7 +53,7 @@ void GPTValidator::validateEntryArray(const GPTHeader& header,
             throw InvalidGPTLBAException("GPT entry array data too small");
         }
         std::array<std::byte, GPTPartitionEntry::SIZE> entryData{};
-        std::memcpy(entryData.data(), entryArrayData.data() + offset, entrySize);
+        std::memcpy(entryData.data(), entryArrayData.data() + offset, GPTPartitionEntry::SIZE);
         entries.emplace_back(entryData);
     }
 
@@ -144,27 +96,16 @@ void GPTValidator::validateEntryArray(const GPTHeader& header,
 uint32_t GPTValidator::computeCRC32(const void* data, size_t length) {
     // Simple CRC32 implementation (IEEE 802.3)
     // Polynomial: 0xEDB88320
-    static uint32_t crc32_table[256];
-    static bool table_initialized = false;
-    if (!table_initialized) {
-        for (uint32_t i = 0; i < 256; ++i) {
+    static constexpr auto crc32_table = [] {
+        std::array<uint32_t, 256> table{};
+        for (uint32_t i = 0; i < table.size(); ++i) {
             uint32_t crc = i;
-            for (int j = 0; j < 8; ++j) {
-                crc = (crc >> 1) ^ (0xEDB88320 & ~((crc & 1) - 1));
-            }
-            crc32_table[i] = crc;
+            for (int bit = 0; bit < 8; ++bit) crc = (crc >> 1) ^ ((crc & 1) ? 0xEDB88320 : 0);
+            table[i] = crc;
         }
-        table_initialized = true;
-    }
-
-    // Debug: print first 10 bytes of data
-    std::cout << "computeCRC32: data=" << data << ", length=" << length << std::endl;
-    const std::byte* ptr = static_cast<const std::byte*>(data);
-    std::cout << "First 10 bytes: ";
-    for (size_t i = 0; i < 10 && i < length; ++i) {
-        std::cout << std::hex << static_cast<int>(static_cast<unsigned char>(ptr[i])) << " ";
-    }
-    std::cout << std::dec << std::endl;
+        return table;
+    }();
+    const auto* ptr = static_cast<const std::byte*>(data);
 
     uint32_t crc = 0xFFFFFFFF;
     for (size_t i = 0; i < length; ++i) {
@@ -177,7 +118,6 @@ uint32_t GPTValidator::computeCRC32(const void* data, size_t length) {
         // }
     }
     uint32_t result = ~crc;
-    std::cout << "computeCRC32: result=0x" << std::hex << result << std::dec << std::endl;
     return result;
 }
 

@@ -86,33 +86,33 @@ int main() {
         // Create a mock MBR with one partition (type 0x07, start LBA 2048, sector count 100000, bootable)
         std::vector<std::byte> mbrBuffer(512, std::byte{0}); // Initialize to zero
 
-        // Set the boot signature (little-endian: 0x55AA -> AA 55)
-        mbrBuffer[510] = std::byte{0xAA};
-        mbrBuffer[511] = std::byte{0x55};
+        // Set the boot signature (bytes 55 AA)
+        mbrBuffer[510] = std::byte{0x55};
+        mbrBuffer[511] = std::byte{0xAA};
 
-        // First partition entry (at offset 444)
+        // First partition entry (at offset 446)
         // Boot indicator: 0x80 (active)
-        mbrBuffer[444] = std::byte{0x80};
+        mbrBuffer[446] = std::byte{0x80};
         // Start CHS: we'll set to 0,0,2 for simplicity (but note: CHS is limited)
-        mbrBuffer[445] = std::byte{0x00}; // head
-        mbrBuffer[446] = std::byte{0x02}; // sector (bits 0-5) and cylinder high bits
-        mbrBuffer[447] = std::byte{0x00}; // cylinder low 8 bits
+        mbrBuffer[447] = std::byte{0x00}; // head
+        mbrBuffer[448] = std::byte{0x02}; // sector (bits 0-5) and cylinder high bits
+        mbrBuffer[449] = std::byte{0x00}; // cylinder low 8 bits
         // Partition type: 0x07 (NTFS/HPFS)
-        mbrBuffer[448] = std::byte{0x07};
+        mbrBuffer[450] = std::byte{0x07};
         // End CHS: we'll set to 0,0,0
-        mbrBuffer[449] = std::byte{0x00}; // head
-        mbrBuffer[450] = std::byte{0x00}; // sector
-        mbrBuffer[451] = std::byte{0x00}; // cylinder
+        mbrBuffer[451] = std::byte{0x00}; // head
+        mbrBuffer[452] = std::byte{0x00}; // sector
+        mbrBuffer[453] = std::byte{0x00}; // cylinder
         // Start LBA: 2048 (little endian)
-        mbrBuffer[452] = std::byte{0x00 & 0xFF};
-        mbrBuffer[453] = std::byte{(2048 >> 8) & 0xFF};
-        mbrBuffer[454] = std::byte{(2048 >> 16) & 0xFF};
-        mbrBuffer[455] = std::byte{(2048 >> 24) & 0xFF};
+        mbrBuffer[454] = std::byte{0x00 & 0xFF};
+        mbrBuffer[455] = std::byte{(2048 >> 8) & 0xFF};
+        mbrBuffer[456] = std::byte{(2048 >> 16) & 0xFF};
+        mbrBuffer[457] = std::byte{(2048 >> 24) & 0xFF};
         // Sector count: 100000 (little endian)
-        mbrBuffer[456] = std::byte{100000 & 0xFF};
-        mbrBuffer[457] = std::byte{(100000 >> 8) & 0xFF};
-        mbrBuffer[458] = std::byte{(100000 >> 16) & 0xFF};
-        mbrBuffer[459] = std::byte{(100000 >> 24) & 0xFF};
+        mbrBuffer[458] = std::byte{100000 & 0xFF};
+        mbrBuffer[459] = std::byte{(100000 >> 8) & 0xFF};
+        mbrBuffer[460] = std::byte{(100000 >> 16) & 0xFF};
+        mbrBuffer[461] = std::byte{(100000 >> 24) & 0xFF};
 
         // The rest of the partition entries (entries 2,3,4) are zero.
 
@@ -138,8 +138,8 @@ int main() {
         assert(mbrHeader.hasValidSignature());
 
         // Check the partition table
-        assert(partitionTable.hasValidSignature());
-        assert(partitionTable.getPartitionCount() == 1);
+        assert(partitionTable.getPartitionCount() == 4);
+        for (size_t slot = 1; slot < 4; ++slot) assert(partitionTable.getEntry(slot).isEmpty());
 
         // Get the first partition
         const auto& entry = partitionTable.getEntry(0);
@@ -158,7 +158,7 @@ int main() {
         recoverysuite::partition::PartitionManager manager(mockReader);
         auto [mbrHeader2, partitionTable2] = manager.readMBR();
         assert(mbrHeader2.hasValidSignature());
-        assert(partitionTable2.hasValidSignature());
+        assert(partitionTable2.getPartitionCount() == 4);
 
         // Validate partitions via manager
         manager.validatePartitions(); // Should not throw
