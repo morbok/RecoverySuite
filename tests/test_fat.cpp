@@ -13,6 +13,8 @@
 
 using namespace recoverysuite::filesystem::fat;
 using recoverysuite::filesystem::FilesystemCapabilities;
+using recoverysuite::filesystem::FilesystemType;
+using recoverysuite::filesystem::FilesystemCapability;
 
 // Mock reader for testing
 class MockFATReader : public FATReader {
@@ -118,9 +120,9 @@ void test_fat12_boot_sector() {
 
     // Test getCapabilities
     FilesystemCapabilities caps = fs.getCapabilities();
-    assert((caps & FilesystemCapability::READ_SUPPORT) != 0);
-    assert((caps & FilesystemCapability::METADATA_SUPPORT) != 0);
-    assert((caps & FilesystemCapability::WRITE_SUPPORT) == 0);
+    assert((caps & static_cast<FilesystemCapabilities>(FilesystemCapability::READ_SUPPORT)) != 0);
+    assert((caps & static_cast<FilesystemCapabilities>(FilesystemCapability::METADATA_SUPPORT)) != 0);
+    assert((caps & static_cast<FilesystemCapabilities>(FilesystemCapability::WRITE_SUPPORT)) == 0);
 
     // Test createReader
     auto fsReader = fs.createReader();
@@ -131,7 +133,8 @@ void test_fat12_boot_sector() {
     assert(fsAnalyzer != nullptr);
 
     // Test getMetadata
-    auto fsMetadata = fs.getMetadata();
+    auto metadataOwner = fs.getMetadata();
+    auto* fsMetadata = dynamic_cast<FATMetadata*>(metadataOwner.get());
     assert(fsMetadata != nullptr);
     assert(fsMetadata->getType() == FilesystemType::FAT12);
     assert(fsMetadata->getName() == "FAT12");

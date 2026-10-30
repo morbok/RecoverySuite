@@ -8,10 +8,10 @@
 #include <limits>
 #include <stdexcept>
 
-#include "../../src/Recovery/MetadataRecovery.h"
-#include "../../src/Recovery/RecoveryCapability.h"
-#include "../../src/Recovery/RecoverySafetyPolicy.h"
-#include "../../src/Disk/IDiskReader.hpp"
+#include "Recovery/MetadataRecovery.h"
+#include "Recovery/RecoveryCapability.h"
+#include "Recovery/RecoverySafetyPolicy.h"
+#include "Disk/IDiskReader.hpp"
 
 // Mock disk reader for testing - returns specific boot sector data
 class TestMockDiskReader : public recoverysuite::disk::IDiskReader {

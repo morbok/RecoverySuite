@@ -1,4 +1,5 @@
 #include "FilesystemDetector.h"
+#include "BootSectorDetection.h"
 #include <stdexcept>
 #include <algorithm>
 #include <cstring>
@@ -96,76 +97,14 @@ bool FilesystemDetector::detectFilesystems(
     return false;
 }
 
-bool FilesystemDetector::isSectorRangeValid(uint64_t /*startSector*/, uint64_t numSectors) const {
-    // In a real implementation, we would check against the disk's actual size
-    // For now, we'll do a basic validation
-    if (numSectors == 0) {
-        return false;
-    }
-
-    // Additional validation would go here
-    return true;
+bool FilesystemDetector::isSectorRangeValid(uint64_t startSector, uint64_t numSectors) const {
+    if (!diskReader_ || !diskReader_->isOpen() || numSectors == 0) return false;
+    const auto totalSectors = diskReader_->getTotalSectors();
+    return startSector < totalSectors && numSectors <= totalSectors - startSector;
 }
 
 std::string FilesystemDetector::detectFilesystemType(const std::vector<uint8_t>& bootSectorData) const {
-    // Simple filesystem detection based on boot sector signatures
-
-    // Check for FAT boot sector signature (0x55 0xAA at offset 0x1FE)
-    if (bootSectorData.size() >= 512) {
-        if (bootSectorData[0x1FE] == 0x55 && bootSectorData[0x1FF] == 0xAA) {
-            // Check FAT type based on BPB fields
-            uint16_t bytesPerSector = *reinterpret_cast<const uint16_t*>(&bootSectorData[0x0B]);
-            uint8_t sectorsPerCluster = bootSectorData[0x0D];
-            (void)sectorsPerCluster; // unused variable
-            uint16_t reservedSectorCount = *reinterpret_cast<const uint16_t*>(&bootSectorData[0x0E]);
-            (void)reservedSectorCount; // unused variable
-            uint8_t numFATs = bootSectorData[0x10];
-            (void)numFATs; // unused variable
-            uint16_t rootEntryCount = *reinterpret_cast<const uint16_t*>(&bootSectorData[0x11]);
-            uint16_t totalSectors16 = *reinterpret_cast<const uint16_t*>(&bootSectorData[0x13]);
-            uint32_t totalSectors32 = *reinterpret_cast<const uint32_t*>(&bootSectorData[0x20]);
-            uint32_t FATSize16 = *reinterpret_cast<const uint16_t*>(&bootSectorData[0x16]);
-            uint32_t FATSize32 = *reinterpret_cast<const uint32_t*>(&bootSectorData[0x24]);
-
-            uint32_t totalSectors = (totalSectors16 != 0) ? totalSectors16 : totalSectors32;
-            uint32_t fatSize = (FATSize16 != 0) ? FATSize16 : FATSize32;
-
-            if (bytesPerSector == 512) {
-                // Simple heuristic for FAT type
-                if (rootEntryCount == 0 && fatSize > 0) {
-                    // Likely FAT32
-                    return "FAT32";
-                } else if (rootEntryCount > 0) {
-                    // Likely FAT12 or FAT16
-                    // Determine based on total sector count
-                    if (totalSectors < 4085) {
-                        return "FAT12";
-                    } else {
-                        return "FAT16";
-                    }
-                }
-            }
-            return "FAT";
-        }
-    }
-
-    // Check for NTFS signature
-    if (bootSectorData.size() >= 1024) { // NTFS boot sector is typically 1KB
-        // NTFS signature is "NTFS    " at offset 0x3
-        if (bootSectorData[0x03] == 'N' &&
-            bootSectorData[0x04] == 'T' &&
-            bootSectorData[0x05] == 'F' &&
-            bootSectorData[0x06] == 'S' &&
-            bootSectorData[0x07] == ' ' &&
-            bootSectorData[0x08] == ' ' &&
-            bootSectorData[0x09] == ' ' &&
-            bootSectorData[0x0A] == ' ') {
-            return "NTFS";
-        }
-    }
-
-    // No known filesystem detected
-    return "";
+    return detectBootSectorType(bootSectorData);
 }
 
 } // namespace recovery

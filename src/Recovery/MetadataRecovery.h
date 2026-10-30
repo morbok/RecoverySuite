@@ -58,6 +58,9 @@ public:
         std::vector<uint8_t>& recoveredData
     );
 
+    /** Check a range without reading or modifying the source. */
+    bool isSectorRangeValid(uint64_t startSector, uint64_t numSectors) const;
+
 private:
     // The capability registry to check against
     const RecoveryCapabilityRegistry& capabilityRegistry_;
@@ -71,8 +74,7 @@ private:
     // The operation validator
     RecoveryOperationValidator validator_;
 
-    // Helper to check if a sector range is valid for the disk
-    bool isSectorRangeValid(uint64_t startSector, uint64_t numSectors) const;
+
 
     // Helper to read sectors from disk
     bool readSectors(

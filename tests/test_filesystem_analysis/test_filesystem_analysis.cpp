@@ -6,10 +6,10 @@
 #include <map>
 #include <string>
 
-#include "../../src/Recovery/FilesystemAnalyzer.h"
-#include "../../src/Recovery/RecoveryCapability.h"
-#include "../../src/Recovery/RecoverySafetyPolicy.h"
-#include "../../src/Disk/IDiskReader.hpp"
+#include "Recovery/FilesystemAnalyzer.h"
+#include "Recovery/RecoveryCapability.h"
+#include "Recovery/RecoverySafetyPolicy.h"
+#include "Disk/IDiskReader.hpp"
 
 // Mock disk reader for testing - returns specific boot sector data
 class TestMockDiskReader : public recoverysuite::disk::IDiskReader {
@@ -103,45 +103,25 @@ private:
 // Helper to create FAT boot sector signature
 std::vector<std::byte> createFatBootSector() {
     std::vector<std::byte> bootSector(512, std::byte{0});
-    // FAT12/FAT16 signature bytes at offset 0x52
-    bootSector[0x52] = std::byte{0x29};  // Extended boot signature
-    // Volume ID (placeholder)
-    bootSector[0x53] = std::byte{0x12};
-    bootSector[0x54] = std::byte{0x34};
-    bootSector[0x55] = std::byte{0x56};
-    bootSector[0x56] = std::byte{0x78};
-    // Volume label (NO NAME    )
-    bootSector[0x47] = std::byte{'N'};
-    bootSector[0x48] = std::byte{'O'};
-    bootSector[0x49] = std::byte{' '};
-    bootSector[0x4A] = std::byte{'N'};
-    bootSector[0x4B] = std::byte{'A'};
-    bootSector[0x4C] = std::byte{'M'};
-    bootSector[0x4D] = std::byte{'E'};
-    bootSector[0x4E] = std::byte{' '};
-    bootSector[0x4F] = std::byte{' '};
-    bootSector[0x50] = std::byte{' '};
-    bootSector[0x51] = std::byte{' '};
-    // FAT type string at offset 0x36
-    bootSector[0x36] = std::byte{'F'};
-    bootSector[0x37] = std::byte{'A'};
-    bootSector[0x38] = std::byte{'T'};
-    bootSector[0x39] = std::byte{' '};
-    bootSector[0x3A] = std::byte{'1'};
-    bootSector[0x3B] = std::byte{'2'};
+    bootSector[11] = std::byte{0}; bootSector[12] = std::byte{2}; // 512 bytes/sector
+    bootSector[13] = std::byte{1}; bootSector[14] = std::byte{1};
+    bootSector[16] = std::byte{2}; bootSector[17] = std::byte{224};
+    bootSector[19] = std::byte{0x40}; bootSector[20] = std::byte{0x0B}; // 2880 sectors
+    bootSector[21] = std::byte{0xF0}; bootSector[22] = std::byte{9};
+    bootSector[510] = std::byte{0x55}; bootSector[511] = std::byte{0xAA};
     return bootSector;
 }
 
 // Helper to create NTFS boot sector signature
 std::vector<std::byte> createNtfsBootSector() {
     std::vector<std::byte> bootSector(512, std::byte{0});
-    // NTFS signature at offset 0x03
-    bootSector[0x00] = std::byte{'N'};
-    bootSector[0x01] = std::byte{'T'};
-    bootSector[0x02] = std::byte{'F'};
-    bootSector[0x03] = std::byte{'S'};
-    // OEM ID (empty)
-    // ... rest zeros
+    const std::string oem = "NTFS    ";
+    std::memcpy(bootSector.data() + 3, oem.data(), oem.size());
+    bootSector[11] = std::byte{0}; bootSector[12] = std::byte{2};
+    bootSector[13] = std::byte{8};
+    bootSector[40] = std::byte{0xE8}; bootSector[41] = std::byte{3};
+    bootSector[48] = std::byte{4}; bootSector[64] = std::byte{0xF6};
+    bootSector[510] = std::byte{0x55}; bootSector[511] = std::byte{0xAA};
     return bootSector;
 }
 
@@ -158,6 +138,7 @@ void test_filesystem_analyzer_initialization() {
     mockReader->open("test");
 
     recoverysuite::recovery::RecoveryCapabilityRegistry capabilityRegistry;
+    capabilityRegistry.registerCapability(recoverysuite::recovery::RecoveryCapability::FILESYSTEM_ANALYSIS);
     recoverysuite::recovery::RecoverySafetyPolicy safetyPolicy;
 
     // Test constructor with all parameters
@@ -193,6 +174,7 @@ void test_filesystem_analyzer_analysis() {
     mockReader->open("test");
 
     recoverysuite::recovery::RecoveryCapabilityRegistry capabilityRegistry;
+    capabilityRegistry.registerCapability(recoverysuite::recovery::RecoveryCapability::FILESYSTEM_ANALYSIS);
     recoverysuite::recovery::RecoverySafetyPolicy safetyPolicy;
 
     // Test 1: Empty boot sector (should analyze but return limited info)
@@ -206,7 +188,7 @@ void test_filesystem_analyzer_analysis() {
 
     std::map<std::string, std::string> analysisResults;
     bool result = analyzer.analyzeFilesystem(
-        false,  // sourceIsReadOnly
+        true,   // sourceIsReadOnly
         true,   // destinationDiffersFromSource
         0,      // startSector
         1,      // numSectors
@@ -217,8 +199,9 @@ void test_filesystem_analyzer_analysis() {
         analysisResults
     );
 
-    // Should succeed even if analysis yields limited results
-    assert(result == true);
+    // Unknown boot sectors cannot be analyzed as a supported filesystem.
+    assert(result == false);
+    assert(analysisResults.empty());
     mockReader->close();
 
     // Test 2: FAT boot sector
@@ -232,7 +215,7 @@ void test_filesystem_analyzer_analysis() {
 
     std::map<std::string, std::string> analysisResults2;
     bool result2 = analyzer2.analyzeFilesystem(
-        false,  // sourceIsReadOnly
+        true,   // sourceIsReadOnly
         true,   // destinationDiffersFromSource
         0,      // startSector
         1,      // numSectors
@@ -258,7 +241,7 @@ void test_filesystem_analyzer_analysis() {
 
     std::map<std::string, std::string> analysisResults3;
     bool result3 = analyzer3.analyzeFilesystem(
-        false,  // sourceIsReadOnly
+        true,   // sourceIsReadOnly
         true,   // destinationDiffersFromSource
         0,      // startSector
         1,      // numSectors
@@ -283,6 +266,7 @@ void test_filesystem_analyzer_sector_validation() {
     mockReader->open("test");
 
     recoverysuite::recovery::RecoveryCapabilityRegistry capabilityRegistry;
+    capabilityRegistry.registerCapability(recoverysuite::recovery::RecoveryCapability::FILESYSTEM_ANALYSIS);
     recoverysuite::recovery::RecoverySafetyPolicy safetyPolicy;
     recoverysuite::recovery::FilesystemAnalyzer analyzer(
         capabilityRegistry,

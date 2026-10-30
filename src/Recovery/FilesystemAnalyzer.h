@@ -56,6 +56,9 @@ public:
         std::map<std::string, std::string>& info
     );
 
+    /** Check a range without reading or modifying the source. */
+    bool isSectorRangeValid(uint64_t startSector, uint64_t numSectors) const;
+
 private:
     // The capability registry to check against
     const RecoveryCapabilityRegistry& capabilityRegistry_;
@@ -72,8 +75,7 @@ private:
     // Start sector of the volume being analyzed
     uint64_t startSector_;
 
-    // Helper to check if a sector range is valid for the disk
-    bool isSectorRangeValid(uint64_t startSector, uint64_t numSectors) const;
+
 
     // Helper to analyze FAT filesystem
     bool analyzeFatFilesystem(
