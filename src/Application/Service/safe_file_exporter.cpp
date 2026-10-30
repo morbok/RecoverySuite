@@ -46,23 +46,24 @@ SafeFileExporter::SafeFileExporter(const std::string& directory) : impl_(std::ma
     }
 }
 SafeFileExporter::~SafeFileExporter() = default;
-void SafeFileExporter::write(const std::string& name, const std::vector<uint8_t>& data, bool verify,
-                             const std::function<bool()>& cancelled) {
+namespace {
+void writeAt(int directory, const std::string& name, const std::vector<uint8_t>& data, bool verify,
+             const std::function<bool()>& cancelled) {
     if (name.empty() || name.size() > 255 || name == "." || name == ".." ||
         name.find_first_of("/\\:") != std::string::npos ||
         std::any_of(name.begin(), name.end(), [](unsigned char c) { return c < 32 || c == 127; }))
         throw std::invalid_argument("Unsafe recovered filename");
     checkCancel(cancelled);
-    Descriptor output(::openat(impl_->directory.get(), name.c_str(), O_RDWR | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600));
+    Descriptor output(::openat(directory, name.c_str(), O_RDWR | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600));
     if (output.get() < 0) throw std::runtime_error("Cannot create output file; it may already exist");
     bool completed = false;
     // Remove only this operation's incomplete inode; never unlink a replacement or previous file.
     const auto cleanup = [&] {
         struct stat opened{}, current{};
         if (!completed && !::fstat(output.get(), &opened) &&
-            !::fstatat(impl_->directory.get(), name.c_str(), &current, AT_SYMLINK_NOFOLLOW) &&
+            !::fstatat(directory, name.c_str(), &current, AT_SYMLINK_NOFOLLOW) &&
             opened.st_dev == current.st_dev && opened.st_ino == current.st_ino)
-            (void)::unlinkat(impl_->directory.get(), name.c_str(), 0);
+            (void)::unlinkat(directory, name.c_str(), 0);
     };
     try {
         for (size_t offset = 0; offset < data.size();) {
@@ -87,19 +88,58 @@ void SafeFileExporter::write(const std::string& name, const std::vector<uint8_t>
         checkCancel(cancelled);
         struct stat opened{}, named{};
         if (::fstat(output.get(), &opened) ||
-            ::fstatat(impl_->directory.get(), name.c_str(), &named, AT_SYMLINK_NOFOLLOW) ||
+            ::fstatat(directory, name.c_str(), &named, AT_SYMLINK_NOFOLLOW) ||
             opened.st_dev != named.st_dev || opened.st_ino != named.st_ino ||
             opened.st_size < 0 || static_cast<uint64_t>(opened.st_size) != data.size())
             throw std::runtime_error("Output file changed before completion");
-        if (::fsync(impl_->directory.get())) throw std::runtime_error("Output directory flush failed");
+        if (::fsync(directory)) throw std::runtime_error("Output directory flush failed");
         completed = true;
     } catch (const std::exception&) { cleanup(); throw; }
+}
+} // namespace
+void SafeFileExporter::write(const std::string& name, const std::vector<uint8_t>& data, bool verify,
+                             const std::function<bool()>& cancelled) {
+    writeAt(impl_->directory.get(),name,data,verify,cancelled);
+}
+void SafeFileExporter::writeTree(const std::string& path, const std::vector<uint8_t>& data, bool verify,
+                                 const std::function<bool()>& cancelled) {
+    if(path.empty()||path.size()>4095)throw std::invalid_argument("Invalid recovered relative path");
+    std::vector<std::string> components;
+    for(size_t start=0;start<=path.size();) {
+        const auto end=path.find('/',start);
+        const auto part=path.substr(start,end==std::string::npos?end:end-start);
+        if(part.empty()||part.size()>255||part=="."||part==".."||part.find_first_of("\\:")!=std::string::npos||
+           std::any_of(part.begin(),part.end(),[](unsigned char c){return c<32||c==127;}))
+            throw std::invalid_argument("Unsafe recovered path component");
+        components.push_back(part);
+        if(end==std::string::npos)break;
+        start=end+1;
+    }
+    if(components.size()>33)throw std::invalid_argument("Recovered directory depth exceeds 32");
+    checkCancel(cancelled);
+    Descriptor parent(::fcntl(impl_->directory.get(),F_DUPFD_CLOEXEC,0));
+    if(parent.get()<0)throw std::runtime_error("Cannot anchor recovered directory");
+    for(size_t i=0;i+1<components.size();++i) {
+        checkCancel(cancelled);
+        if(::mkdirat(parent.get(),components[i].c_str(),0700)&&errno!=EEXIST)
+            throw std::runtime_error("Cannot create recovered directory");
+        const int next=::openat(parent.get(),components[i].c_str(),O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
+        if(next<0)throw std::runtime_error("Recovered directory is inaccessible or contains a symlink");
+        Descriptor child(next);
+        if(::fsync(parent.get()))throw std::runtime_error("Cannot flush recovered parent directory");
+        parent.reset(::fcntl(child.get(),F_DUPFD_CLOEXEC,0));
+        if(parent.get()<0)throw std::runtime_error("Cannot anchor recovered child directory");
+    }
+    writeAt(parent.get(),components.back(),data,verify,cancelled);
 }
 #else
 struct SafeFileExporter::Impl {};
 SafeFileExporter::SafeFileExporter(const std::string&) { throw std::runtime_error("Safe output export is currently supported on POSIX systems only"); }
 SafeFileExporter::~SafeFileExporter() = default;
 void SafeFileExporter::write(const std::string&, const std::vector<uint8_t>&, bool, const std::function<bool()>&) {
+    throw std::runtime_error("Safe output export is unavailable");
+}
+void SafeFileExporter::writeTree(const std::string&, const std::vector<uint8_t>&, bool, const std::function<bool()>&) {
     throw std::runtime_error("Safe output export is unavailable");
 }
 #endif

@@ -46,8 +46,8 @@ std::string GUIRecoveryService::validateImageOperation(const models::RecoveryOpe
     if (!imageReader_ || !imageReader_->isOpen()) return "Open a disk image first";
     try { imageReader_->validateIdentity(); }
     catch (const std::exception& failure) { return failure.what(); }
-    if (operation.operationType != "carving" && operation.operationType != "metadata_recovery" && operation.operationType != "file_recovery")
-        return "Choose signature carving, a FAT metadata snapshot or FAT12/16/32 root files";
+    if (operation.operationType != "carving" && operation.operationType != "metadata_recovery" && operation.operationType != "file_recovery" && operation.operationType != "file_tree_recovery")
+        return "Choose signature carving, a FAT metadata snapshot or FAT12/16/32 file recovery";
     std::error_code error;
     const auto source = std::filesystem::canonical(operation.targetDevicePath, error);
     if (error || source.string() != imageReader_->sourcePath()) return "The operation source does not match the opened image";
@@ -81,6 +81,7 @@ models::RecoveryResult GUIRecoveryService::executeOperation(const models::Recove
             if (!error.empty()) throw std::runtime_error(error);
             SafeFileExporter exporter(operation.outputPath);
             const bool carving = operation.operationType == "carving";
+            const bool tree = operation.operationType == "file_tree_recovery";
             const auto totalBytes = operation.numSectors * imageReader_->getSectorSize();
             result.processedBytesKnown = true; result.failedBytesKnown = true; result.failedItemsKnown = true;
             const auto report = [&](uint64_t processed) {
@@ -101,7 +102,8 @@ models::RecoveryResult GUIRecoveryService::executeOperation(const models::Recove
                     if (result.recoveredItemsCount + result.failedItemsCount >= 10000)
                         throw std::runtime_error("Maximum output item count reached");
                     try {
-                        exporter.write(name, data, operation.verifyAfterRecovery, cancellationToken);
+                        if(tree)exporter.writeTree(name,data,operation.verifyAfterRecovery,cancellationToken);
+                        else exporter.write(name, data, operation.verifyAfterRecovery, cancellationToken);
                         result.recoveredItems.push_back({name, static_cast<uint64_t>(data.size())});
                         ++result.recoveredItemsCount; result.recoveredBytes += data.size(); result.outputWritten = true;
                     } catch (const std::exception& failure) {
@@ -115,13 +117,16 @@ models::RecoveryResult GUIRecoveryService::executeOperation(const models::Recove
             if (carving) {
                 summary = recovery::carveSignatures(*imageReader_,operation.startSector,operation.numSectors,
                     saveItem,report,cancellationToken);
-            } else if (operation.operationType == "file_recovery") {
-                const auto files=recovery::recoverFatRootFiles(*imageReader_,operation.startSector,operation.numSectors,saveItem,report,cancellationToken);
-                summary.processedBytes=files.processedBytes;summary.cancelled=files.cancelled;summary.skippedCandidates=files.invalidFiles;
-                result.details["Invalid or unsupported root files"]=std::to_string(files.invalidFiles);
+            } else if (operation.operationType == "file_recovery" || tree) {
+                const auto files=recovery::recoverFatRootFiles(*imageReader_,operation.startSector,operation.numSectors,saveItem,report,cancellationToken,tree);
+                summary.processedBytes=files.processedBytes;summary.cancelled=files.cancelled;summary.skippedCandidates=files.invalidFiles+files.invalidDirectories;
+                result.details[tree?"Invalid or unsupported files":"Invalid or unsupported root files"]=std::to_string(files.invalidFiles);
                 result.details["Long names rejected (8.3 fallback)"]=std::to_string(files.longNameFallbacks);
                 result.details["Deleted entries not reconstructed"]=std::to_string(files.deletedEntries);
-                result.details["Subdirectories not traversed"]=std::to_string(files.directories);
+                if(tree) {
+                    result.details["Directories traversed"]=std::to_string(files.traversedDirectories);
+                    result.details["Invalid or unsupported directories"]=std::to_string(files.invalidDirectories);
+                }else result.details["Subdirectories not traversed"]=std::to_string(files.directories);
             } else {
                 recovery::RecoveryCapabilityRegistry registry;
                 registry.registerCapability(recovery::RecoveryCapability::METADATA_RECOVERY);
@@ -143,7 +148,7 @@ models::RecoveryResult GUIRecoveryService::executeOperation(const models::Recove
             result.details["Verification"] = operation.verifyAfterRecovery ? "Saved bytes were read back and compared" : "Not requested";
             result.success = !result.cancelled && !result.failedItemsCount && !summary.skippedCandidates;
             if (result.failedItemsCount) result.errorMessage = "Some candidates could not be saved; existing files were kept";
-            else if (summary.skippedCandidates) result.errorMessage = carving ? "Some signature candidates were incomplete or larger than 16 MiB" : "Some root files have invalid or unsupported names, sizes or cluster chains";
+            else if (summary.skippedCandidates) result.errorMessage = carving ? "Some signature candidates were incomplete or larger than 16 MiB" : "Some FAT files or directories have invalid or unsupported names, sizes or cluster chains";
         }
     } catch (const std::exception& failure) { result.errorMessage = failure.what(); result.success = false; }
     result.cancelled = result.cancelled || cancelled();
@@ -152,6 +157,7 @@ models::RecoveryResult GUIRecoveryService::executeOperation(const models::Recove
     result.details["Export"] = result.outputWritten ? "Only the listed items were saved to the destination" : "No output files were saved";
     result.details["Recovery method"] = operation.operationType == "metadata_recovery"
         ? "FAT metadata snapshot: boot sector and FAT copies; FAT12/16 root entries included. No repair, FAT32 root chain or NTFS MFT reconstruction."
+        : operation.operationType == "file_tree_recovery" ? "Allocated FAT12/16/32 files with bounded recursive directory traversal. Deleted chains are not inferred; empty directories and original permissions/timestamps are not exported."
         : operation.operationType == "file_recovery" ? "Allocated FAT12/16/32 root files using verified long names or 8.3 aliases and cluster chains. No deleted-file guessing or subdirectory traversal."
         : "Signature candidates only; file structure and content may still be damaged";
     if (progressCallback) {

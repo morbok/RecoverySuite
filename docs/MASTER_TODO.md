@@ -19,7 +19,8 @@ Updated: 2026-10-31. Historical phase summaries are not the release checklist.
        [x] Add verified CLI export and bounded FAT metadata snapshots.
        [x] Copy allocated FAT12/16/32 root files with 8.3 aliases and fragmented cluster chains.
        [x] Decode validated Unicode long names with safe ASCII alias fallback.
-       [ ] Add recursive directories/OEM short names, deleted-chain inference and NTFS MFT recovery.
+       [x] Add bounded recursive FAT directory/file recovery and safe hierarchical POSIX output.
+       [ ] Add OEM short names, deleted-chain inference and NTFS MFT recovery.
 4. [x] Export signature candidates safely on POSIX, preserving bytes and rejecting traversal, symlinks,
        overwrite and invalid destinations; verify saved bytes in integration tests.
 5. [x] Propagate cancellation/progress into image scan/export loops and test worker shutdown.

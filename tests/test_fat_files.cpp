@@ -205,6 +205,111 @@ private slots:
         }
 #endif
     }
+    void recursiveFiles_data(){QTest::addColumn<int>("kind");for(int kind:{12,16,32})QTest::newRow(qPrintable(QString::number(kind)))<<kind;}
+    void recursiveFiles(){
+#ifndef _WIN32
+        QFETCH(int,kind);QTemporaryDir root;Volume fixed(kind==16,kind==16?4096:512);Fat32Volume large;
+        auto& image=kind==32?large.data:fixed.data;const int ss=kind==16?4096:512,dataStart=kind==32?large.dataStart:fixed.dataStart;
+        const int sectors=kind==32?large.sectors:fixed.sectors,rootPos=kind==32?(dataStart+8)*ss+32:fixed.rootStart*ss+3*32;
+        const auto entry=[&](int cluster,unsigned value){if(kind==32)large.entry(cluster,value);else fixed.entry(cluster,value);};
+        const unsigned end=kind==32?0x0fffffff:(kind==16?0xffff:0xfff);
+        const auto record=[&](QByteArray& bytes,int pos,const QByteArray& name,int attr,unsigned cluster,unsigned size){
+            bytes.replace(pos,32,QByteArray(32,char{0}));bytes.replace(pos,11,name);bytes[pos+11]=char(attr);
+            if(kind==32)le(bytes,pos+20,cluster>>16);
+            le(bytes,pos+26,cluster&65535);le(bytes,pos+28,size,4);
+        };
+        entry(5,8);entry(8,end);entry(6,end);entry(11,14);entry(14,end);entry(12,end);
+        record(image,rootPos,"SUBDIR     ",16,5,0);
+        QByteArray directory(2*ss,char{0});for(int i=0;i<ss/32;++i)directory[i*32]=char(0xe5);
+        record(directory,0,".          ",16,5,0);record(directory,32,"..         ",16,0,0);
+        const auto longName=QString::fromUtf8("İç klasör verisi 📷.bin");QByteArray longRecords(256,char{0});
+        const int names=longEntries(longRecords,longName,"CHILD   BIN");
+        const int nameStart=ss-32;directory.replace(nameStart,names*32,longRecords.left(names*32));
+        const int filePos=nameStart+names*32;record(directory,filePos,"CHILD   BIN",32,11,ss+7);
+        record(directory,filePos+32,"NESTED     ",16,6,0);record(directory,filePos+64,"EMPTY   TXT",32,0,0);
+        image.replace((dataStart+3)*ss,ss,directory.left(ss));image.replace((dataStart+6)*ss,ss,directory.mid(ss));
+        QByteArray nested(ss,char{0});record(nested,0,".          ",16,6,0);record(nested,32,"..         ",16,5,0);record(nested,64,"INNER   TXT",32,12,5);
+        image.replace((dataStart+4)*ss,ss,nested);image.replace((dataStart+9)*ss,ss,QByteArray(ss,'P'));
+        image.replace((dataStart+12)*ss,ss,QByteArray(ss,'Q'));image.replace((dataStart+10)*ss,5,"hello");
+        const auto path=root.filePath("source.img");const auto original=QByteArray(3*ss,char(0x66))+image;save(path,original);
+        const auto output=root.filePath("out");QVERIFY(QDir().mkdir(output));application::service::GUIRecoveryService service(nullptr);
+        const auto source=service.openImage(path.toStdString(),ss);auto op=operation(source.devicePath,output,3,sectors);op.operationType="file_tree_recovery";
+        const auto result=service.executeOperation(op);QVERIFY2(result.success,result.errorMessage.c_str());
+        QCOMPARE(result.recoveredItemsCount,uint64_t(kind==32?4:5));QCOMPARE(result.details.at("Directories traversed"),std::string("2"));
+        QCOMPARE(load(QDir(output).filePath("SUBDIR/"+longName)),QByteArray(ss,'P')+QByteArray(7,'Q'));
+        QCOMPARE(load(output+"/SUBDIR/NESTED/INNER.TXT"),QByteArray("hello"));QCOMPARE(load(output+"/SUBDIR/EMPTY.TXT"),QByteArray());
+        const auto repeated=service.executeOperation(op);QVERIFY(!repeated.success);QCOMPARE(repeated.failedItemsCount,result.recoveredItemsCount);
+        QCOMPARE(load(path),original);
+        if(kind==12){
+            const auto guiOut=root.filePath("gui");QVERIFY(QDir().mkdir(guiOut));gui::core::MainWindow window(&service);window.show();
+            window.findChild<QLineEdit*>("imagePath")->setText(path);window.findChild<QPushButton*>("openImage")->click();
+            window.findChild<QComboBox*>("recoveryMethod")->setCurrentIndex(3);window.findChild<QLineEdit*>("recoveryStart")->setText("3");
+            window.findChild<QLineEdit*>("recoveryCount")->setText(QString::number(sectors));window.findChild<QLineEdit*>("recoveryOutput")->setText(guiOut);
+            window.findChild<QPushButton*>("startImageRecovery")->click();QTRY_COMPARE_WITH_TIMEOUT(window.findChild<QLabel*>("resultStatus")->text(),QString("Completed"),5000);
+            QTRY_VERIFY(window.findChild<QPushButton*>("recoverySettings")->isEnabled());window.close();QCOMPARE(load(guiOut+"/SUBDIR/NESTED/INNER.TXT"),QByteArray("hello"));
+        }
+        if(kind==32){
+            const auto cliOut=root.filePath("cli");QVERIFY(QDir().mkdir(cliOut));QProcess cli;cli.start(QCoreApplication::applicationDirPath()+"/RecoverySuite_CLI",
+                {"image","tree",path,"--start","3","--count",QString::number(sectors),"--output",cliOut});
+            QVERIFY(cli.waitForFinished(5000));QCOMPARE(cli.exitCode(),0);QCOMPARE(load(cliOut+"/SUBDIR/"+longName),QByteArray(ss,'P')+QByteArray(7,'Q'));
+        }
+        const auto cancelOut=root.filePath("cancel");QVERIFY(QDir().mkdir(cancelOut));op.outputPath=cancelOut.toStdString();bool cancel=false;
+        const uint64_t metadata=kind==32?512+2*600*512+2*512:ss+2*fixed.fatSectors*ss+((32*32+ss-1)/ss)*ss;
+        const auto stopped=service.executeOperation(op,[&](const auto& progress){if(progress.processedBytes>metadata)cancel=true;},[&]{return cancel;});
+        QVERIFY(stopped.cancelled);QVERIFY(!stopped.outputWritten);QVERIFY(QDir(cancelOut).entryList(QDir::NoDotAndDotDot|QDir::AllEntries).isEmpty());
+#endif
+    }
+    void recursiveDirectoryBudgets_data(){QTest::addColumn<bool>("bytes");QTest::newRow("directory-attempt-limit")<<false;QTest::newRow("directory-byte-limit")<<true;}
+    void recursiveDirectoryBudgets(){
+#ifndef _WIN32
+        QFETCH(bool,bytes);QTemporaryDir root;QByteArray image;uint64_t count=0;
+        if(bytes){
+            Fat32Volume volume;const int pos=(volume.dataStart+8)*512+32;volume.data.replace(pos,11,"HUGE       ");volume.data[pos+11]=16;le(volume.data,pos+26,100);
+            for(int c=100;c<32869;++c)volume.entry(c,c==32868?0x0fffffff:c+1);
+            image=volume.data;count=volume.sectors;
+        }else{
+            Volume volume;volume.directory(3,"MANY       ",5,0);volume.data[volume.rootStart*512+3*32+11]=16;volume.entry(5,20);
+            for(int c=20;c<=83;++c)volume.entry(c,c==83?0xfff:c+1);
+            int index=0;for(int c=5;c<=83;c=(c==5?20:c+1))for(int n=0;n<16;++n){
+                const int pos=(volume.dataStart+c-2)*512+n*32;volume.data.replace(pos,11,QString("D%1   ").arg(index++,7,10,QChar('0')).toLatin1());volume.data[pos+11]=16;
+            }
+            image=volume.data;count=volume.sectors;
+        }
+        const auto path=root.filePath("source.img");save(path,image);application::service::GUIRecoveryService service(nullptr);const auto source=service.openImage(path.toStdString());
+        const auto output=root.filePath("out");QVERIFY(QDir().mkdir(output));auto op=operation(source.devicePath,output,0,count);op.operationType="file_tree_recovery";
+        const auto result=service.executeOperation(op);QVERIFY(!result.success);QCOMPARE(load(path),image);
+        if(bytes){QCOMPARE(result.details.at("Invalid or unsupported directories"),std::string("1"));QCOMPARE(load(output+"/HIGH.BIN"),Fat32Volume().expected());}
+        else {QVERIFY(!result.outputWritten);QVERIFY(QString::fromStdString(result.errorMessage).contains("directory item limit"));}
+#endif
+    }
+    void recursiveCorruption_data(){QTest::addColumn<QString>("fault");for(const char* f:{"directory-cycle","file-cycle","parent-cycle","directory-data","invalid-directory-name","depth","symlink"})QTest::newRow(f)<<QString(f);}
+    void recursiveCorruption(){
+#ifndef _WIN32
+        QFETCH(QString,fault);QTemporaryDir root;Volume volume;volume.entry(5,0xfff);volume.directory(3,"SUBDIR     ",5,0);volume.data[volume.rootStart*512+3*32+11]=16;
+        const int child=(volume.dataStart+3)*512;
+        volume.data.replace(child,11,"CHILD   TXT");volume.data[child+11]=32;le(volume.data,child+26,6);le(volume.data,child+28,4,4);volume.entry(6,0xfff);
+        volume.data.replace((volume.dataStart+4)*512,4,"test");
+        if(fault=="directory-cycle")volume.entry(5,5);
+        if(fault=="file-cycle"){volume.entry(6,6);le(volume.data,child+28,513,4);}
+        if(fault=="parent-cycle"){volume.data[child+11]=16;le(volume.data,child+26,5);le(volume.data,child+28,0,4);}
+        if(fault=="directory-data")le(volume.data,child+26,5);
+        if(fault=="invalid-directory-name"){volume.directory(3,"../BAD     ",2,0);volume.data[volume.rootStart*512+3*32+11]=16;}
+        if(fault=="depth"){
+            volume.data[child+11]=16;le(volume.data,child+26,20);le(volume.data,child+28,0,4);
+            for(int i=20;i<55;++i){volume.entry(i,0xfff);const int pos=(volume.dataStart+i-2)*512;volume.data.replace(pos,11,"NEXT       ");volume.data[pos+11]=16;le(volume.data,pos+26,i+1);}
+        }
+        const auto path=root.filePath("source.img");save(path,volume.data);const auto output=root.filePath("out");QVERIFY(QDir().mkdir(output));
+        const auto outside=root.filePath("outside");QVERIFY(QDir().mkdir(outside));if(fault=="symlink")QVERIFY(QFile::link(outside,output+"/SUBDIR"));
+        application::service::GUIRecoveryService service(nullptr);const auto source=service.openImage(path.toStdString());auto op=operation(source.devicePath,output,0,volume.sectors);op.operationType="file_tree_recovery";
+        const auto result=service.executeOperation(op);QVERIFY(!result.success);QVERIFY(result.outputWritten);
+        if(fault=="invalid-directory-name"){QVERIFY(!QFile::exists(output+"/FRAG.TXT"));QVERIFY(QFile::exists(output+"/EMPTY.TXT"));}
+        else QCOMPARE(load(output+"/FRAG.TXT"),volume.expected());
+        QVERIFY(!QFile::exists(output+"/SUBDIR/CHILD.TXT"));QCOMPARE(load(path),volume.data);
+        QVERIFY(QDir(outside).entryList(QDir::NoDotAndDotDot|QDir::AllEntries).isEmpty());
+        if(fault=="directory-cycle"||fault=="parent-cycle"||fault=="depth")QCOMPARE(result.details.at("Invalid or unsupported directories"),std::string("1"));
+        if(fault=="directory-data"||fault=="file-cycle")QCOMPARE(result.details.at("Invalid or unsupported files"),std::string("1"));
+#endif
+    }
     void guiCliAndCancellation(){
 #ifndef _WIN32
         QTemporaryDir root;Volume volume;const auto path=root.filePath("source.img");save(path,volume.data);

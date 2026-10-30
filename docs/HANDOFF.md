@@ -8,9 +8,12 @@ Supported read-only image workflows:
 - FAT12/16/32 metadata snapshots: boot/FAT copies and FAT12/16 fixed root bytes.
 - Allocated FAT12/16/32 root files using verified Unicode long names or ASCII 8.3 aliases and cluster chains, including
   fragmentation and zero-length files. FAT32 follows the root chain and honors the active FAT. Deleted entries and subdirectories are skipped; invalid long names fall back to ASCII aliases.
+- Optional FAT directory traversal via GUI files-with-subfolders or CLI image tree, with 32-level,
+  1023-directory and 64 MiB directory-read limits. Empty folders/permissions/timestamps are not exported.
 - CLI image info/analyze for geometry and FAT/NTFS boot-sector fields; unknown metrics stay unknown.
 
 All image export uses a directory-anchored POSIX writer with exclusive creation, path/name checks,
+component-by-component safe directory creation for tree mode,
 optional readback comparison and partial-output cleanup. Cancellation reaches source reads and writes.
 Closing the GUI cancels and waits for worker cleanup; use the atomic flag, not queued cancellation.
 
@@ -22,7 +25,7 @@ Legacy RecoveryService recoverMetadata/recoverFiles/carveFiles return buffers, w
 GUI executeOperation and CLI image commands provide actual filesystem output. CarvingEngine uses
 the shared scanner and absolute offsets. Never restore manufactured file/FAT/MFT contents.
 
-Remaining scope includes deleted-file chain inference, recursive directories and OEM short-name support,
+Remaining scope includes deleted-file chain inference, OEM short-name support,
 NTFS MFT/files, Windows safe export, session resume, hardware QA and packaging. Signature
 candidates and readback equality do not establish full format or filesystem validity.
 

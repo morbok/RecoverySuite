@@ -171,6 +171,25 @@ private slots:
         QSKIP("Safe file export is POSIX-only");
 #endif
     }
+    void treeExporterPreservesSafety() {
+#ifndef _WIN32
+        QTemporaryDir root,outside;SafeFileExporter exporter(root.path().toStdString());const std::vector<uint8_t> data{1,2,3};
+        exporter.writeTree("A/B/one",data,true);exporter.writeTree("A/B/two",data,true);
+        QCOMPARE(load(root.filePath("A/B/one")),QByteArray::fromHex("010203"));
+        QVERIFY(rejects([&]{exporter.writeTree("A/B/one",data,true);}));
+        for(const auto& path:std::vector<std::string>{"../escape","/absolute","A/../escape","A//bad","A/","./bad","A/drive:bad",std::string("A/nul\0name",10)})
+            QVERIFY(rejects([&]{exporter.writeTree(path,data,true);}));
+        std::filesystem::create_directory_symlink(outside.path().toStdString(),root.filePath("link").toStdString());
+        QVERIFY(rejects([&]{exporter.writeTree("link/escape",data,true);}));QVERIFY(!QFile::exists(outside.filePath("escape")));
+        QVERIFY(rejects([&]{exporter.writeTree("A/B/one/sub",data,true);}));
+        int polls=0;QVERIFY(rejects([&]{exporter.writeTree("C/D/cancelled",std::vector<uint8_t>(200000,7),true,[&]{return ++polls>=6;});}));
+        QVERIFY(!QFile::exists(root.filePath("C/D/cancelled")));QCOMPARE(load(root.filePath("A/B/one")),QByteArray::fromHex("010203"));
+        std::string deep;for(int i=0;i<33;++i)deep+="d/";deep+="file";
+        QVERIFY(rejects([&]{exporter.writeTree(deep,data,true);}));QVERIFY(!QFile::exists(root.filePath("d")));
+#else
+        QSKIP("Safe tree export is POSIX-only");
+#endif
+    }
     void legacyCarverUsesExactImageOffsets() {
         QTemporaryDir root;const auto source=fixture(root);DiskImageReader reader;reader.open(source.toStdString());
         recoverysuite::recovery::RecoveryCapabilityRegistry registry;

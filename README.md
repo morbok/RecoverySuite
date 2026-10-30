@@ -43,6 +43,7 @@ are reported; completed files remain available after cancellation or partial fai
 ./build/bin/RecoverySuite_CLI image carve source.img --output /existing/empty-folder --start 0
 ./build/bin/RecoverySuite_CLI image metadata fat-volume.img --output /another/existing-folder
 ./build/bin/RecoverySuite_CLI image files fat-volume.img --output /existing/files-folder
+./build/bin/RecoverySuite_CLI image tree fat-volume.img --output /existing/tree-folder
 ```
 
 Use `--sector-size 4096` for a 4 KiB-sector image, `--count N` to bound the scan, and
@@ -82,6 +83,25 @@ to the ASCII short alias; the result reports how many names fell back. Original 
 code pages are not reconstructed. Names are never shortened or rewritten to resolve collisions.
 Readback verification checks saved bytes; it does not prove that the source filesystem is intact.
 
+## FAT files with subfolders
+
+Choose **FAT12/16/32 files with subfolders** or run `image tree`. This follows allocated directory
+and file chains, including fragmented directories and validated Unicode long names. The complete
+volume range is required, as in root-file mode. Directory clusters are reserved before any file
+payload is exported so directory/file overlaps cannot be recovered as normal files. Dot/parent
+links are skipped. Invalid directories/files cause a failed/partial result; completed outputs remain.
+
+Traversal is limited to 32 levels, 1023 attempted subdirectories, 16 MiB per directory and 64 MiB
+of directory reads in total, plus the existing 10,000-file and 16 MiB/file limits. Hitting the global
+directory/file-count limit aborts discovery before export. Empty directories, original permissions,
+timestamps, deleted-chain inference and NTFS are not exported. Directory paths are preserved only
+for saved files. Path components must fit 255 UTF-8 bytes and the full relative path 4095 bytes.
+
+On POSIX the writer creates missing folders with mode 0700, reuses existing real directories,
+rejects symlinks in every component and creates files exclusively with mode 0600. Output failures
+and cancellation may leave empty created folders. Existing output files are never replaced or
+renamed to resolve name collisions. Cancellation removes the operation's incomplete file.
+
 ## Current state
 
 - GUI and CLI compile on Linux; all 27 registered CTest executables pass locally in Debug and Release.
@@ -90,7 +110,7 @@ Readback verification checks saved bytes; it does not prove that the source file
 - POSIX output export rejects traversal, symlink components, unsafe names and existing files. It
   anchors the selected directory with a file descriptor; incomplete writes are removed on failure.
 - The image workflow supports signature carving, FAT metadata snapshots and allocated FAT12/16/32 root
-  files. Recursive directories, deleted FAT chains and NTFS MFT recovery remain unavailable.
+  files, with optional bounded recursive traversal. Deleted FAT chains and NTFS MFT recovery remain unavailable.
 - Windows safe export is unavailable; Windows builds and recovery against real devices remain unvalidated.
 - Integration tests use synthetic images; the image workflow also passes AddressSanitizer/UBSan locally.
 

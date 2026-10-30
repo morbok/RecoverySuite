@@ -1,3 +1,12 @@
+# 2026-10-31 — Bounded recursive FAT recovery
+
+Added GUI files-with-subfolders and CLI image tree for allocated FAT12/16/32 directories/files,
+including fragmented directory chains and validated Unicode names. All discovered directory chains
+are reserved before file payload reads. Bound depth, directory count/read bytes, path length and
+file sizes/count; replace the global cluster set with a bounded bitmap. POSIX hierarchical output
+rejects symlinks/traversal, creates private folders and files, and preserves existing files.
+Empty folders, original metadata, deleted chains and NTFS remain unsupported.
+
 # 2026-10-31 — Reject directory/file cross-links
 
 Fixed root-file recovery exporting directory clusters as file data when the directory entry appeared

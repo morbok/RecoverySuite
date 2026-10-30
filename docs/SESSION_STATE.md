@@ -137,3 +137,33 @@ Root-file recovery now reserves known child-directory chains before any file exp
 entry order, without reading or exporting those subdirectories. Cyclic chains are bounded by the
 visited-cluster set and cancellation is checked throughout. Both new regressions pass; all 27 Debug
 and Release CTest targets and the image/metadata/FAT-file ASan+UBSan suites pass.
+
+
+## 2026-10-31 — Recursive FAT tree checkpoint
+
+Added optional GUI FAT files-with-subfolders and CLI image tree, with the same source/range/output
+checks and signal cancellation as other image exports. The shared FAT reader discovers allocated
+FAT12/16/32 directories, including fragmented chains and cross-cluster Unicode LFN records, before
+reading file payloads. Directory claims are reserved even when their names or sizes are invalid;
+claimed metadata cannot be exported as file data. Dot/parent links are ignored. A bounded bitmap
+tracks cluster ownership. Root-only mode and legacy buffered APIs remain root-only by default.
+
+POSIX tree export validates every path component, anchors traversal with directory handles,
+rejects symlinks/traversal and existing files, creates private directories (0700)/files (0600), and
+cleans incomplete files on failure or cancellation. Existing real directories can be reused.
+Empty directories and original timestamps/permissions are not reconstructed; cancellation/output
+failures may leave empty created folders. Limits: 32 directory levels, 1023 attempted subdirectories,
+16 MiB per directory, 64 MiB directory reads, 4095 path bytes, 255 component bytes, and existing
+16 MiB/file plus 10,000-file caps. Global item-limit failures abort discovery before export.
+
+Validation: all 27 CTest targets pass in Debug and Release; image, metadata snapshot and FAT-file
+suites pass ASan/UBSan (Qt leak detection disabled). Recursive tests cover FAT12, FAT16 4K sectors,
+FAT32, nonzero volume offsets, actual GUI and CLI actions, Unicode names, fragmentation, nested
+and empty files, repeats/no-overwrite, cancellation, directory/file/parent cycles, symlinks,
+invalid directory-name claims, directory byte/count and depth limits. Selected recursive GUI and
+corruption cases also exited normally under GDB (12 QtTest passes including setup/cleanup).
+Graphify updated: 3732 nodes / 6574 edges, with 20 existing config-node source_file warnings.
+Remote CI remains unverified; do not merge without checking current CI and code review.
+
+Next release work: OEM short-name encoding, deleted-file reconstruction, NTFS MFT/files, Windows
+safe export, persisted sessions/resume, real-device QA and packaging. Do not label the product done.

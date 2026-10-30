@@ -3,6 +3,7 @@
 #include "source_bytes.h"
 #include "BootSectorDetection.h"
 #include <set>
+#include <algorithm>
 #include <stdexcept>
 namespace recoverysuite::recovery {
 namespace {
@@ -23,7 +24,7 @@ std::string shortPart(const std::vector<uint8_t>& root,size_t pos,size_t width) 
 }
 FatRootSummary recoverFatRootFiles(disk::IDiskReader& reader,uint64_t start,uint64_t count,
     const std::function<void(const std::string&,const std::vector<uint8_t>&)>& item,
-    const std::function<void(uint64_t)>& progress,const std::function<bool()>& cancelled) {
+    const std::function<void(uint64_t)>& progress,const std::function<bool()>& cancelled,bool recursive) {
     FatRootSummary summary;
     const auto check=[&]{if(cancelled&&cancelled())throw Cancelled{};};
     const auto read=[&](uint64_t offset,uint64_t length) {
@@ -80,13 +81,15 @@ FatRootSummary recoverFatRootFiles(disk::IDiskReader& reader,uint64_t start,uint
         if((next(0)&255)!=boot[21]||(next(0)&~uint64_t{255})!=(fat32?0x0fffff00:(type=="FAT12"?0xf00:0xff00))||!validSecond)
             throw std::runtime_error("Invalid reserved FAT entries");
         std::vector<uint8_t> root;
-        std::set<uint64_t> usedClusters;
+        std::vector<bool> usedClusters(static_cast<size_t>(clusters+2),false);
+        std::vector<bool> directoryClaims(recursive?static_cast<size_t>(clusters+2):0,false);
         if(fat32) {
             uint64_t cluster=sourceLe32(boot,44);
             while(cluster<eoc) {
                 check();
-                if(cluster<2||cluster>=clusters+2||cluster>=reservedCluster||!usedClusters.insert(cluster).second)
+                if(cluster<2||cluster>=clusters+2||cluster>=reservedCluster||usedClusters[cluster])
                     throw std::runtime_error("Invalid or cyclic FAT32 root directory chain");
+                usedClusters[cluster]=true;
                 const auto length=clusterSectors*sectorSize;
                 if(root.size()+length>16*1024*1024)throw std::runtime_error("FAT32 root directory exceeds the 16 MiB limit");
                 const auto bytes=read((dataStart+(cluster-2)*clusterSectors)*sectorSize,length);
@@ -98,54 +101,112 @@ FatRootSummary recoverFatRootFiles(disk::IDiskReader& reader,uint64_t start,uint
         // Reserve known child-directory chains before exporting any root file. Directory
         // entries can occur after files, so a single output pass would otherwise miss these
         // cross-links and export directory metadata as if it were file contents.
-        for(size_t index=0;index<entries;++index) {
+        if(!recursive)for(size_t index=0;index<entries;++index) {
             check();const size_t pos=index*32;
             if(root[pos]==0)break;
             if(root[pos]==0xe5||(root[pos+11]&0x18)!=0x10)continue;
             uint64_t cluster=sourceLe16(root,pos+26)|(fat32?sourceLe16(root,pos+20)<<16:0);
             while(cluster>=2&&cluster<clusters+2&&cluster<reservedCluster) {
-                check();if(!usedClusters.insert(cluster).second)break;
+                check();if(usedClusters[cluster])break;
+                usedClusters[cluster]=true;
                 cluster=next(cluster);
             }
         }
-        FatLongName longName;
-        for(size_t index=0;index<entries;++index) {
-            check();const size_t pos=index*32;
-            if(root[pos]==0)break;
-            if(root[pos]==0xe5){longName.reset();++summary.deletedEntries;continue;}
-            const auto attributes=root[pos+11];
-            if((attributes&0x0f)==0x0f){longName.consume(root,pos);continue;}
-            if(attributes&8){longName.reset();continue;}
-            if(attributes&16){longName.reset();++summary.directories;continue;}
-            if(summary.foundItems+summary.invalidFiles>=10000)throw std::runtime_error("FAT output item limit reached");
-            bool fallback=false;
-            auto name=longName.take(root,pos,fallback);
-            if(fallback)++summary.longNameFallbacks;
-            try {
-                if(attributes&0xc0)throw InvalidFile("Reserved directory attributes are set");
-                if(name.empty()) {
-                    name=shortPart(root,pos,8);const auto extension=shortPart(root,pos+8,3);
-                    if(name.empty())throw InvalidFile("Empty filename");
-                    if(!extension.empty())name+='.'+extension;
+        struct Directory {std::vector<uint8_t> bytes;std::string path;size_t depth;};
+        struct File {std::string name;uint64_t size,first;};
+        std::vector<Directory> directories;directories.push_back({std::move(root),{},0});
+        std::vector<File> files;
+        std::set<std::string> directoryPaths;
+        uint64_t directoryBytes=directories.front().bytes.size();
+        for(size_t d=0;d<directories.size();++d) {
+            // Move the current directory out: appending children may reallocate the queue.
+            auto current=std::move(directories[d]);
+            const auto& bytes=current.bytes;
+            FatLongName longName;
+            const size_t limit=d==0?entries:bytes.size()/32;
+            for(size_t index=0;index<limit;++index) {
+                check();const size_t pos=index*32;
+                if(bytes[pos]==0)break;
+                if(bytes[pos]==0xe5){longName.reset();++summary.deletedEntries;continue;}
+                const auto attributes=bytes[pos+11];
+                if((attributes&0x0f)==0x0f){longName.consume(bytes,pos);continue;}
+                if(attributes&8){longName.reset();continue;}
+                const bool directory=attributes&16;
+                // Dot links describe parent relationships, never traversal targets.
+                if(directory&&bytes[pos]=='.'&&
+                   ((bytes[pos+1]==' '&&std::all_of(bytes.begin()+pos+2,bytes.begin()+pos+11,[](uint8_t c){return c==' ';}))||
+                    (bytes[pos+1]=='.'&&std::all_of(bytes.begin()+pos+2,bytes.begin()+pos+11,[](uint8_t c){return c==' ';})))) {
+                    longName.reset();continue;
                 }
-                const uint64_t size=sourceLe32(root,pos+28),high=sourceLe16(root,pos+20);
-                const uint64_t first=sourceLe16(root,pos+26)|(fat32?high<<16:0);
-                if(size>16*1024*1024||(fat32?(high&0xf000)!=0:high!=0)||(!size&&first))throw InvalidFile("Unsupported file size or first cluster");
-                std::vector<uint8_t> data;data.reserve(static_cast<size_t>(size));std::set<uint64_t> chain;
-                uint64_t cluster=first;
-                while(data.size()<size) {
+                if(directory){
+                    ++summary.directories;
+                    if(!recursive){longName.reset();continue;}
+                    if(summary.directories>1023)throw std::runtime_error("FAT directory item limit reached");
+                    // Even an invalid name or an oversized directory still claims metadata
+                    // clusters. Reserve the entire reachable chain without reading its data.
+                    uint64_t claimed=sourceLe16(bytes,pos+26)|(fat32?sourceLe16(bytes,pos+20)<<16:0);
+                    while(claimed>=2&&claimed<clusters+2&&claimed<reservedCluster&&!directoryClaims[claimed]) {
+                        check();directoryClaims[claimed]=true;claimed=next(claimed);
+                    }
+                }
+                else if(files.size()+summary.invalidFiles>=10000)throw std::runtime_error("FAT output item limit reached");
+                bool fallback=false;auto name=longName.take(bytes,pos,fallback);
+                if(fallback)++summary.longNameFallbacks;
+                try {
+                    if(attributes&0xc0)throw InvalidFile("Reserved directory attributes are set");
+                    if(name.empty()) {
+                        name=shortPart(bytes,pos,8);const auto extension=shortPart(bytes,pos+8,3);
+                        if(name.empty())throw InvalidFile("Empty filename");
+                        if(!extension.empty())name+='.'+extension;
+                    }
+                    if(!current.path.empty())name=current.path+'/'+name;
+                    if(name.size()>4095)throw InvalidFile("Recovered path exceeds the output path limit");
+                    const uint64_t size=sourceLe32(bytes,pos+28),high=sourceLe16(bytes,pos+20);
+                    const uint64_t first=sourceLe16(bytes,pos+26)|(fat32?high<<16:0);
+                    if((fat32?(high&0xf000)!=0:high!=0))throw InvalidFile("Unsupported first cluster");
+                    if(directory) {
+                        if(size||current.depth>=32||directories.size()>=1024||!directoryPaths.insert(name).second)
+                            throw InvalidFile("Invalid directory size, depth, count or duplicate path");
+                        std::vector<uint8_t> contents;
+                        std::set<uint64_t> chain;
+                        uint64_t cluster=first;
+                        do {
+                            check();
+                            if(cluster<2||cluster>=clusters+2||cluster>=reservedCluster||!chain.insert(cluster).second||usedClusters[cluster])
+                                throw InvalidFile("Invalid, cyclic or cross-linked directory chain");
+                            usedClusters[cluster]=true;
+                            const auto length=clusterSectors*sectorSize;
+                            if(contents.size()+length>16*1024*1024||directoryBytes+length>64*1024*1024)
+                                throw InvalidFile("Directory read limit reached");
+                            const auto part=read((dataStart+(cluster-2)*clusterSectors)*sectorSize,length);
+                            directoryBytes+=length;contents.insert(contents.end(),part.begin(),part.end());cluster=next(cluster);
+                        }while(cluster<eoc);
+                        directories.push_back({std::move(contents),std::move(name),current.depth+1});++summary.traversedDirectories;
+                    }else {
+                        if(size>16*1024*1024||(!size&&first))throw InvalidFile("Unsupported file size or first cluster");
+                        files.push_back({std::move(name),size,first});
+                    }
+                }catch(const InvalidFile&){if(directory)++summary.invalidDirectories;else ++summary.invalidFiles;}
+            }
+        }
+        // Discover/reserve all directory chains before reading any file payload.
+        for(const auto& file:files) {
+            try {
+                std::vector<uint8_t> data;data.reserve(static_cast<size_t>(file.size));std::set<uint64_t> chain;
+                uint64_t cluster=file.first;
+                while(data.size()<file.size) {
                     check();
-                    if(cluster<2||cluster>=clusters+2||cluster>=reservedCluster||!chain.insert(cluster).second||usedClusters.count(cluster))
+                    if(cluster<2||cluster>=clusters+2||cluster>=reservedCluster||!chain.insert(cluster).second||usedClusters[cluster]||(recursive&&directoryClaims[cluster]))
                         throw InvalidFile("Invalid, cyclic or cross-linked cluster chain");
-                    const auto length=std::min<uint64_t>(size-data.size(),clusterSectors*sectorSize);
-                    const auto bytes=read((dataStart+(cluster-2)*clusterSectors)*sectorSize,length);
-                    data.insert(data.end(),bytes.begin(),bytes.end());
+                    const auto length=std::min<uint64_t>(file.size-data.size(),clusterSectors*sectorSize);
+                    const auto part=read((dataStart+(cluster-2)*clusterSectors)*sectorSize,length);
+                    data.insert(data.end(),part.begin(),part.end());
                     const auto following=next(cluster);
-                    if(data.size()==size){if(following<eoc)throw InvalidFile("Chain extends beyond declared file length");}
+                    if(data.size()==file.size){if(following<eoc)throw InvalidFile("Chain extends beyond declared file length");}
                     else if(following>=eoc)throw InvalidFile("Chain ends before declared file length");
                     cluster=following;
                 }
-                check();item(name,data);usedClusters.insert(chain.begin(),chain.end());++summary.foundItems;
+                check();item(file.name,data);for(const auto allocated:chain)usedClusters[allocated]=true;++summary.foundItems;
             }catch(const InvalidFile&){++summary.invalidFiles;}
         }
     }catch(const Cancelled&){summary.cancelled=true;}

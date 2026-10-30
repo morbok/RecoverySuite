@@ -20,8 +20,9 @@ RecoveryConfigurationWidget::RecoveryConfigurationWidget(QWidget* parent) : QWid
     method_->addItem(tr("Signature carving"),"carving");
     method_->addItem(tr("FAT metadata snapshot"),"metadata_recovery");
     method_->addItem(tr("FAT12/16/32 allocated root files (long names / 8.3)"),"file_recovery");
+    method_->addItem(tr("FAT12/16/32 files with subfolders"),"file_tree_recovery");
     form->addRow(tr("Recovery method"),method_);
-    auto* metadataHelp = new QLabel(tr("FAT snapshot saves the boot sector and FAT copies, plus the fixed root directory on FAT12/16. Root-file mode follows allocated FAT12/16/32 chains using verified long names or 8.3 aliases; deleted entries and subdirectories are skipped. Each region/file is limited to 16 MiB. Metadata snapshot mode does not repair metadata or reconstruct FAT32 root chains or NTFS MFT."),this);
+    auto* metadataHelp = new QLabel(tr("FAT snapshot saves the boot sector and FAT copies, plus the fixed root directory on FAT12/16. Root-file mode follows allocated FAT12/16/32 chains using verified long names or 8.3 aliases; deleted entries and subdirectories are skipped. Choose files with subfolders for recursive recovery (up to 32 levels and 1023 subdirectories). Empty folders are not exported. Each region/file is limited to 16 MiB. Metadata snapshot mode does not repair metadata or reconstruct FAT32 root chains or NTFS MFT."),this);
     metadataHelp->setWordWrap(true); layout->addWidget(metadataHelp);
     start_ = new QLineEdit("0", this); start_->setObjectName("recoveryStart");
     count_ = new QLineEdit(this); count_->setObjectName("recoveryCount");
