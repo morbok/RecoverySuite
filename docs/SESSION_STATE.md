@@ -4,40 +4,40 @@ Updated: 2026-10-30
 
 ## Checkpoint
 
-Resumed from `c8475ee` (Phase 15A). The working directory contained an unfinished results view,
-a truncated test CMake file, and executable permission changes across 275 tracked files.
-Original work was backed up outside the repository before edits. Permissions were normalized.
+Resumed Claude's Phase 15A work at `c8475ee`, restored the results interface, repaired Qt/build/test
+integration and partition/input validation, and added Linux Debug/Release CI. Original local work
+was backed up outside the repository before edits; unintended executable bits were normalized.
 
-The Phase 15B results presentation is now implemented and integrated. This does not mean the
-complete recovery product is finished. See MASTER_TODO.md for the remaining release blockers.
+The next checkpoint implements the first usable image-to-output GUI flow. It does not complete
+the recovery product. README.md describes the supported workflow and MASTER_TODO.md tracks blockers.
 
-## Implemented and verified locally
+## Implemented
 
-- Restored all previously registered test targets; registered GUI service and new QtTest results tests.
-- Repaired Qt worker declarations, widget namespaces, moc integration and stale test include paths.
-- Results remain visible for failed, partial and cancelled recovery operations.
-- Atomic cancellation reaches the worker while its event loop is busy. Every worker outcome emits
-  completion, with cleanup connections established before thread start and safe shutdown waiting.
-- GUI models have initialized scalar fields. Service conversion uses actual backend data sizes and
-  timestamps, removes fabricated five-second durations and scan-size-as-recovered-size statistics,
-  and explicitly reports that output export has not happened.
-- Unknown progress uses an indeterminate progress bar.
-- Fixed filesystem range checks, validated boot-sector arithmetic, and recognized 512-byte NTFS boot sectors.
-- Fixed MBR partition offset/signature byte order, GPT name bounds, declared-size CRCs, extended-entry
-  bounds, entry-array resource/disk bounds, truncated sectors and boolean disk-read handling.
-- Enabled assert-based tests in Release. Repaired invalid fixtures and tests that accessed private APIs.
-- Added Linux Debug/Release GitHub Actions checks. Remote CI results are separate from local verification.
+- Read-only regular image reader, sector-size/range limits and POSIX identity/size/mtime checks.
+- Actual image selection and operation configuration; no fake discovery or validation success dialog.
+- Bounded streaming JPEG/PDF/ZIP candidate carving, including nonzero start sectors and signatures
+  split across read boundaries. Missing end markers and candidates above 16 MiB are reported.
+- POSIX directory-anchored, no-overwrite export; traversal/symlink/name rejection, readback verification,
+  partial-write cleanup, per-output failures and preservation of completed files after cancellation.
+- Worker-thread execution uses the exact configured operation; progress/cancellation reaches scan and
+  export loops. Source changes/concurrent operations are blocked and closing waits for worker cleanup.
+- Results show actual saved names, bytes, failures, cancellation and measured timing.
 
 ## Validation
 
-Local Debug and Release configure/build and all 23 registered CTest executables pass, including real Qt widget
-assertions, worker cancellation completion and malformed boot-sector/GPT input regressions.
-All 23 tests also pass in Release with assertions active. Consult the PR checks for the remote CI outcome. Tests use synthetic data; no claim of
-end-to-end recovery against real hardware is made.
+24 CTest executables pass locally in Debug and Release with assertions active. The image integration
+suite also passes AddressSanitizer/UBSan. Tests cover source mutation, invalid ranges/destinations,
+symlinks/hardlinks/traversal, no-overwrite/partial output, cancellation, incomplete/oversized candidates,
+GUI clicks and closing during recovery. Source hashes and saved bytes are checked on synthetic images.
+Remote CI must be checked for the current PR head before merge.
 
-## Next work
+## Limits and next work
 
-Implement read-only image-backed source selection, connect it to GUIRecoveryService, then implement
-safe filesystem output export with no-overwrite and source/destination checks. Keep product claims
-aligned with observed behavior. The existing GUI still starts with a null reader and the legacy
-validation dialog contains hard-coded success checks; replace that dialog before enabling recovery.
+Only the new image GUI workflow exports files. Legacy file/metadata recovery, CLI export, raw-device
+discovery, FAT/NTFS completeness, fragmentation, resumable sessions and Windows export remain work.
+The signature carver does not validate full file formats. Limits: 16 MiB/candidate, 10,000 attempted
+outputs, 64 KiB scan chunks. Windows and real hardware have not been validated.
+
+Graphify 0.9.97 was installed as a local developer tool and Codex skill. The ignored graphify-out/
+contains the AST graph, report, HTML and query memory. Use scoped queries first and update after edits;
+inferred call edges require source verification. No new runtime dependency was added to the product.

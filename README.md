@@ -21,16 +21,31 @@ ctest --test-dir build --output-on-failure --timeout 30
 Tests run on synthetic inputs; GUI tests use Qt's offscreen platform. Assertions remain enabled
 in Release test targets. CI runs both Debug and Release builds on Linux.
 
+## Recover from a disk image
+
+Open a regular, nonempty raw image in the GUI and choose its sector size (512, 1024, 2048 or
+4096 bytes). The image length must be sector-aligned. Configure a sector range, select an
+existing output folder, and choose **Validate and start recovery**. Saved bytes are read back
+and compared by default. Existing files are never replaced; use an empty folder for another run.
+The source is opened read-only. Linux rejects replaced, resized or modified sources during reads.
+
+The image workflow scans for contiguous JPEG, PDF and ZIP signatures with explicit end markers.
+It saves candidates up to 16 MiB each, with a maximum of 10,000 attempted outputs. These are
+signature candidates, not proof of valid file contents. Original names, deleted-file metadata
+and fragmented files are not reconstructed. Incomplete/oversized candidates and output failures
+are reported; completed files remain available after cancellation or partial failure.
+
 ## Current state
 
-- GUI and CLI compile on Linux; all 23 registered CTest executables pass locally in Debug and Release.
-- Recovery results distinguish completion, failure, partial recovery and cancellation.
-- Unreported byte counts and elapsed time remain unknown; results show backend item names and sizes.
-- Output export is **not implemented** in the GUI service. Selecting an output path does not save files.
-- GUI startup currently has no disk reader; device discovery and selecting/opening a real source still need wiring.
-- Backend calls remain synchronous inside the worker: cancellation is checked before and after a call,
-  and cannot yet interrupt the scan itself.
-- Windows builds and recovery against real devices have not been validated in this handoff.
+- GUI and CLI compile on Linux; all 24 registered CTest executables pass locally in Debug and Release.
+- The GUI connects real image selection, range/output validation, worker scanning, safe file export
+  and results. Progress and cancellation reach the streaming scan and output loops.
+- POSIX output export rejects traversal, symlink components, unsafe names and existing files. It
+  anchors the selected directory with a file descriptor; incomplete writes are removed on failure.
+- The image workflow is carving-only. Legacy filesystem recovery/metadata APIs and the CLI do not
+  share this export workflow and need further implementation and validation.
+- Windows safe export is unavailable; Windows builds and recovery against real devices remain unvalidated.
+- Integration tests use synthetic images; the image workflow also passes AddressSanitizer/UBSan locally.
 
 See [the active roadmap](docs/MASTER_TODO.md), [session state](docs/SESSION_STATE.md),
 and [the handoff](docs/HANDOFF.md) before continuing development.

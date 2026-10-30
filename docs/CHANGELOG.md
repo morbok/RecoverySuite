@@ -1,3 +1,11 @@
+# 2026-10-30 — Read-only image recovery and safe export
+
+Added a real GUI source-to-output workflow for regular raw images, bounded streaming JPEG/PDF/ZIP
+signature candidates, validated configuration and POSIX no-overwrite export with readback verification.
+Progress/cancellation reaches scan/export loops; partial failures and completed outputs remain visible.
+Added source/path/range/boundary/cancellation/GUI regressions: 24 CTest executables pass in Debug/Release,
+and the image suite passes ASan/UBSan locally. Windows export and legacy recovery remain incomplete.
+
 # 2026-10-30 — Recovery-results handoff
 
 Completed the unfinished results view; repaired build/test registration and worker lifecycle;
