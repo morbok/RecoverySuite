@@ -85,6 +85,12 @@ void SafeFileExporter::write(const std::string& name, const std::vector<uint8_t>
             }
         }
         checkCancel(cancelled);
+        struct stat opened{}, named{};
+        if (::fstat(output.get(), &opened) ||
+            ::fstatat(impl_->directory.get(), name.c_str(), &named, AT_SYMLINK_NOFOLLOW) ||
+            opened.st_dev != named.st_dev || opened.st_ino != named.st_ino ||
+            opened.st_size < 0 || static_cast<uint64_t>(opened.st_size) != data.size())
+            throw std::runtime_error("Output file changed before completion");
         if (::fsync(impl_->directory.get())) throw std::runtime_error("Output directory flush failed");
         completed = true;
     } catch (const std::exception&) { cleanup(); throw; }

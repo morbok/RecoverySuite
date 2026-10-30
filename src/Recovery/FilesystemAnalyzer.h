@@ -64,7 +64,7 @@ private:
     const RecoveryCapabilityRegistry& capabilityRegistry_;
 
     // The safety policy to use for validation
-    const RecoverySafetyPolicy& safetyPolicy_;
+    RecoverySafetyPolicy safetyPolicy_;
 
     // The disk reader to use for accessing disk data
     recoverysuite::disk::IDiskReader* diskReader_;

@@ -5,6 +5,7 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QCheckBox>
+#include <QComboBox>
 #include <QFileDialog>
 #include <charconv>
 namespace recoverysuite::gui::widgets {
@@ -15,6 +16,12 @@ RecoveryConfigurationWidget::RecoveryConfigurationWidget(QWidget* parent) : QWid
     auto* help = new QLabel(tr("Signature carving: JPEG, PDF and ZIP candidates up to 16 MiB each. Candidates may still contain damaged data. Original filenames and fragmented files are not reconstructed."), this);
     help->setWordWrap(true); layout->addWidget(help);
     auto* form = new QFormLayout;
+    method_ = new QComboBox(this); method_->setObjectName("recoveryMethod");
+    method_->addItem(tr("Signature carving"),"carving");
+    method_->addItem(tr("FAT metadata snapshot"),"metadata_recovery");
+    form->addRow(tr("Recovery method"),method_);
+    auto* metadataHelp = new QLabel(tr("FAT snapshot saves the boot sector and FAT copies, plus the fixed root directory on FAT12/16. Each region is limited to 16 MiB. It does not repair metadata or reconstruct FAT32 root chains or NTFS MFT."),this);
+    metadataHelp->setWordWrap(true); layout->addWidget(metadataHelp);
     start_ = new QLineEdit("0", this); start_->setObjectName("recoveryStart");
     count_ = new QLineEdit(this); count_->setObjectName("recoveryCount");
     output_ = new QLineEdit(this); output_->setObjectName("recoveryOutput");
@@ -45,7 +52,7 @@ application::service::models::RecoveryOperation RecoveryConfigurationWidget::get
         if (error != std::errc{} || end != string.data() + string.size()) throw std::invalid_argument("Enter whole, nonnegative sector numbers");
         return value;
     };
-    operation.operationType = "carving"; operation.targetDevicePath = source_.toStdString();
+    operation.operationType = method_->currentData().toString().toStdString(); operation.targetDevicePath = source_.toStdString();
     operation.startSector = parse(start_->text()); operation.numSectors = parse(count_->text());
     operation.outputPath = output_->text().toStdString(); operation.verifyAfterRecovery = verify_->isChecked();
     return operation;

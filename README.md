@@ -40,6 +40,7 @@ are reported; completed files remain available after cancellation or partial fai
 ```sh
 ./build/bin/RecoverySuite_CLI image info source.img
 ./build/bin/RecoverySuite_CLI image carve source.img --output /existing/empty-folder --start 0
+./build/bin/RecoverySuite_CLI image metadata fat-volume.img --output /another/existing-folder
 ```
 
 Use `--sector-size 4096` for a 4 KiB-sector image, `--count N` to bound the scan, and
@@ -48,15 +49,24 @@ completed outputs. Exit codes: 0 complete, 1 failed/partial, 2 invalid arguments
 Physical-device export and background operation tracking are unavailable; the legacy recovery
 command returns an error instead of reporting unsaved buffers as recovered files.
 
+## FAT metadata snapshots
+
+Choose **FAT metadata snapshot** in the GUI, or run `image metadata` from the CLI. Set the start
+sector to the FAT volume boot sector and select a range containing its metadata. Outputs contain
+actual bytes: the boot sector, each FAT copy, and the fixed root directory on FAT12/16. FAT32 root
+cluster chains, NTFS MFT reconstruction, deleted-file recovery and metadata repair are unavailable.
+The reader sector size must match the BPB. Each region is limited to 16 MiB; malformed geometry,
+short reads and out-of-range regions fail before any output is saved. Existing outputs are preserved.
+
 ## Current state
 
-- GUI and CLI compile on Linux; all 25 registered CTest executables pass locally in Debug and Release.
+- GUI and CLI compile on Linux; all 26 registered CTest executables pass locally in Debug and Release.
 - The GUI connects real image selection, range/output validation, worker scanning, safe file export
   and results. Progress and cancellation reach the streaming scan and output loops.
 - POSIX output export rejects traversal, symlink components, unsafe names and existing files. It
   anchors the selected directory with a file descriptor; incomplete writes are removed on failure.
-- The image workflow is carving-only. Legacy filesystem recovery/metadata APIs do not
-  share this export workflow and need further implementation and validation.
+- The image workflow supports signature carving and FAT metadata snapshots. Directory/cluster-chain
+  file reconstruction and NTFS MFT recovery remain unavailable; legacy buffer APIs do not export files.
 - Windows safe export is unavailable; Windows builds and recovery against real devices remain unvalidated.
 - Integration tests use synthetic images; the image workflow also passes AddressSanitizer/UBSan locally.
 

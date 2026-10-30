@@ -2,6 +2,7 @@
 #include <QTemporaryDir>
 #include <QFile>
 #include <QDir>
+#include "Recovery/CarvingEngine.h"
 #include <QLineEdit>
 #include <QPushButton>
 #include <QLabel>
@@ -168,6 +169,33 @@ private slots:
         QVERIFY(QFile::exists(moved+"/anchored")); QVERIFY(!QFile::exists(root.filePath("anchored")));
 #else
         QSKIP("Safe file export is POSIX-only");
+#endif
+    }
+    void legacyCarverUsesExactImageOffsets() {
+        QTemporaryDir root;const auto source=fixture(root);DiskImageReader reader;reader.open(source.toStdString());
+        recoverysuite::recovery::RecoveryCapabilityRegistry registry;
+        registry.registerCapability(recoverysuite::recovery::RecoveryCapability::CARVING);
+        recoverysuite::recovery::RecoverySafetyPolicy policy;
+        recoverysuite::recovery::CarvingEngine engine(registry,policy,&reader);
+        std::map<std::string,std::vector<uint8_t>> all;
+        QVERIFY(engine.carveFiles(true,true,1,299,true,true,true,true,all));QCOMPARE(all.size(),size_t{3});
+        QCOMPARE(QByteArray(reinterpret_cast<const char*>(all.at("carved_0.jpg").data()),all.at("carved_0.jpg").size()),jpeg());
+        std::vector<std::pair<uint64_t,std::vector<uint8_t>>> located;
+        for(int repeat=0;repeat<2;++repeat) {
+            QVERIFY(engine.carveFileType(true,true,1,299,true,true,true,true,"JPEG",located));
+            QCOMPARE(located.size(),size_t{1});QCOMPARE(located.front().first,uint64_t{512+65535});
+            QCOMPARE(QByteArray(reinterpret_cast<const char*>(located.front().second.data()),located.front().second.size()),jpeg());
+        }
+        QVERIFY(!engine.carveFileType(true,true,1,299,true,true,true,true,"unsupported",located));QVERIFY(located.empty());
+    }
+    void exporterRejectsReplacedOutput() {
+#ifndef _WIN32
+        QTemporaryDir root;SafeFileExporter exporter(root.path().toStdString());int checks=0;
+        QVERIFY(rejects([&]{exporter.write("candidate",std::vector<uint8_t>(128,0x44),true,[&]{
+            if(++checks==3) {std::filesystem::rename(root.filePath("candidate").toStdString(),root.filePath("moved").toStdString());save(root.filePath("candidate"),"replacement");}
+            return false;
+        });}));
+        QCOMPARE(load(root.filePath("candidate")),QByteArray("replacement"));
 #endif
     }
     void cooperativeCancellationAndEmptyScan() {

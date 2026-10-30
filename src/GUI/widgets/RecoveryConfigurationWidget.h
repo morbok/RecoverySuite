@@ -4,6 +4,7 @@
 class QLabel;
 class QLineEdit;
 class QCheckBox;
+class QComboBox;
 namespace recoverysuite::gui::widgets {
 /** Configures the supported image-carving operation and validates it through the service. */
 class RecoveryConfigurationWidget : public QWidget {
@@ -26,5 +27,6 @@ private:
     QLineEdit* count_;
     QLineEdit* output_;
     QCheckBox* verify_;
+    QComboBox* method_;
 };
 }

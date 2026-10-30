@@ -5,11 +5,13 @@
 namespace recoverysuite::recovery {
 CarvingSummary carveSignatures(disk::IDiskReader& reader, uint64_t startSector, uint64_t numSectors,
     const std::function<void(const std::string&, const std::vector<uint8_t>&)>& onItem,
-    const std::function<void(uint64_t)>& onProgress, const std::function<bool()>& cancelled) {
+    const std::function<void(uint64_t)>& onProgress, const std::function<bool()>& cancelled,
+    const std::function<void(uint64_t, const std::string&, const std::vector<uint8_t>&)>& onLocated) {
     const uint64_t sectorSize = reader.getSectorSize(), total = reader.getTotalSectors();
     if (!reader.isOpen() || !sectorSize || sectorSize > 65536 || !numSectors ||
         startSector >= total || numSectors > total - startSector ||
-        numSectors > std::numeric_limits<uint64_t>::max() / sectorSize)
+        startSector > std::numeric_limits<uint64_t>::max() / sectorSize ||
+        numSectors > std::numeric_limits<uint64_t>::max() / sectorSize - startSector)
         throw std::invalid_argument("Invalid carving range");
     constexpr size_t kChunkBytes = 64 * 1024, kMaximumCandidate = 16 * 1024 * 1024;
     const std::array<std::vector<uint8_t>, 3> headers{{{0xFF,0xD8,0xFF},{'%','P','D','F','-'},{'P','K',3,4}}};
@@ -17,6 +19,7 @@ CarvingSummary carveSignatures(disk::IDiskReader& reader, uint64_t startSector, 
     const std::array<const char*, 3> extensions{{"jpg","pdf","zip"}};
     CarvingSummary summary;
     std::vector<uint8_t> pending;
+    uint64_t pendingOffset = 0;
     size_t activeKind = headers.size(), endSearchFrom = 0;
     const auto shouldCancel = [&] { return cancelled && cancelled(); };
     for (uint64_t sector = 0; sector < numSectors;) {
@@ -38,9 +41,13 @@ CarvingSummary carveSignatures(disk::IDiskReader& reader, uint64_t startSector, 
                     if (position < first) { first = position; activeKind = candidate; }
                 }
                 if (first == pending.size()) {
-                    if (pending.size() > 4) pending.erase(pending.begin(), pending.end() - 4);
+                    if (pending.size() > 4) {
+                        pendingOffset += pending.size() - 4;
+                        pending.erase(pending.begin(), pending.end() - 4);
+                    }
                     break;
                 }
+                pendingOffset += first;
                 pending.erase(pending.begin(), pending.begin() + static_cast<std::ptrdiff_t>(first));
                 endSearchFrom = headers[activeKind].size();
             }
@@ -61,12 +68,16 @@ CarvingSummary carveSignatures(disk::IDiskReader& reader, uint64_t startSector, 
             }
             if (length && length <= kMaximumCandidate) {
                 const std::vector<uint8_t> data(pending.begin(), pending.begin() + static_cast<std::ptrdiff_t>(length));
-                onItem("carved_" + std::to_string(summary.foundItems) + "." + extensions[kind], data);
+                const auto name = "carved_" + std::to_string(summary.foundItems) + "." + extensions[kind];
+                if (onLocated) onLocated(pendingOffset, name, data);
+                if (onItem) onItem(name, data);
                 ++summary.foundItems;
+                pendingOffset += length;
                 pending.erase(pending.begin(), pending.begin() + static_cast<std::ptrdiff_t>(length));
                 activeKind = headers.size(); endSearchFrom = 0;
             } else if (pending.size() > kMaximumCandidate) {
                 ++summary.skippedCandidates;
+                ++pendingOffset;
                 pending.erase(pending.begin());
                 activeKind = headers.size(); endSearchFrom = 0;
             } else break;

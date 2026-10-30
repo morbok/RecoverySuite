@@ -82,9 +82,9 @@ int CLIHandler::run(int argc, char* argv[]) {
 
 int CLIHandler::handleImage(const std::vector<std::string>& args) {
     const auto usageError = [&](const std::string& message) { printError(message); return 2; };
-    if (args.size() < 2 || (args[0] != "info" && args[0] != "carve"))
-        return usageError("Use image info <path> or image carve <path> --output <existing-directory>");
-    const bool carve = args[0] == "carve";
+    if (args.size() < 2 || (args[0] != "info" && args[0] != "carve" && args[0] != "metadata"))
+        return usageError("Use image info <path>, image carve <path> or image metadata <path> --output <existing-directory>");
+    const bool carve = args[0] != "info";
     uint64_t start = 0, count = 0, sectorSize = 512;
     bool countGiven = false, verify = true;
     std::string output;
@@ -119,7 +119,7 @@ int CLIHandler::handleImage(const std::vector<std::string>& args) {
         if (!countGiven) count = total - start;
         if (!count || count > total - start) return usageError("Sector range is outside the image");
         application::service::models::RecoveryOperation operation{};
-        operation.operationType = "carving"; operation.targetDevicePath = source.devicePath;
+        operation.operationType = args[0] == "metadata" ? "metadata_recovery" : "carving"; operation.targetDevicePath = source.devicePath;
         operation.startSector = start; operation.numSectors = count; operation.outputPath = output;
         operation.verifyAfterRecovery = verify;
         unsigned lastPercent = std::numeric_limits<unsigned>::max();
@@ -473,6 +473,7 @@ Usage: RecoverySuite_CLI <command> [arguments]
 
   image info <image> [--sector-size 512|1024|2048|4096]
   image carve <image> --output <existing-folder>
+  image metadata <image> --output <existing-folder>
       [--start <sector>] [--count <sectors>] [--sector-size <bytes>] [--no-verify]
   list
   disk info <disk-number>
@@ -485,7 +486,8 @@ Existing files are not replaced. Limits: 16 MiB per candidate, 10,000 attempted 
 Candidates may contain damaged data; names and fragmented files are not reconstructed.
 Omitted --count scans from --start to the end of the image. Press Ctrl+C to cancel;
 completed output files are kept. Exit: 0 complete, 1 failed/partial, 2 usage, 130 cancelled.
-Safe output export currently requires POSIX. Physical-device export is unavailable.
+Metadata saves actual FAT boot/FAT copies and FAT12/16 fixed root entries (16 MiB per region).
+No NTFS MFT or FAT32 root-chain reconstruction. Safe output export currently requires POSIX. Physical-device export is unavailable.
 )";
 }
 
@@ -493,8 +495,7 @@ void CLIHandler::showVersion(const std::vector<std::string>& args) {
     (void)args;
 
     // We would normally get this from a version header
-    printInfo("RecoverySuite Version 1.0.0");
-    printInfo("Build system initialized successfully!");
+    printInfo("RecoverySuite 1.0.0 (development)");
     recoverysuite::logging::Logger::instance().debug("Version command executed");
 }
 

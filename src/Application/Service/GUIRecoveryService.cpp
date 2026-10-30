@@ -45,7 +45,8 @@ std::string GUIRecoveryService::validateImageOperation(const models::RecoveryOpe
     if (!imageReader_ || !imageReader_->isOpen()) return "Open a disk image first";
     try { imageReader_->validateIdentity(); }
     catch (const std::exception& failure) { return failure.what(); }
-    if (operation.operationType != "carving") return "Only signature carving is available in the image workflow";
+    if (operation.operationType != "carving" && operation.operationType != "metadata_recovery")
+        return "Choose signature carving or a FAT metadata snapshot";
     std::error_code error;
     const auto source = std::filesystem::canonical(operation.targetDevicePath, error);
     if (error || source.string() != imageReader_->sourcePath()) return "The operation source does not match the opened image";
@@ -78,6 +79,7 @@ models::RecoveryResult GUIRecoveryService::executeOperation(const models::Recove
             const auto error = validateImageOperation(operation);
             if (!error.empty()) throw std::runtime_error(error);
             SafeFileExporter exporter(operation.outputPath);
+            const bool carving = operation.operationType == "carving";
             const auto totalBytes = operation.numSectors * imageReader_->getSectorSize();
             result.processedBytesKnown = true; result.failedBytesKnown = true; result.failedItemsKnown = true;
             const auto report = [&](uint64_t processed) {
@@ -85,17 +87,16 @@ models::RecoveryResult GUIRecoveryService::executeOperation(const models::Recove
                 if (!progressCallback) return;
                 models::RecoveryProgress progress{};
                 progress.operationType = operation.operationType; progress.status = "running";
-                progress.currentStep = "Scanning image and saving signature candidates";
-                progress.processedBytes = processed; progress.totalBytes = totalBytes;
-                progress.percentage = static_cast<uint32_t>((static_cast<long double>(processed) / totalBytes) * 100);
+                progress.currentStep = carving ? "Scanning image and saving signature candidates" : "Reading and saving FAT metadata regions";
+                progress.processedBytes = processed; progress.totalBytes = carving ? totalBytes : 0;
+                progress.percentage = carving ? static_cast<uint32_t>((static_cast<long double>(processed) / totalBytes) * 100) : 0;
                 progress.recoveredItemsCount = result.recoveredItemsCount; progress.failedItemsCount = result.failedItemsCount;
                 progress.isCancellable = true; progress.timestamp = std::chrono::system_clock::now();
                 progress.elapsedSeconds = std::chrono::duration_cast<std::chrono::seconds>(progress.timestamp - result.startTime).count();
                 progressCallback(progress);
             };
             report(0);
-            const auto summary = recovery::carveSignatures(*imageReader_, operation.startSector, operation.numSectors,
-                [&](const std::string& name, const std::vector<uint8_t>& data) {
+            const auto saveItem = [&](const std::string& name, const std::vector<uint8_t>& data) {
                     if (result.recoveredItemsCount + result.failedItemsCount >= 10000)
                         throw std::runtime_error("Maximum output item count reached");
                     try {
@@ -108,9 +109,29 @@ models::RecoveryResult GUIRecoveryService::executeOperation(const models::Recove
                             result.details[name] = failure.what();
                         }
                     }
-                }, report, cancellationToken);
+                };
+            recovery::CarvingSummary summary{};
+            if (carving) {
+                summary = recovery::carveSignatures(*imageReader_,operation.startSector,operation.numSectors,
+                    saveItem,report,cancellationToken);
+            } else {
+                recovery::RecoveryCapabilityRegistry registry;
+                registry.registerCapability(recovery::RecoveryCapability::METADATA_RECOVERY);
+                recovery::RecoverySafetyPolicy policy;
+                recovery::MetadataRecovery metadata(registry,policy,imageReader_.get(),cancellationToken);
+                std::map<std::string,std::vector<uint8_t>> regions;
+                const bool read = metadata.recoverMetadata(true,true,operation.startSector,operation.numSectors,
+                    true,true,true,true,regions);
+                if (!read && !cancelled()) throw std::runtime_error("Cannot snapshot FAT metadata: unsupported format, invalid geometry, truncated range or region above 16 MiB");
+                for (const auto& [name,data] : regions) {
+                    if (cancelled()) break;
+                    summary.processedBytes += data.size();
+                    saveItem(name,data); report(summary.processedBytes);
+                }
+                summary.cancelled = cancelled();
+            }
             result.processedBytes = summary.processedBytes; result.cancelled = summary.cancelled;
-            result.details["Skipped incomplete or oversized candidates"] = std::to_string(summary.skippedCandidates);
+            if (carving) result.details["Skipped incomplete or oversized candidates"] = std::to_string(summary.skippedCandidates);
             result.details["Verification"] = operation.verifyAfterRecovery ? "Saved bytes were read back and compared" : "Not requested";
             result.success = !result.cancelled && !result.failedItemsCount && !summary.skippedCandidates;
             if (result.failedItemsCount) result.errorMessage = "Some candidates could not be saved; existing files were kept";
@@ -121,7 +142,9 @@ models::RecoveryResult GUIRecoveryService::executeOperation(const models::Recove
     if (result.cancelled) result.success = false;
     result.endTime = std::chrono::system_clock::now();
     result.details["Export"] = result.outputWritten ? "Only the listed items were saved to the destination" : "No output files were saved";
-    result.details["Recovery method"] = "Signature candidates only; file structure and content may still be damaged";
+    result.details["Recovery method"] = operation.operationType == "metadata_recovery"
+        ? "FAT metadata snapshot: boot sector and FAT copies; FAT12/16 root entries included. No repair, FAT32 root chain or NTFS MFT reconstruction."
+        : "Signature candidates only; file structure and content may still be damaged";
     if (progressCallback) {
         models::RecoveryProgress progress{};
         progress.operationType = operation.operationType;

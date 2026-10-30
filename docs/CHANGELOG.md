@@ -1,3 +1,14 @@
+# 2026-10-30 — Real FAT snapshots and shared carving
+
+Added safe GUI/CLI export of actual FAT boot sectors, FAT copies and FAT12/16 root entries. Removed
+manufactured file/FAT/MFT contents. Fixed selected-range and byte-offset handling, bounded metadata
+reads, short-read rejection and output inode replacement detection. Unified legacy carving with
+the streaming scanner, exact absolute offsets and bounded buffered results. Added FAT12/16/32,
+unaligned/4 KiB-sector, GUI/CLI, cancellation, short-read and stable-offset regressions.
+
+Format reference: Microsoft FAT Specification, sections 3 and 6.6:
+https://academy.cba.mit.edu/classes/networking_communications/SD/FAT.pdf
+
 # 2026-10-30 — CLI image export
 
 Added read-only image info/carve commands, verified filesystem export, strict flags, meaningful exit

@@ -23,7 +23,7 @@ FilesystemAnalyzer::FilesystemAnalyzer(
     : capabilityRegistry_(capabilityRegistry),
       safetyPolicy_(safetyPolicy),
       diskReader_(diskReader),
-      validator_(capabilityRegistry, safetyPolicy),
+      validator_(capabilityRegistry, safetyPolicy_),
       startSector_(0) {
 }
 

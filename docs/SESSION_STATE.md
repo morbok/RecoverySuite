@@ -25,7 +25,7 @@ the recovery product. README.md describes the supported workflow and MASTER_TODO
 
 ## Validation
 
-25 CTest executables pass locally in Debug and Release with assertions active. The image integration
+26 CTest executables pass locally in Debug and Release with assertions active. The image integration
 suite also passes AddressSanitizer/UBSan. Tests cover source mutation, invalid ranges/destinations,
 symlinks/hardlinks/traversal, no-overwrite/partial output, cancellation, incomplete/oversized candidates,
 GUI clicks and closing during recovery. Source hashes and saved bytes are checked on synthetic images.
@@ -48,3 +48,23 @@ Added image info/carve commands using the same read-only source, validated range
 the GUI. Added foreground SIGINT/SIGTERM cancellation and meaningful exit codes. Removed legacy
 physical-recovery success claims without export, and fixed double ownership of physical disk readers
 in analysis. A real-process QtTest suite checks saved bytes, parser failures, no-overwrite and signals.
+
+## FAT snapshot and backend audit checkpoint
+
+Added verified FAT12/16/32 metadata snapshots to GUI and CLI, including nonzero volume offsets,
+512/1024/4096-byte sectors and no-overwrite export. Snapshot scope is explicit: boot/FAT copies plus
+FAT12/16 fixed root entries; no FAT32 root chain, NTFS MFT or metadata repair. Each region is capped
+at 16 MiB. Cancellation reaches each 64 KiB read and output loop.
+
+Removed manufactured README.TXT/BINARY.BIN/FAT/MFT contents from legacy recovery. Directory/cluster
+reconstruction now fails explicitly. Corrected contiguous-file and metadata byte extraction for
+actual sector sizes, unaligned offsets, selected-range containment, overflow and short/oversized reads.
+Legacy carving now shares the bounded streaming implementation and reports stable absolute offsets;
+its buffered APIs are capped at 64 MiB total and 10,000 items. Safe export checks final filename/inode
+identity and size before declaring completion.
+
+The 26-test suite includes actual FAT snapshots through GUI and CLI, source-byte equality, malformed
+regions, short reads, cancellation, exact carving offsets and output-file replacement regressions.
+
+Recovery components now own their safety-policy values, so default temporary policies cannot leave
+dangling references in validators. CLI signal interception applies to image export operations only.

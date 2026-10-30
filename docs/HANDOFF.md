@@ -9,7 +9,7 @@ JPEG/PDF/ZIP signature candidates and saves their bytes with no-overwrite POSIX 
 partial output failures and keeps completed files after cancellation. Closing cancels then waits for
 worker cleanup. Cancellation uses an atomic flag, not a queued slot on the busy worker event loop.
 
-Build/test commands are in README.md. There are 25 registered CTest executables; test_image_recovery
+Build/test commands are in README.md. There are 26 registered CTest executables; test_image_recovery
 covers the source-to-output flow, hostile paths, source mutation, stream boundaries, bounded incomplete
 candidates, worker cancellation and actual GUI interaction. It passes ASan/UBSan locally as well.
 
@@ -23,3 +23,9 @@ Graphify is installed globally as a Codex skill and CLI. Run scoped queries agai
 Keep generated graphs, build products and local agent configuration out of commits.
 
 CLI image info/carve now uses executeOperation; test_cli_image launches the executable and verifies exit codes, exact output, no-overwrite and SIGINT/SIGTERM cancellation.
+
+The metadata_recovery image operation / CLI image metadata now exports bounded FAT snapshots.
+Legacy recoverMetadata returns real FAT buffers (not exported); NTFS returns unavailable. Legacy
+recoverFiles no longer fabricates file contents and returns unsupported. Direct contiguous byte
+extraction is bounded to the selected range. CarvingEngine delegates to the shared scanner; its
+carveFileType offsets are absolute byte offsets and no longer depend on previous calls.
