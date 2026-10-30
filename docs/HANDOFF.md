@@ -1,22 +1,21 @@
-# RecoverySuite Handoff Document
+# RecoverySuite handoff
 
-This document is used when transitioning between major development phases to ensure continuity and context preservation.
+The active checkpoint is the 2026-10-30 recovery-results handoff, resumed from Phase 15A commit `c8475ee`.
+Read README.md, SESSION_STATE.md and MASTER_TODO.md for current facts; older root-level completion
+notes describe historical claims and can be stale.
 
-## From: CLI Recovery Workflow Integration (Phase 11B) - Integrated application-facing Recovery service into existing CLI
-## To: Recovery Logging, Diagnostics & Audit Trail (Phase 11C) - Integrating Recovery operations with existing logging system
+Build using the README commands. CTest has 23 executables; the new QtTest target tests results,
+plain-text handling, unknown statistics, service failures and cancellation completion.
 
-### What Was Completed (CLI Recovery Workflow Integration - Phase 11B)
-- **CLI Handler Implementation**: Created src/CLI/CLIHandler.h and src/CLI/CLIHandler.cpp with full command-line interface for recovery operations.
-- **Integrated Commands**: implemented list, disk info, analyze, validate, recover, cancel, status, help, and version commands.
-- **RecoveryService Integration**: CLIHandler uses RecoveryService for all recovery operations and DiskManager for disk enumeration.
-- **Argument Parsing and Validation**: robust command-line argument parsing with validation and error handling.
-- **Safety Features**: 
-  * Distinguished analysis (read-only) from recovery operations
-  * Used RecoveryOperationValidator for pre-operation validation
-  * Added confirmation prompts for destructive operations
-  * Prevented silent source overwriting by validating destination differs from source
-- **Operation Tracking**: basic operation tracking for cancellation and status reporting.
-- **Clear Output**: structured output distinguishing operation types and results.
-- **Tests**: comprehensive test suite in tests/test_cli/test_cli.cpp covering invalid arguments, invalid source/destination, unsupported capability, cancellation, and successful recovery scenarios using synthetic data.
-- **Build System Updates**: updated src/CLI/CMakeLists.txt and tests/CMakeLists.txt to build and run CLI tests.
-- **All tests passing**: 11/11 tests passing.
+Start the next implementation with a read-only image source and integrate it into the GUI, then
+safe filesystem export. GUIRecoveryService currently accepts an injected reader but does not bind
+`devicePath` to a new device; do not treat arbitrary device names as independent opened sources.
+Output paths are requested destinations only. Backend buffers are not currently exported or retained
+as file contents in the results model, which exposes names and sizes only.
+
+Cancellation is cooperative at service boundaries, not inside backend loops. The worker flag is atomic
+and completion/cleanup now occurs for cancellation too. Avoid adding queued cancellation slots that
+cannot execute while the worker event loop is busy.
+
+The Linux CI workflow validates Debug and Release. Check its actual remote result before merging;
+no Windows or real-hardware validation has been completed in this checkpoint.

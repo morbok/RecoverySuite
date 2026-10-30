@@ -1,55 +1,38 @@
-# RecoverySuite Master TODO
+# RecoverySuite active roadmap
 
-This document tracks the overall progress and outstanding tasks for the RecoverySuite project.
+Updated: 2026-10-30. Historical phase summaries are not the release checklist.
 
-## Completed Phases
-- [x] Project Initialization
-- [x] Repository Setup and Cleanup
-- [x] Architecture Documentation (All 6 designs)
-- [x] Build System Configuration (CMake with C++20)
-- [x] Directory Structure Establishment (src/, include/, tests/ directories created)
-- [x] Disk Layer Foundation - Implemented Windows-specific disk reader and device with validation and error handling improvements
-- [x] Partition Module Foundation (MBR) - Implemented MBR parser, validator, and manager with unit tests
-- [x] FAT Boot Sector Foundation (Phase 7A) - Implemented FAT12/FAT16/FAT32 boot sector models, parser, volume representation, constants, validation, CMake integration, and comprehensive tests (excluding FAT table parsing, directory parsing, recovery, and disk writing as per scope).
-- [x] FAT Table and Cluster Chain Foundation (Phase 7B) - Implemented FATEntry, FATClusterState, FATTable, FATTableParser, FATChainReader, and FATValidator classes with full read-only access to FAT12/FAT16/FAT32 table structures, cluster chain traversal, overflow safety, and validation capabilities.
-- [x] Volume Discovery & Mount Analysis (Phase 4A) - Implemented basic volume discovery and mount point analysis capabilities.
-- [x] Filesystem Framework Foundation (Phase 5) - Implemented filesystem abstraction layer and basic filesystem interface definitions.
-- [x] NTFS Engine Foundation (Phase 6) - Implemented NTFS read-only support with basic partition boot sector parsing.
-- [x] Implement Core module with logging, configuration, and utilities - Implemented core logging, configuration management, and utility functions.
-- [x] Implement Storage Intelligence subsystem - Implemented basic storage intelligence capabilities for device characterization.
-- [x] **Recovery Integration & Dependency Validation (Phase 10A)** - Integrated and validated the existing Recovery module against actual implemented Disk, Partition, FAT, and NTFS layers. Added proper dependencies, replaced simulation code with actual disk I/O, fixed interface mismatches, and verified end-to-end functionality through successful build and test execution. [INTEGRATED AND VALIDATED]
-- [x] Implement Recovery module with basic scanning capabilities - Implemented comprehensive recovery capability framework with all six recovery types: filesystem detection, analysis, metadata recovery, file recovery, carving, and output/export, including safety validation and detailed error recovery. [IMPLEMENTED, NOW INTEGRATED WITH DISK LAYER]
-- [x] **Recovery Capability Integration and Dependency Validation (PHASE 11A) - COMPLETED** - Integrated recovery capability framework with Disk, Partition, and Recovery layers, validated dependencies, and confirmed integration safety. [INTEGRATED AND VALIDATED]
-- [x] **CLI Recovery Workflow Integration (PHASE 11B) - COMPLETED** - Integrated application-facing Recovery service into existing CLI to provide safe workflows for listing storage sources, inspecting partitions, detecting filesystem type, analyzing sources, validating/recovery operations, selecting capabilities/output destinations, starting/cancelling operations, displaying progress/errors/completion status. Clearly distinguished operation types, required validation for destructive operations, prevented silent source overwriting, and included comprehensive test coverage using synthetic data only. [INTEGRATED AND VALIDATED]
+## Completed in the handoff
 
-## Current Phase
-**All phases completed through PHASE 11C. Ready for next phase.**
+- [x] Recover Claude's unfinished results interface and restore a buildable Linux checkout.
+- [x] Show completed, failed, cancelled and partial results with backend item names/sizes.
+- [x] Remove fabricated duration/recovered-byte statistics and distinguish requested output from saved output.
+- [x] Restore and run the 23 registered CTest targets with assertions enabled.
+- [x] Repair the input-validation and partition parsing bugs uncovered by active assertions.
+- [x] Add Debug/Release Linux CI and reproducible build instructions.
 
-## Completed Work in Current Phase
-- [x] Added Recovery dependencies on Disk, Partition, and Filesystem libraries in src/Recovery/CMakeLists.txt
-- [x] Replaced simulation TODOs with actual diskReader_->readSectors() calls in all Recovery component files
-- [x] Fixed IDiskReader interface mismatch (changed readSectors return type from uint64_t to bool)
-- [x] Implemented missing interface methods in PhysicalDisk (open, close, getDiskInfo, getSectorSize)
-- [x] Fixed variable shadowing issue in FileRecovery.cpp
-- [x] Updated test mocks to match corrected IDiskReader interface
-- [x] Verified complete build and test suite passes (6/6 tests passed)
-- [x] Confirmed Recovery module performs actual disk I/O through IDiskReader interface
+## Release blockers, in order
 
-## Immediate Next Tasks
-Awaiting further instructions.
+1. [ ] Add a read-only disk-image reader and source selection with synthetic image integration tests.
+2. [ ] Wire actual source selection/discovery into GUIRecoveryService (startup currently passes nullptr).
+3. [ ] Use the configured operation in execution, dispatch file/metadata/carving correctly, and replace
+       the hard-coded validation-success dialog with real validation results.
+4. [ ] Implement output export to regular files, preserving bytes and safe names, rejecting traversal,
+       symlinks, overwrite and source/destination conflicts; verify exported contents in tests.
+5. [ ] Propagate cancellation/progress into backend scan loops; remove UI-thread work scheduled through
+       QTimer and test shutdown/cancellation during an actual synthetic scan.
+6. [ ] Audit remaining simulated recovery implementations, FAT/NTFS completeness, boundary arithmetic,
+       short reads, hostile metadata, memory limits and error propagation. Register any useful orphaned tests.
+7. [ ] Add end-to-end fixtures for deleted files, fragmentation, corruption and partial output failures;
+       run sanitizers and fuzz parsers before real-device testing.
+8. [ ] Validate Windows builds/device access and Linux device enumeration; make permissions and errors explicit.
+9. [ ] Implement session persistence and resume with versioned state and source identity checks.
+10. [ ] Complete intended SSD diagnostics, hex inspection and optional plugin support according to actual
+        product scope; expose unavailable features honestly.
+11. [ ] Package installers, document supported recovery capabilities and limitations, and complete release QA.
 
-## Future Priorities
-1. Implement Recovery module with advanced recovery capabilities (building on validated foundation)
-2. Implement GUI module with basic window framework
-3. Implement SSD module with basic detection capabilities
-4. Implement Plugin system infrastructure
-5. Implement CLI module
-6. Implement Database module for session persistence
-7. Implement Drivers module (Windows kernel-mode components)
+## Git workflow
 
-## Documentation to Maintain
-- SESSION_STATE.md - Updated after each development session
-- CHANGELOG.md - Updated with significant changes
-- HANDOFF.md - Updated when transitioning between major phases
-- RECOVERY_LOG.md - Updated with notable findings and issues
-- Individual subsystem documentation as implemented
+Work on feature branches, make logical Conventional Commits, push, open a PR, and review before merging.
+Do not commit build outputs or local agent configuration. Do not mark the product finished based on
+phase descriptions or passing unit tests alone.

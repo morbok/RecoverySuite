@@ -1,3 +1,9 @@
+# 2026-10-30 — Recovery-results handoff
+
+Completed the unfinished results view; repaired build/test registration and worker lifecycle;
+removed fabricated GUI recovery metrics; fixed boot-sector and partition parser validation;
+added assertion-enabled Debug/Release Linux CI. See SESSION_STATE.md for validation and limitations.
+
 # RecoverySuite Changelog
 
 All notable changes to this project will be documented in this file.
