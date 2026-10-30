@@ -8,6 +8,8 @@
 #include <cstdint>
 #include <functional>
 #include <chrono>
+#include <mutex>
+#include "Disk/Access/disk_image_reader.h"
 #include "Models/GUIModels.h"
 #include "RecoveryService.h"
 
@@ -39,6 +41,17 @@ public:
      * @brief Destructor
      */
     ~GUIRecoveryService();
+
+    /** Open a regular disk image read-only, retaining the previous source on failure.
+     * Source changes are rejected while executeOperation is active.
+     */
+    models::StorageDevice openImage(const std::string& path, uint32_t sectorSize = 512);
+    /** Return an empty string if valid, otherwise a user-facing validation error. No output is written. */
+    std::string validateOperation(const models::RecoveryOperation& operation) const;
+    /** Stream signature carving into exclusively created output files. Runs synchronously on caller's thread. */
+    models::RecoveryResult executeOperation(const models::RecoveryOperation& operation,
+        std::function<void(const models::RecoveryProgress&)> progressCallback = {},
+        std::function<bool()> cancellationToken = {});
 
     /**
      * @brief Enumerate all available storage devices
@@ -131,6 +144,10 @@ public:
     recoverysuite::disk::DeviceInformation getDiskInfo(const std::string& devicePath) const;
 
 private:
+    std::shared_ptr<disk::DiskImageReader> imageReader_;
+    mutable std::mutex imageMutex_;
+    std::string validateImageOperation(const models::RecoveryOperation& operation) const;
+
     // The underlying recovery service
     std::unique_ptr<RecoveryService> recoveryService_;
 

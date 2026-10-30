@@ -8,6 +8,7 @@ add_library(RecoverySuite_Disk STATIC
     DiskManager.cpp
     Access/PhysicalDisk.h
     Access/PhysicalDisk.cpp
+    Access/disk_image_reader.cpp
     IDiskReader.hpp
 )
 

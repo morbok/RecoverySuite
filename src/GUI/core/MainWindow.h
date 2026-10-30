@@ -1,258 +1,81 @@
-#ifndef RECOVERYSUITE_GUI_CORE_MAINWINDOW_H
-#define RECOVERYSUITE_GUI_CORE_MAINWINDOW_H
-
+#pragma once
 #include <QMainWindow>
-#include <QMenuBar>
-#include <QStatusBar>
-#include <QWidget>
-#include <QVBoxLayout>
-#include <QStackedWidget>
-#include <memory>
-#include <atomic>
 #include <QPointer>
 #include <QThread>
 #include <QMetaType>
-#include "../../Application/Service/GUIRecoveryService.h"
-#include "ApplicationState.h"
+#include <atomic>
+#include "Application/Service/GUIRecoveryService.h"
 #include "StateManager.h"
-#include "widgets/RecoveryWorkflowWidget.h"
-#include "widgets/OperationProgressWidget.h"
-#include "widgets/SourceDiscoveryWidget.h"
-#include "widgets/RecoveryConfigurationWidget.h"
-#include "widgets/RecoveryResultsWidget.h"
-
-
-namespace recoverysuite {
-namespace gui {
-namespace core {
-
-class RecoveryWorker;
-
-/**
- * @brief MainWindow
- *
- * Main application window that provides the primary user interface
- * for RecoverySuite. Implements a modern forensic-grade interface
- * with dockable panels, workflow controls, and progress monitoring.
- */
+class QStackedWidget;
+class QLabel;
+class QPushButton;
+class QCloseEvent;
+namespace recoverysuite::gui::widgets {
+class SourceDiscoveryWidget;
+class RecoveryConfigurationWidget;
+class OperationProgressWidget;
+class RecoveryResultsWidget;
+}
+namespace recoverysuite::gui::core {
+/** Main image-recovery workflow. Service lifetime must exceed window and worker lifetimes. */
 class MainWindow : public QMainWindow {
     Q_OBJECT
-
 public:
-    /**
-     * @brief Constructor
-     * @param recoveryService Pointer to the GUI recovery service
-     */
-    explicit MainWindow(recoverysuite::application::service::GUIRecoveryService* recoveryService, QWidget *parent = nullptr);
-
-    /**
-     * @brief Destructor
-     */
+    explicit MainWindow(application::service::GUIRecoveryService* service, QWidget* parent = nullptr);
     ~MainWindow() override;
-
 public slots:
-    /**
-     * @brief Handle workflow operation requests from UI widgets
-     * @param operationType Type of recovery operation requested
-     */
-    void handleWorkflowOperation(const QString& operationType);
-
-    /**
-     * @brief Update operation progress display
-     * @param operationName Name of the current operation
-     * @param progress Percentage progress (0-100)
-     * @param statusText Detailed status message
-     */
-    void updateOperationProgress(const QString& operationName, int progress, const QString& statusText);
-
-    /**
-     * @brief Handle operation completion
-     * @param operationName Name of the completed operation
-     * @param success Whether operation was successful
-     * @param resultMessage Result or error message
-     */
-    void handleOperationCompleted(const QString& operationName, bool success, const QString& resultMessage);
-
-    /**
-     * @brief Handle source selection from source discovery widget
-     * @param devicePath The path of the selected device
-     */
-    void onSourceSelected(const QString& devicePath);
-
-    /**
-     * @brief Handle configuration ready from recovery configuration widget
-     * @param operation The configured recovery operation
-     */
-    void onConfigurationReady(const recoverysuite::application::service::models::RecoveryOperation& operation);
-
+    void handleWorkflowOperation(const QString& operation);
+    void onSourceSelected(const QString& path);
+    void onConfigurationReady(const application::service::models::RecoveryOperation& operation);
+    void updateOperationProgress(const QString& name, int percent, const QString& text);
+    void handleOperationCompleted(const QString& name, bool success, const QString& message);
 signals:
-    /**
-     * @brief Signal to cancel the current recovery operation
-     */
     void cancelRecovery();
-
 private slots:
-    /**
-     * @brief Handle list storage sources operation
-     */
-    void handleListStorageSources();
-
-    /**
-     * @brief Handle inspect partitions operation
-     */
-    void handleInspectPartitions();
-
-    /**
-     * @brief Handle detect filesystem operation
-     */
-    void handleDetectFilesystem();
-
-    /**
-     * @brief Handle analyze filesystem operation
-     */
-    void handleAnalyzeFilesystem();
-
-    /**
-     * @brief Handle validate recovery operation
-     */
-    void handleValidateRecovery();
-
-    /**
-     * @brief Handle start recovery operation
-     */
     void handleStartRecovery();
-
-    /**
-     * @brief Handle cancel operation
-     */
     void handleCancelOperation();
-
-    /**
-     * @brief Update progress from service callbacks
-     * @param operationName Name of the operation
-     * @param progress Percentage progress (0-100)
-     * @param statusText Detailed status message
-     */
-    void updateProgressFromService(const QString& operationName, int progress, const QString& statusText);
-
-    /**
-     * @brief Update progress from service callbacks (overloaded version)
-     * @param progress Recovery progress information
-     */
-    void updateProgressFromService(const recoverysuite::application::service::models::RecoveryProgress& progress);
-
-    /**
-     * @brief Handle progress updates from recovery worker
-     * @param progress Recovery progress information
-     */
-    void handleRecoveryProgress(const recoverysuite::application::service::models::RecoveryProgress& progress);
-
-    /**
-     * @brief Handle finished recovery operation from worker
-     * @param result Recovery result
-     */
-    void handleRecoveryFinished(const recoverysuite::application::service::models::RecoveryResult& result);
-
+    void handleRecoveryProgress(const application::service::models::RecoveryProgress& progress);
+    void handleRecoveryFinished(const application::service::models::RecoveryResult& result);
+protected:
+    void closeEvent(QCloseEvent* event) override;
 private:
-    /**
-     * @brief Setup the user interface components
-     */
-    void setupUI();
-
-    /**
-     * @brief Create menu bar and menu items
-     */
-    void setupMenuBar();
-
-    /**
-     * * @brief Create status bar
-     */
-    void setupStatusBar();
-
-    /**
-     * * @brief Setup central widget area with stacked widget for different views
-     */
-    void setupCentralWidget();
-
-    /**
-     * * @brief Setup the workflow container widget (contains workflow and progress widgets)
-     */
-    void setupWorkflowContainer();
-
-    /**
-     * * @brief Connect signals and slots
-     */
-    void setupConnections();
-
-    /**
-     * * @brief Update the UI based on the current application state
-     */
-    void updateUIForState();
-
-private:
-    // UI Components
-    QMenuBar* menuBar_;
-    QStatusBar* statusBar_;
-    QStackedWidget* stackedWidget_;
-    QLabel* statusLabel_;
-    QLabel* versionLabel_;
-
-    // Custom Widgets
-    recoverysuite::gui::widgets::SourceDiscoveryWidget* sourceDiscoveryWidget_;
-    recoverysuite::gui::widgets::RecoveryWorkflowWidget* workflowWidget_;
-    recoverysuite::gui::widgets::OperationProgressWidget* progressWidget_;
-    recoverysuite::gui::widgets::RecoveryConfigurationWidget* recoveryConfigurationWidget_;
-    QWidget* workflowContainer_;
-    QStackedWidget* operationStackedWidget_;
-    recoverysuite::gui::widgets::RecoveryResultsWidget* recoveryResultsWidget_;
-
-    // Application State Management
-    recoverysuite::gui::core::StateManager stateManager_;
-    bool isOperationRunning_;
-    QPointer<QThread> recoveryThread_;
-
-    // Services
-    recoverysuite::application::service::GUIRecoveryService* recoveryService_;
-
-    // Selected device path
-    QString selectedDevice_;
-
-
+    void showSources();
+    void updateControls();
+    application::service::GUIRecoveryService* service_;
+    application::service::models::RecoveryOperation operation_{};
+    StateManager state_;
+    QStackedWidget* pages_;
+    widgets::SourceDiscoveryWidget* source_;
+    widgets::RecoveryConfigurationWidget* configuration_;
+    widgets::OperationProgressWidget* progress_;
+    widgets::RecoveryResultsWidget* results_;
+    QLabel* status_;
+    QPushButton* chooseImage_;
+    QPushButton* settings_;
+    QPushButton* cancel_;
+    QPointer<QThread> thread_;
+    bool running_{};
+    bool closeWhenFinished_{};
 };
-
-} // namespace core
-} // namespace gui
-} // namespace recoverysuite
-
-// Recovery worker for background operations
-namespace recoverysuite::gui::core {
-/** Runs recovery outside the UI thread; cancel() only sets an atomic flag. */
+/** Executes the configured image operation on a worker thread. cancel() only sets an atomic flag. */
 class RecoveryWorker : public QObject {
     Q_OBJECT
 public:
-    RecoveryWorker(recoverysuite::application::service::GUIRecoveryService* recoveryService,
-                   const std::string& devicePath,
-                   uint64_t startSector,
-                   uint64_t numSectors,
-                   const std::string& outputPath);
+    RecoveryWorker(application::service::GUIRecoveryService* service,
+                   const application::service::models::RecoveryOperation& operation);
+    RecoveryWorker(application::service::GUIRecoveryService* service, const std::string& path,
+                   uint64_t start, uint64_t count, const std::string& output);
 public slots:
     void process();
     void cancel();
 signals:
-    void progressUpdated(const recoverysuite::application::service::models::RecoveryProgress& progress);
-    void finished(const recoverysuite::application::service::models::RecoveryResult& result);
+    void progressUpdated(const application::service::models::RecoveryProgress& progress);
+    void finished(const application::service::models::RecoveryResult& result);
 private:
-    recoverysuite::application::service::GUIRecoveryService* recoveryService_;
-    std::string devicePath_;
-    uint64_t startSector_;
-    uint64_t numSectors_;
-    std::string outputPath_;
-    std::atomic_bool isCancelled_{false};
+    application::service::GUIRecoveryService* service_;
+    application::service::models::RecoveryOperation operation_;
+    std::atomic_bool cancelled_{false};
 };
-
-} // namespace recoverysuite::gui::core
-
+}
 Q_DECLARE_METATYPE(recoverysuite::application::service::models::RecoveryProgress)
 Q_DECLARE_METATYPE(recoverysuite::application::service::models::RecoveryResult)
-
-#endif // RECOVERYSUITE_GUI_CORE_MAINWINDOW_H

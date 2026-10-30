@@ -1,1056 +1,142 @@
 #include "MainWindow.h"
-#include "../../Application/Service/GUIRecoveryService.h"
-#include "../../Application/Service/Models/GUIModels.h"
-#include "Logging/Logger.h"
-#include <QLabel>
-#include <QMessageBox>
-#include <QApplication>
-#include <QTimer>
-#include <QFileDialog>
-#include <QInputDialog>
-#include <QMetaObject>
-#include <QString>
-#include <QMetaType>
-#include <QtCore>
-#include <QtGui>
-#include <QObject>
+#include "GUI/widgets/SourceDiscoveryWidget.h"
+#include "GUI/widgets/RecoveryConfigurationWidget.h"
+#include "GUI/widgets/OperationProgressWidget.h"
+#include "GUI/widgets/RecoveryResultsWidget.h"
 #include <QStackedWidget>
+#include <QVBoxLayout>
 #include <QHBoxLayout>
-#include <QThread>
-#include "widgets/SourceDiscoveryWidget.h"
-#include "widgets/RecoveryConfigurationWidget.h"
-#include "widgets/RecoveryResultsWidget.h"
-#include "widgets/OperationProgressWidget.h"
-#include "widgets/RecoveryWorkflowWidget.h"
-#include "ApplicationState.h"
-#include "StateManager.h"
-
-namespace recoverysuite {
-namespace gui {
-namespace core {
-
-
-MainWindow::MainWindow(application::service::GUIRecoveryService* recoveryService, QWidget *parent)
-    : QMainWindow(parent),
-      stateManager_(),
-      isOperationRunning_(false),
-      recoveryService_(recoveryService),
-      selectedDevice_("") {
-    setupUI();
-    setupMenuBar();
-    setupStatusBar();
-    setupCentralWidget();
-    setupConnections();
-
-    // Initialize to START state and immediately transition to SOURCE_SELECTION
-    stateManager_.resetToStart(); // Sets to START
-    if (stateManager_.canTransitionTo(ApplicationState::SOURCE_SELECTION)) {
-        stateManager_.transitionTo(ApplicationState::SOURCE_SELECTION);
-    }
-    updateUIForState();
-
-    recoverysuite::logging::Logger::instance().info("MainWindow created");
+#include <QMenuBar>
+#include <QStatusBar>
+#include <QLabel>
+#include <QPushButton>
+#include <QCloseEvent>
+#include <QTimer>
+namespace recoverysuite::gui::core {
+MainWindow::MainWindow(application::service::GUIRecoveryService* service, QWidget* parent)
+    : QMainWindow(parent), service_(service) {
+    qRegisterMetaType<application::service::models::RecoveryProgress>();
+    qRegisterMetaType<application::service::models::RecoveryResult>();
+    setWindowTitle(tr("RecoverySuite — Disk image recovery")); resize(1100, 800); setMinimumSize(800, 600);
+    auto* file = menuBar()->addMenu(tr("File"));
+    file->addAction(tr("Open disk image…"), this, &MainWindow::showSources);
+    file->addAction(tr("Exit"), this, &QWidget::close);
+    auto* central = new QWidget(this); auto* layout = new QVBoxLayout(central);
+    auto* actions = new QHBoxLayout;
+    chooseImage_ = new QPushButton(tr("Choose image"), central); chooseImage_->setObjectName("chooseImage");
+    settings_ = new QPushButton(tr("Recovery settings"), central); settings_->setObjectName("recoverySettings");
+    cancel_ = new QPushButton(tr("Cancel"), central); cancel_->setObjectName("cancelImageRecovery");
+    actions->addWidget(chooseImage_); actions->addWidget(settings_); actions->addStretch(); actions->addWidget(cancel_);
+    layout->addLayout(actions);
+    pages_ = new QStackedWidget(central);
+    source_ = new widgets::SourceDiscoveryWidget(pages_); source_->setRecoveryService(service_);
+    configuration_ = new widgets::RecoveryConfigurationWidget(pages_); configuration_->setRecoveryService(service_);
+    progress_ = new widgets::OperationProgressWidget(pages_);
+    results_ = new widgets::RecoveryResultsWidget(pages_);
+    pages_->addWidget(source_); pages_->addWidget(configuration_); pages_->addWidget(progress_); pages_->addWidget(results_);
+    layout->addWidget(pages_); setCentralWidget(central);
+    status_ = new QLabel(tr("Open a disk image to begin"), this); status_->setTextFormat(Qt::PlainText);
+    statusBar()->addWidget(status_, 1);
+    connect(chooseImage_, &QPushButton::clicked, this, &MainWindow::showSources);
+    connect(settings_, &QPushButton::clicked, this, [this] {
+        if (!running_) { state_.transitionTo(ApplicationState::RECOVERY_CONFIGURATION); pages_->setCurrentWidget(configuration_); }
+    });
+    connect(cancel_, &QPushButton::clicked, this, &MainWindow::handleCancelOperation);
+    connect(source_, &widgets::SourceDiscoveryWidget::sourceSelected, this, &MainWindow::onSourceSelected);
+    connect(configuration_, &widgets::RecoveryConfigurationWidget::configurationReady, this, &MainWindow::onConfigurationReady);
+    state_.transitionTo(ApplicationState::SOURCE_SELECTION); updateControls();
 }
-
 MainWindow::~MainWindow() {
-    if (recoveryThread_) {
-        emit cancelRecovery();
-        recoveryThread_->quit();
-        recoveryThread_->wait();
-    }
-    recoverysuite::logging::Logger::instance().info("MainWindow destroyed");
+    if (thread_ && thread_->isRunning()) { emit cancelRecovery(); thread_->quit(); thread_->wait(); }
 }
-
-void MainWindow::setupUI() {
-    setWindowTitle("RecoverySuite Enterprise");
-    setMinimumSize(1024, 768);
-    resize(1280, 800);
-
-    // Apply application icon if available
-    // setWindowIcon(QIcon(":/icons/recoverysuite.png"));
+void MainWindow::showSources() {
+    if (running_) { status_->setText(tr("Cancel or wait for recovery before changing the source")); return; }
+    state_.forceTransitionTo(ApplicationState::SOURCE_SELECTION);
+    pages_->setCurrentWidget(source_); updateControls();
 }
-
-void MainWindow::setupMenuBar() {
-    menuBar_ = new QMenuBar(this);
-    setMenuBar(menuBar_);
-
-    // File Menu
-    QMenu* fileMenu = menuBar_->addMenu("&File");
-    fileMenu->addAction("&Open Image...", this, [this]() {
-        QString fileName = QFileDialog::getOpenFileName(this, "Open Disk Image", "", "Disk Images (*.img *.dd *.raw);;All Files (*)");
-        if (!fileName.isEmpty()) {
-            // TODO: Handle opening disk image
-            QMessageBox::information(this, "Not Implemented", "Open image functionality coming soon");
-        }
-    });
-    fileMenu->addAction("&Save Session...", this, [this]() {
-        QMessageBox::information(this, "Not Implemented", "Save session functionality coming soon");
-    });
-    fileMenu->addAction("&Load Session...", this, [this]() {
-        QMessageBox::information(this, "Not Implemented", "Load session functionality coming soon");
-    });
-    fileMenu->addSeparator();
-    fileMenu->addAction("E&xit", qApp, &QApplication::quit);
-
-    // Operations Menu
-    QMenu* operationsMenu = menuBar_->addMenu("&Operations");
-    operationsMenu->addAction("&List Storage Sources", this, [this]() {
-        handleWorkflowOperation("list_sources");
-    });
-    operationsMenu->addAction("&Inspect Partitions", this, [this]() {
-        handleWorkflowOperation("inspect_partitions");
-    });
-    operationsMenu->addAction("&Detect Filesystem", this, [this]() {
-        handleWorkflowOperation("detect_filesystem");
-    });
-    operationsMenu->addAction("&Analyze Filesystem", this, [this]() {
-        handleWorkflowOperation("analyze_filesystem");
-    });
-    operationsMenu->addAction("&Validate Recovery", this, [this]() {
-        handleWorkflowOperation("validate_recovery");
-    });
-    operationsMenu->addAction("&Start Recovery", this, [this]() {
-        handleWorkflowOperation("start_recovery");
-    });
-    operationsMenu->addAction("&Cancel Operation", this, [this]() {
-        handleWorkflowOperation("cancel_operation");
-    });
-    operationsMenu->addSeparator();
-    operationsMenu->addAction("&Recovery Queue...", this, [this]() {
-        QMessageBox::information(this, "Not Implemented", "Recovery queue view coming soon");
-    });
-
-    // Help Menu
-    QMenu* helpMenu = menuBar_->addMenu("&Help");
-    helpMenu->addAction("&About RecoverySuite", this, [this]() {
-        QMessageBox::about(nullptr, "About RecoverySuite",
-            "RecoverySuite Enterprise v1.0.0\n"
-            "Professional Data Recovery & Forensic Analysis Suite\n"
-            "\n"
-            "© 2026 RecoverySuite Team\n"
-            "Licensed under the RecoverySuite Enterprise License");
-    });
-    helpMenu->addAction("&Documentation", this, [this]() {
-        QMessageBox::information(this, "Documentation",
-            "User documentation available at:\n"
-            "file:///usr/local/share/doc/recoverysuite/");
-    });
-    helpMenu->addAction("&Check for Updates", this, [this]() {
-        QMessageBox::information(this, "Updates",
-            "Checking for updates...\n"
-            "RecoverySuite is up to date.");
-    });
+void MainWindow::updateControls() {
+    chooseImage_->setEnabled(!running_); settings_->setEnabled(!running_ && !operation_.targetDevicePath.empty());
+    source_->setEnabled(!running_); configuration_->setEnabled(!running_);
+    cancel_->setEnabled(running_ && !closeWhenFinished_);
 }
-
-void MainWindow::setupStatusBar() {
-    statusBar_ = new QStatusBar(this);
-    setStatusBar(statusBar_);
-
-    // Add permanent widgets to status bar
-    statusLabel_ = new QLabel("Ready");
-    statusBar_->addWidget(statusLabel_, 1); // 1 = stretch factor
-
-    // Add version info on the right
-    versionLabel_ = new QLabel("v1.0.0");
-    statusBar_->addPermanentWidget(versionLabel_);
+void MainWindow::onSourceSelected(const QString& path) {
+    if (running_) return;
+    operation_ = {}; operation_.targetDevicePath = path.toStdString();
+    configuration_->setSelectedDevice(path);
+    state_.transitionTo(ApplicationState::RECOVERY_CONFIGURATION);
+    pages_->setCurrentWidget(configuration_); results_->clear();
+    status_->setText(tr("Image opened read-only. Configure the scan and output folder.")); updateControls();
 }
-
-void MainWindow::setupCentralWidget() {
-    // Create the stacked widget to hold different views
-    stackedWidget_ = new QStackedWidget(this);
-    setCentralWidget(stackedWidget_);
-
-    // Create and add the source discovery widget (index 0)
-    sourceDiscoveryWidget_ = new recoverysuite::gui::widgets::SourceDiscoveryWidget();
-    sourceDiscoveryWidget_->setRecoveryService(recoveryService_);
-    stackedWidget_->addWidget(sourceDiscoveryWidget_);
-
-    // Create and add the workflow container widget (index 1)
-    setupWorkflowContainer();
+void MainWindow::onConfigurationReady(const application::service::models::RecoveryOperation& operation) {
+    if (running_) return;
+    operation_ = operation; handleStartRecovery();
 }
-
-void MainWindow::setupWorkflowContainer() {
-    // Create a container widget for the workflow and operation widgets
-    workflowContainer_ = new QWidget();
-    auto* workflowLayout = new QHBoxLayout(workflowContainer_);
-    workflowLayout->setContentsMargins(0, 0, 0, 0);
-    workflowLayout->setSpacing(0);
-
-    // Create and add the workflow widget (always visible)
-    workflowWidget_ = new recoverysuite::gui::widgets::RecoveryWorkflowWidget();
-    workflowWidget_->setMaximumWidth(320);
-    workflowLayout->addWidget(workflowWidget_);
-
-    // Create a stacked widget for operation-specific views (progress, results, configuration)
-    operationStackedWidget_ = new QStackedWidget();
-
-    // Add an empty widget at index 0 (for states where we show only workflow buttons)
-    QWidget* emptyWidget = new QWidget();
-    operationStackedWidget_->addWidget(emptyWidget);
-
-    // Create and add the progress widget (index 1)
-    progressWidget_ = new recoverysuite::gui::widgets::OperationProgressWidget();
-    operationStackedWidget_->addWidget(progressWidget_);
-
-    // Create and add the recovery results widget (index 2)
-    recoveryResultsWidget_ = new recoverysuite::gui::widgets::RecoveryResultsWidget();
-    operationStackedWidget_->addWidget(recoveryResultsWidget_);
-
-    // Create and add the recovery configuration widget (index 3)
-    recoveryConfigurationWidget_ = new recoverysuite::gui::widgets::RecoveryConfigurationWidget();
-    recoveryConfigurationWidget_->setRecoveryService(recoveryService_);
-    operationStackedWidget_->addWidget(recoveryConfigurationWidget_);
-
-    // Add the operation stacked widget to the workflow layout
-    workflowLayout->addWidget(operationStackedWidget_, 1);
-
-    // Add the container to the stacked widget
-    stackedWidget_->addWidget(workflowContainer_);
-}
-
-void MainWindow::setupConnections() {
-    // Connect workflow widget signals to MainWindow slots
-    connect(workflowWidget_, &recoverysuite::gui::widgets::RecoveryWorkflowWidget::operationRequested,
-            this, &MainWindow::handleWorkflowOperation);
-
-    // Connect progress widget signals if needed
-    // connect(progressWidget_, &OperationProgressWidget::cancelRequested,
-    //         this, &MainWindow::handleCancelRequested);
-
-    // Connect source discovery widget signals
-    connect(sourceDiscoveryWidget_, &recoverysuite::gui::widgets::SourceDiscoveryWidget::sourceSelected,
-            this, &MainWindow::onSourceSelected);
-
-    // Connect recovery configuration widget signals
-    connect(recoveryConfigurationWidget_, &recoverysuite::gui::widgets::RecoveryConfigurationWidget::configurationReady,
-            this, &MainWindow::onConfigurationReady);
-}
-
-void MainWindow::handleWorkflowOperation(const QString& operationType) {
-    if (!recoveryService_) {
-        QMessageBox::critical(this, "Service Error", "Recovery service not available");
-        return;
-    }
-
-    // We are now using the state machine to validate transitions, so we don't need the isOperationRunning_ flag for blocking.
-    // However, we still want to prevent multiple long-running operations (like recovery) from overlapping.
-    // We'll keep the isOperationRunning_ flag for operations that should not be concurrent (like recovery, analysis, etc.)
-    // For quick operations (like listing sources, inspecting partitions) we can allow them even if an operation is running?
-    // But note: the state machine already prevents certain transitions. We'll use the flag for operations that take time.
-
-    // Determine if this operation is a long-running one that should block others
-    bool isLongRunning = (operationType == "start_recovery" ||
-                          operationType == "analyze_filesystem" ||
-                          operationType == "detect_filesystem" ||
-                          operationType == "inspect_partitions" ||
-                          operationType == "list_sources"); // Actually, listing sources is quick, but we'll treat it as blocking for simplicity
-
-    if (isOperationRunning_ && isLongRunning) {
-        QMessageBox::warning(this, "Operation in Progress",
-            "Please wait for the current operation to complete before starting a new one.");
-        return;
-    }
-
-    recoverysuite::logging::Logger::instance().info(
-        "GUI requested operation: " + operationType.toStdString());
-
-    // Update status bar
-    statusLabel_->setText(QString("Executing: %1...").arg(operationType));
-    isOperationRunning_ = isLongRunning;
-
-    // Update workflow widget state (if we are in the workflow view)
-    if (stackedWidget_->currentIndex() == 1) { // Workflow view index
-        workflowWidget_->setOperationRunning(isOperationRunning_);
-    }
-
-    // Execute the requested operation
-    try {
-        if (operationType == "list_sources") {
-            handleListStorageSources();
-        }
-        else if (operationType == "inspect_partitions") {
-            handleInspectPartitions();
-        }
-        else if (operationType == "detect_filesystem") {
-            handleDetectFilesystem();
-        }
-        else if (operationType == "analyze_filesystem") {
-            handleAnalyzeFilesystem();
-        }
-        else if (operationType == "validate_recovery") {
-            handleValidateRecovery();
-        }
-        else if (operationType == "start_recovery") {
-            handleStartRecovery();
-        }
-        else if (operationType == "cancel_operation") {
-            handleCancelOperation();
-        }
-        else {
-            statusLabel_->setText(QString("Unknown operation: %1").arg(operationType));
-            isOperationRunning_ = false;
-            if (stackedWidget_->currentIndex() == 1) {
-                workflowWidget_->setOperationRunning(false);
-            }
-        }
-    } catch (const std::exception& e) {
-        recoverysuite::logging::Logger::instance().error(
-            "Error executing operation " + operationType.toStdString() + ": " + e.what());
-        statusLabel_->setText(QString("Error: %1").arg(QString::fromStdString(e.what())));
-        isOperationRunning_ = false;
-        if (stackedWidget_->currentIndex() == 1) {
-            workflowWidget_->setOperationRunning(false);
-        }
-
-        // Transition to error state on exception
-        stateManager_.transitionTo(ApplicationState::ERROR);
-        updateUIForState();
-
-        QMessageBox::critical(this, "Operation Error",
-            QString("An error occurred while executing the operation:\n%1")
-            .arg(QString::fromStdString(e.what())));
-    }
-}
-
-void MainWindow::handleListStorageSources() {
-    // We are going to show the source discovery view and refresh it.
-    // This operation is only valid from certain states, but we allow it from any state to go back to source selection.
-    if (stateManager_.getCurrentState() != ApplicationState::SOURCE_SELECTION) {
-        // Transition to source selection state
-        if (stateManager_.transitionTo(ApplicationState::SOURCE_SELECTION)) {
-            // Switch to the source discovery view
-            stackedWidget_->setCurrentIndex(0);
-            // Refresh the source discovery widget
-            sourceDiscoveryWidget_->onRefreshClicked(); // This will populate the table and update status
-            return;
-        }
-    }
-
-    // If we are already in the source selection state, just refresh
-    if (stateManager_.getCurrentState() == ApplicationState::SOURCE_SELECTION) {
-        sourceDiscoveryWidget_->onRefreshClicked();
-        return;
-    }
-
-    // If we couldn't transition, show an error
-    QMessageBox::warning(this, "Invalid Operation",
-        "Cannot list storage sources from the current state.");
-    statusLabel_->setText("Ready");
-    isOperationRunning_ = false;
-    if (stackedWidget_->currentIndex() == 1) {
-        workflowWidget_->setOperationRunning(false);
-    }
-}
-
-void MainWindow::handleInspectPartitions() {
-    // This operation is only valid from the STORAGE_PARTITION_INSPECTION state or we can transition to it.
-    // We are going to show a dialog to get the device path and then show partition information.
-    // But note: we already have a selected device from the source discovery phase.
-
-    // We require that a device has been selected
-    if (selectedDevice_.isEmpty()) {
-        QMessageBox::warning(this, "No Source Selected", "Please select a storage source first.");
-        statusLabel_->setText("Ready");
-        isOperationRunning_ = false;
-        if (stackedWidget_->currentIndex() == 1) {
-            workflowWidget_->setOperationRunning(false);
-        }
-        return;
-    }
-
-    // TODO: Implement actual partition enumeration using GUIRecoveryService
-    // For now, show placeholder
-    QMessageBox::information(this, "Partition Inspection",
-        QString("Selected disk: %1\n\n"
-                "Partitions:\n"
-                "1. %11 - 100 MB - NTFS - System Reserved\n"
-                "2. %12 - 200 GB - NTFS - Windows OS\n"
-                "3. %13 - 50 GB - FAT32 - Data Partition\n"
-                "4. %14 - 200 GB - EXT4 - Linux Data")
-        .arg(selectedDevice_)
-        .arg(selectedDevice_)
-        .arg(selectedDevice_)
-        .arg(selectedDevice_));
-    statusLabel_->setText("Ready");
-    isOperationRunning_ = false;
-    if (stackedWidget_->currentIndex() == 1) {
-        workflowWidget_->setOperationRunning(false);
-    }
-}
-
-void MainWindow::handleDetectFilesystem() {
-    // This operation is only valid from the FILESYSTEM_DETECTION state.
-    // We require that a device has been selected
-    if (selectedDevice_.isEmpty()) {
-        QMessageBox::warning(this, "No Source Selected", "Please select a storage source first.");
-        statusLabel_->setText("Ready");
-        isOperationRunning_ = false;
-        if (stackedWidget_->currentIndex() == 1) {
-            workflowWidget_->setOperationRunning(false);
-        }
-        return;
-    }
-
-    // For filesystem detection, we analyze the first few sectors (boot sector area)
-    // to determine the filesystem type
-    const uint64_t startSector = 0;
-    const uint64_t numSectors = 16; // Analyze first 16 sectors for detection
-
-    // Update UI for operation start
-    statusLabel_->setText(QString("Detecting filesystem on %1...").arg(selectedDevice_));
-    if (stackedWidget_->currentIndex() == 1) {
-        workflowWidget_->setOperationRunning(true);
-    }
-    isOperationRunning_ = true;
-
-    // Set up progress callback
-    auto progressCallback = [this](const recoverysuite::application::service::models::RecoveryProgress& progress) {
-        // Convert to the three-parameter version for compatibility
-        updateProgressFromService(QString::fromStdString(progress.operationType),
-                                 progress.percentage,
-                                 QString::fromStdString(progress.currentStep));
-    };
-
-    // Set up cancellation token
-    auto cancellationToken = [this]() -> bool {
-        // Allow cancellation if we're still in FILESYSTEM_DETECTION state
-        return stateManager_.getCurrentState() == ApplicationState::FILESYSTEM_DETECTION;
-    };
-
-    // Start detection in a way that doesn't block the UI
-    QTimer::singleShot(100, this, [this, startSector, numSectors, progressCallback, cancellationToken]() {
-        try {
-            // Call the actual recovery service
-            auto result = recoveryService_->analyzeFilesystem(selectedDevice_.toStdString(), startSector, numSectors);
-
-            // Handle result
-            if (result.success) {
-                // Transition to results state on success
-                stateManager_.transitionTo(ApplicationState::FILESYSTEM_ANALYSIS);
-                updateUIForState();
-
-                // Format the filesystem information for display
-                QString message = QString("Filesystem detection completed for %1\n\n")
-                    .arg(QString::fromStdString(result.filesystemInfo.type));
-
-                if (!result.filesystemInfo.version.empty()) {
-                    message += QString("Version: %1\n").arg(QString::fromStdString(result.filesystemInfo.version));
-                }
-                message += QString("Cluster Size: %1 bytes\n")
-                    .arg(result.filesystemInfo.clusterSizeBytes);
-                if (!result.filesystemInfo.volumeLabel.empty()) {
-                    message += QString("Volume Label: %1\n").arg(QString::fromStdString(result.filesystemInfo.volumeLabel));
-                }
-                if (!result.filesystemInfo.serialNumber.empty()) {
-                    message += QString("Serial Number: %1\n").arg(QString::fromStdString(result.filesystemInfo.serialNumber));
-                }
-                message += QString("Total Size: %1 bytes\n")
-                    .arg(result.filesystemInfo.totalSizeBytes);
-                message += QString("Used Space: %1 bytes (%2%)")
-                    .arg(result.filesystemInfo.usedSizeBytes)
-                    .arg(result.filesystemInfo.totalSizeBytes > 0 ?
-                           QString::number((result.filesystemInfo.usedSizeBytes * 100.0) / result.filesystemInfo.totalSizeBytes, 'f', 1) : "0");
-                message += QString("Free Space: %1 bytes (%2%)")
-                    .arg(result.filesystemInfo.freeSizeBytes)
-                    .arg(result.filesystemInfo.totalSizeBytes > 0 ?
-                           QString::number((result.filesystemInfo.freeSizeBytes * 100.0) / result.filesystemInfo.totalSizeBytes, 'f', 1) : "0");
-                message += QString("Read-Only: %1\n")
-                    .arg(result.filesystemInfo.isReadOnly ? "Yes" : "No");
-                message += QString("Corrupted: %1\n")
-                    .arg(result.filesystemInfo.isCorrupted ? "Yes" : "No");
-
-                QMessageBox::information(this, "Filesystem Detection Results", message);
-            } else {
-                // Transition to error state on failure
-                stateManager_.transitionTo(ApplicationState::ERROR);
-                updateUIForState();
-
-                QMessageBox::warning(this, "Filesystem Detection Failed",
-                    QString("Detection failed: %1").arg(QString::fromStdString(result.errorMessage)));
-            }
-        } catch (const std::exception& e) {
-            // Transition to error state on exception
-            stateManager_.transitionTo(ApplicationState::ERROR);
-            updateUIForState();
-
-            QMessageBox::critical(this, "Detection Error",
-                QString("Error during detection: %1").arg(QString::fromStdString(e.what())));
-        }
-
-        // Reset UI
-        statusLabel_->setText("Ready");
-        isOperationRunning_ = false;
-        if (stackedWidget_->currentIndex() == 1) {
-            workflowWidget_->setOperationRunning(false);
-        }
-    });
-}
-
-void MainWindow::handleAnalyzeFilesystem() {
-    // This operation is only valid from the FILESYSTEM_ANALYSIS state.
-    // We require that a device has been selected
-    if (selectedDevice_.isEmpty()) {
-        QMessageBox::warning(this, "No Source Selected", "Please select a storage source first.");
-        statusLabel_->setText("Ready");
-        isOperationRunning_ = false;
-        if (stackedWidget_->currentIndex() == 1) {
-            workflowWidget_->setOperationRunning(false);
-        }
-        return;
-    }
-
-    // Get parameters from user (we'll use default values for now, but in a real implementation we might get them from the user)
-    bool ok;
-    QString startSectorText = QInputDialog::getText(this, "Analyze Filesystem",
-        "Start sector (0-based):", QLineEdit::Normal, "0", &ok);
-    if (!ok) {
-        statusLabel_->setText("Ready");
-        isOperationRunning_ = false;
-        if (stackedWidget_->currentIndex() == 1) {
-            workflowWidget_->setOperationRunning(false);
-        }
-        return;
-    }
-
-    bool ok2;
-    QString numSectorsText = QInputDialog::getText(this, "Analyze Filesystem",
-        "Number of sectors:", QLineEdit::Normal, "100", &ok2);
-    if (!ok2) {
-        statusLabel_->setText("Ready");
-        isOperationRunning_ = false;
-        if (stackedWidget_->currentIndex() == 1) {
-            workflowWidget_->setOperationRunning(false);
-        }
-        return;
-    }
-
-    uint64_t startSector = startSectorText.toULongLong(&ok);
-    uint64_t numSectors = numSectorsText.toULongLong(&ok2);
-    if (!ok || !ok2) {
-        statusLabel_->setText("Ready");
-        isOperationRunning_ = false;
-        if (stackedWidget_->currentIndex() == 1) {
-            workflowWidget_->setOperationRunning(false);
-        }
-        return;
-    }
-
-    // Show progress
-    statusLabel_->setText(QString("Analyzing filesystem on %1...").arg(selectedDevice_));
-
-    // Perform analysis in a way that doesn't block the UI (using timer for demo)
-    QTimer::singleShot(100, this, [this, startSector, numSectors]() {
-        try {
-            // Call the actual recovery service
-            auto result = recoveryService_->analyzeFilesystem(selectedDevice_.toStdString(), startSector, numSectors);
-
-            if (result.success) {
-                QString message = QString("Filesystem analysis completed successfully for %1\n\n")
-                    .arg(QString::fromStdString(result.filesystemInfo.type));
-
-                if (!result.filesystemInfo.volumeLabel.empty()) {
-                    message += QString("Volume Label: %1\n").arg(QString::fromStdString(result.filesystemInfo.volumeLabel));
-                }
-                message += QString("Total Size: %1 bytes\n")
-                    .arg(result.filesystemInfo.totalSizeBytes);
-                message += QString("Used Space: %1 bytes (%2%)")
-                    .arg(result.filesystemInfo.usedSizeBytes)
-                    .arg(result.filesystemInfo.totalSizeBytes > 0 ?
-                           QString::number((result.filesystemInfo.usedSizeBytes * 100.0) / result.filesystemInfo.totalSizeBytes, 'f', 1) : "0");
-                message += QString("Free Space: %1 bytes (%2%)")
-                    .arg(result.filesystemInfo.freeSizeBytes)
-                    .arg(result.filesystemInfo.totalSizeBytes > 0 ?
-                           QString::number((result.filesystemInfo.freeSizeBytes * 100.0) / result.filesystemInfo.totalSizeBytes, 'f', 1) : "0");
-
-                QMessageBox::information(this, "Filesystem Analysis", message);
-            } else {
-                QMessageBox::warning(this, "Filesystem Analysis Failed",
-                    QString("Analysis failed: %1").arg(QString::fromStdString(result.errorMessage)));
-            }
-        } catch (const std::exception& e) {
-            QMessageBox::critical(this, "Analysis Error",
-                QString("Error during analysis: %1").arg(QString::fromStdString(e.what())));
-        }
-
-        statusLabel_->setText("Ready");
-        isOperationRunning_ = false;
-        if (stackedWidget_->currentIndex() == 1) {
-            workflowWidget_->setOperationRunning(false);
-        }
-    });
-}
-
-void MainWindow::handleValidateRecovery() {
-    // This operation is only valid from the VALIDATION state.
-    // We require that a device has been selected
-    if (selectedDevice_.isEmpty()) {
-        QMessageBox::warning(this, "No Source Selected", "Please select a storage source first.");
-        statusLabel_->setText("Ready");
-        isOperationRunning_ = false;
-        if (stackedWidget_->currentIndex() == 1) {
-            workflowWidget_->setOperationRunning(false);
-        }
-        return;
-    }
-
-    // Get destination path from user
-    bool ok;
-    QString destPath = QInputDialog::getText(this, "Validate Recovery Operation",
-        "Destination path (e.g., /mnt/recovery):", QLineEdit::Normal, "/mnt/recovery", &ok);
-    if (!ok || destPath.isEmpty()) {
-        statusLabel_->setText("Ready");
-        isOperationRunning_ = false;
-        if (stackedWidget_->currentIndex() == 1) {
-            workflowWidget_->setOperationRunning(false);
-        }
-        return;
-    }
-
-    // TODO: Implement actual validation using GUIRecoveryService
-    // For now, show placeholder
-    QMessageBox::information(this, "Recovery Validation",
-        QString("Validating recovery operation...\n\n"
-                "Source: %1\n"
-                "Destination: %2\n\n"
-                "Validation Results:\n"
-                "✓ Source partition accessible\n"
-                "✓ Destination has sufficient space\n"
-                "✓ File systems are compatible\n"
-                "✓ No overlapping partitions\n"
-                "✓ Operation can proceed safely")
-        .arg(selectedDevice_)
-        .arg(destPath));
-    statusLabel_->setText("Ready");
-    isOperationRunning_ = false;
-    if (stackedWidget_->currentIndex() == 1) {
-        workflowWidget_->setOperationRunning(false);
-    }
-}
-
 void MainWindow::handleStartRecovery() {
-    // This operation is only valid from the RECOVERY state.
-    // We require that a device has been selected
-    if (selectedDevice_.isEmpty()) {
-        QMessageBox::warning(this, "No Source Selected", "Please select a storage source first.");
-        statusLabel_->setText("Ready");
-        isOperationRunning_ = false;
-        if (stackedWidget_->currentIndex() == 1) {
-            workflowWidget_->setOperationRunning(false);
-        }
-        return;
+    if (running_ || !service_) return;
+    const auto error = service_->validateOperation(operation_);
+    if (!error.empty()) { status_->setText(QString::fromStdString(error)); return; }
+    if (!state_.transitionTo(ApplicationState::VALIDATION) || !state_.transitionTo(ApplicationState::RECOVERY)) {
+        status_->setText(tr("Return to recovery settings before starting another scan")); return;
     }
-
-    // Get parameters from user
-    bool ok;
-    QString startSectorText = QInputDialog::getText(this, "Start Recovery",
-        "Start sector (0-based):", QLineEdit::Normal, "0", &ok);
-    if (!ok) {
-        statusLabel_->setText("Ready");
-        isOperationRunning_ = false;
-        if (stackedWidget_->currentIndex() == 1) {
-            workflowWidget_->setOperationRunning(false);
-        }
-        return;
-    }
-
-    bool ok2;
-    QString numSectorsText = QInputDialog::getText(this, "Start Recovery",
-        "Number of sectors:", QLineEdit::Normal, "1000", &ok2);
-    if (!ok2) {
-        statusLabel_->setText("Ready");
-        isOperationRunning_ = false;
-        if (stackedWidget_->currentIndex() == 1) {
-            workflowWidget_->setOperationRunning(false);
-        }
-        return;
-    }
-
-    bool ok3;
-    QString outputPath = QInputDialog::getText(this, "Start Recovery",
-        "Output directory:", QLineEdit::Normal, "./recovered", &ok3);
-    if (!ok3 || outputPath.isEmpty()) {
-        statusLabel_->setText("Ready");
-        isOperationRunning_ = false;
-        if (stackedWidget_->currentIndex() == 1) {
-            workflowWidget_->setOperationRunning(false);
-        }
-        return;
-    }
-
-    uint64_t startSector = startSectorText.toULongLong(&ok);
-    uint64_t numSectors = numSectorsText.toULongLong(&ok2);
-    if (!ok || !ok2) {
-        statusLabel_->setText("Ready");
-        isOperationRunning_ = false;
-        if (stackedWidget_->currentIndex() == 1) {
-            workflowWidget_->setOperationRunning(false);
-        }
-        return;
-    }
-
-    // Transition to recovery state (we are already in RECOVERY state when this is called, but we double-check)
-    if (stateManager_.getCurrentState() != ApplicationState::RECOVERY) {
-        if (!stateManager_.transitionTo(ApplicationState::RECOVERY)) {
-            QMessageBox::warning(this, "Invalid State",
-                "Cannot start recovery operation from current state.");
-            statusLabel_->setText("Ready");
-            isOperationRunning_ = false;
-            if (stackedWidget_->currentIndex() == 1) {
-                workflowWidget_->setOperationRunning(false);
-            }
-            return;
-        }
-    }
-
-    // Update UI for operation start
-    statusLabel_->setText(QString("Starting recovery operation on %1...").arg(selectedDevice_));
-    if (stackedWidget_->currentIndex() == 1) {
-        workflowWidget_->setOperationRunning(true);
-    }
-
-    isOperationRunning_ = true;
-    recoveryResultsWidget_->clear();
-    progressWidget_->resetProgress();
-    updateUIForState();
-    // Create a thread and worker for the recovery operation
-    QThread* thread = new QThread(this);
-    recoveryThread_ = thread;
-    RecoveryWorker* worker = new RecoveryWorker(recoveryService_,
-                                               selectedDevice_.toStdString(),
-                                               startSector,
-                                               numSectors,
-                                               outputPath.toStdString());
-    worker->moveToThread(thread);
-
-    // Connect signals and slots
-    connect(thread, &QThread::started, worker, &RecoveryWorker::process);
-    connect(worker, &RecoveryWorker::progressUpdated,
-            this, &MainWindow::handleRecoveryProgress);
-    connect(worker, &RecoveryWorker::finished,
-            this, &MainWindow::handleRecoveryFinished);
-    // cancel() only updates an atomic flag: it must not wait for the worker event loop.
+    running_ = true; updateControls(); results_->clear(); progress_->resetProgress();
+    pages_->setCurrentWidget(progress_); status_->setText(tr("Scanning image…"));
+    thread_ = new QThread(this);
+    auto* worker = new RecoveryWorker(service_, operation_); worker->moveToThread(thread_);
+    connect(thread_, &QThread::started, worker, &RecoveryWorker::process);
     connect(this, &MainWindow::cancelRecovery, worker, &RecoveryWorker::cancel, Qt::DirectConnection);
-
-    // We must clean up the thread and worker when finished
-    connect(worker, &RecoveryWorker::finished, thread, &QThread::quit, Qt::DirectConnection);
-    connect(worker, &RecoveryWorker::finished, worker, &QObject::deleteLater);
-    connect(thread, &QThread::finished, thread, &QObject::deleteLater);
-    thread->start();
+    connect(worker, &RecoveryWorker::progressUpdated, this, &MainWindow::handleRecoveryProgress);
+    connect(worker, &RecoveryWorker::finished, this, &MainWindow::handleRecoveryFinished);
+    connect(worker, &RecoveryWorker::finished, thread_, &QThread::quit, Qt::DirectConnection);
+    connect(thread_, &QThread::finished, worker, &QObject::deleteLater);
+    connect(thread_, &QThread::finished, this, [this] {
+        running_ = false; updateControls();
+        if (closeWhenFinished_) QTimer::singleShot(0, this, &QWidget::close);
+    });
+    connect(thread_, &QThread::finished, thread_, &QObject::deleteLater);
+    thread_->start();
 }
-
 void MainWindow::handleCancelOperation() {
-    // Only allow cancellation during recovery operation
-    if (stateManager_.getCurrentState() == ApplicationState::RECOVERY) {
-        statusLabel_->setText("Cancelling operation...");
-        // Emit the cancel recovery signal
-        emit cancelRecovery();
-    } else {
-        statusLabel_->setText("No operation to cancel");
-    }
+    if (!running_) return;
+    emit cancelRecovery(); cancel_->setEnabled(false);
+    status_->setText(tr("Cancelling; completed output files will be kept…"));
 }
-
-// Slot to update progress from service callbacks (kept for compatibility with existing code)
-void MainWindow::updateProgressFromService(const QString& operationName, int progress, const QString& statusText) {
-    // Create a default RecoveryProgress object and call the new version
-    recoverysuite::application::service::models::RecoveryProgress progressObj{};
-    progressObj.operationType = operationName.toStdString();
-    progressObj.percentage = progress;
-    progressObj.currentStep = statusText.toStdString();
-    // Leave other fields as default (0, false, etc.)
-    updateProgressFromService(progressObj);
+void MainWindow::handleRecoveryProgress(const application::service::models::RecoveryProgress& progress) {
+    progress_->updateProgress(QString::fromStdString(progress.operationType), progress.percentage,
+        QString::fromStdString(progress.currentStep), progress.processedBytes, progress.totalBytes,
+        progress.elapsedSeconds, progress.recoveredItemsCount, progress.failedItemsCount, progress.isCancellable);
+    status_->setText(QString::fromStdString(progress.currentStep));
 }
-
-// New version of updateProgressFromService that takes a RecoveryProgress object
-void MainWindow::updateProgressFromService(const recoverysuite::application::service::models::RecoveryProgress& progress) {
-    if (progressWidget_) {
-        progressWidget_->updateProgress(QString::fromStdString(progress.operationType),
-                                        progress.percentage,
-                                        QString::fromStdString(progress.currentStep),
-                                        progress.processedBytes,
-                                        progress.totalBytes,
-                                        progress.elapsedSeconds,
-                                        progress.recoveredItemsCount,
-                                        progress.failedItemsCount,
-                                        progress.isCancellable);
-    }
-    if (!progress.currentStep.empty()) {
-        statusLabel_->setText(QString::fromStdString(progress.currentStep));
-    }
+void MainWindow::handleRecoveryFinished(const application::service::models::RecoveryResult& result) {
+    results_->setRecoveryResult(result); state_.transitionTo(ApplicationState::RESULTS);
+    pages_->setCurrentWidget(results_);
+    status_->setText(result.cancelled ? tr("Cancelled; review saved items below") : (result.success ? tr("Scan complete") : tr("Scan finished with errors; review results")));
 }
-
-// Slot to handle progress updates from the recovery worker
-void MainWindow::handleRecoveryProgress(const recoverysuite::application::service::models::RecoveryProgress& progress) {
-    updateProgressFromService(progress);
+void MainWindow::handleWorkflowOperation(const QString& operation) {
+    if (operation == "list_sources") showSources();
+    else if (operation == "cancel_operation") handleCancelOperation();
+    else if (operation == "start_recovery" || operation == "validate_recovery") configuration_->validateConfiguration();
+    else status_->setText(tr("This operation is not available in the disk image workflow"));
 }
-
-// Slot to handle finished recovery operation from the worker
-void MainWindow::handleRecoveryFinished(const recoverysuite::application::service::models::RecoveryResult& result) {
-    isOperationRunning_ = false;
-    workflowWidget_->setOperationRunning(false);
-    recoveryResultsWidget_->setRecoveryResult(result);
-    stateManager_.transitionTo(ApplicationState::RESULTS);
-    updateUIForState();
-
+void MainWindow::updateOperationProgress(const QString& name, int percent, const QString& text) { progress_->updateProgress(name, percent, text); }
+void MainWindow::handleOperationCompleted(const QString&, bool, const QString& message) { status_->setText(message); }
+void MainWindow::closeEvent(QCloseEvent* event) {
+    if (running_) { closeWhenFinished_ = true; handleCancelOperation(); updateControls(); event->ignore(); }
+    else event->accept();
 }
-
-void MainWindow::updateOperationProgress(const QString& operationName, int progress, const QString& statusText) {
-    // Create a default RecoveryProgress object and call the new version
-    recoverysuite::application::service::models::RecoveryProgress progressObj{};
-    progressObj.operationType = operationName.toStdString();
-    progressObj.percentage = progress;
-    progressObj.currentStep = statusText.toStdString();
-    // Leave other fields as default (0, false, etc.)
-    updateProgressFromService(progressObj);
+RecoveryWorker::RecoveryWorker(application::service::GUIRecoveryService* service,
+    const application::service::models::RecoveryOperation& operation) : service_(service), operation_(operation) {}
+RecoveryWorker::RecoveryWorker(application::service::GUIRecoveryService* service, const std::string& path,
+    uint64_t start, uint64_t count, const std::string& output) : service_(service) {
+    operation_.operationType = "carving"; operation_.targetDevicePath = path;
+    operation_.startSector = start; operation_.numSectors = count; operation_.outputPath = output;
 }
-
-void MainWindow::handleOperationCompleted(const QString& operationName, bool success, const QString& resultMessage) {
-    isOperationRunning_ = false;
-    if (stackedWidget_->currentIndex() == 1) {
-        workflowWidget_->setOperationRunning(false);
-    }
-
-    if (success) {
-        statusLabel_->setText(QString("Operation completed: %1").arg(operationName));
-        if (!resultMessage.isEmpty()) {
-            statusLabel_->setText(statusLabel_->text() + " - " + resultMessage);
-        }
-    } else {
-        statusLabel_->setText(QString("Operation failed: %1").arg(operationName));
-        if (!resultMessage.isEmpty()) {
-            statusLabel_->setText(statusLabel_->text() + " - " + resultMessage);
-        }
-    }
-
-    // Show completion dialog
-    if (success) {
-        QMessageBox::information(this, "Operation Completed",
-            QString("The operation '%1' completed successfully.\n\n%2")
-            .arg(operationName)
-            .arg(resultMessage));
-    } else {
-        QMessageBox::warning(this, "Operation Failed",
-            QString("The operation '%1' failed.\n\n%2")
-            .arg(operationName)
-            .arg(resultMessage));
-    }
-}
-
-// Slot to handle source selection from the source discovery widget
-void MainWindow::onSourceSelected(const QString& devicePath) {
-    // Store the selected device
-    selectedDevice_ = devicePath;
-
-    // Transition to the next state (storage partition inspection)
-    if (stateManager_.transitionTo(ApplicationState::STORAGE_PARTITION_INSPECTION)) {
-        // Switch to the workflow view
-        stackedWidget_->setCurrentIndex(1);
-        // Update the status
-        statusLabel_->setText(tr("Source %1 selected. Inspecting partitions...").arg(devicePath));
-    } else {
-        QMessageBox::warning(this, "State Transition Error",
-            "Failed to transition to storage partition inspection state.");
-        statusLabel_->setText("Ready");
-    }
-}
-
-// Slot to handle configuration ready from recovery configuration widget
-void MainWindow::onConfigurationReady(const recoverysuite::application::service::models::RecoveryOperation& operation) {
-    // Store the operation for later use (in a real implementation, we'd pass it to the recovery service)
-    // For now, we'll just transition to validation state and show a message
-
-    // Transition to validation state
-    if (stateManager_.transitionTo(ApplicationState::VALIDATION)) {
-        // Update the status
-        statusLabel_->setText(tr("Configuration validated. Ready to execute: %1")
-                              .arg(QString::fromStdString(operation.operationType)));
-
-        // Show a message box with the configuration details
-        QString message = QString("Recovery operation configured:\n\n"
-                                 "Operation: %1\n"
-                                 "Device: %2\n"
-                                 "Start Sector: %3\n"
-                                 "Number of Sectors: %4\n"
-                                 "Output Path: %5\n"
-                                 "Verify After Recovery: %6\n"
-                                 "Create Log File: %7")
-                .arg(QString::fromStdString(operation.operationType))
-                .arg(QString::fromStdString(operation.targetDevicePath))
-                .arg(operation.startSector)
-                .arg(operation.numSectors)
-                .arg(QString::fromStdString(operation.outputPath))
-                .arg(operation.verifyAfterRecovery ? "Yes" : "No")
-                .arg(operation.createLogFile ? "Yes" : "No");
-
-        QMessageBox::information(this, "Configuration Ready", message);
-    } else {
-        QMessageBox::warning(this, "State Transition Error",
-            "Failed to transition to validation state.");
-        statusLabel_->setText("Ready");
-    }
-}
-
-void MainWindow::updateUIForState() {
-    // Update the UI based on the current application state
-    ApplicationState currentState = stateManager_.getCurrentState();
-
-    // Update the status label with the current state (for debugging)
-    // statusLabel_->setText(QString("State: %1").arg(static_cast<int>(currentState)));
-
-    // Determine which view to show
-    if (currentState == ApplicationState::SOURCE_SELECTION) {
-        // Show the source discovery view
-        stackedWidget_->setCurrentIndex(0);
-    } else {
-        // Show the workflow view for all other states (except START and EXIT, which we handle by transitioning)
-        stackedWidget_->setCurrentIndex(1);
-    }
-
-    // Update the widget's operation running state (if we are in the workflow view)
-    if (stackedWidget_->currentIndex() == 1) {
-        workflowWidget_->setOperationRunning(isOperationRunning_);
-    }
-
-    // Update the operation stacked widget index based on the state
-    if (stackedWidget_->currentIndex() == 1) { // Only change the operation stacked widget when in workflow view
-        switch (currentState) {
-        case ApplicationState::START:
-        case ApplicationState::SOURCE_SELECTION:
-        case ApplicationState::EXIT:
-            // These states are handled by the outer stackedWidget, so we don't change the operationStackedWidget_
-            break;
-        case ApplicationState::STORAGE_PARTITION_INSPECTION:
-        case ApplicationState::FILESYSTEM_DETECTION:
-        case ApplicationState::FILESYSTEM_ANALYSIS:
-        case ApplicationState::VALIDATION:
-            // Show the workflow buttons (index 0 of operationStackedWidget_)
-            operationStackedWidget_->setCurrentIndex(0);
-            break;
-        case ApplicationState::RECOVERY:
-            // Show the progress widget (index 1 of operationStackedWidget_)
-            operationStackedWidget_->setCurrentIndex(1);
-            break;
-        case ApplicationState::RESULTS:
-            // Show the recovery results widget (index 2 of operationStackedWidget_)
-            operationStackedWidget_->setCurrentIndex(2);
-            break;
-        case ApplicationState::RECOVERY_CONFIGURATION:
-            // Show the recovery configuration widget (index 3 of operationStackedWidget_)
-            operationStackedWidget_->setCurrentIndex(3);
-            break;
-        case ApplicationState::ERROR:
-            // Show an error state in the progress widget? Or just show the workflow buttons?
-            // We'll show the workflow buttons (index 0) and let the status bar show the error.
-            operationStackedWidget_->setCurrentIndex(0);
-            break;
-        default:
-            // Default to showing the workflow buttons
-            operationStackedWidget_->setCurrentIndex(0);
-            break;
-        }
-    }
-
-    // Update the status label based on the state (optional)
-    // We can set a default status for each state if we want
-    switch (currentState) {
-        case ApplicationState::START:
-            statusLabel_->setText("Initializing...");
-            break;
-        case ApplicationState::SOURCE_SELECTION:
-            statusLabel_->setText("Select a storage source");
-            break;
-        case ApplicationState::STORAGE_PARTITION_INSPECTION:
-            statusLabel_->setText("Inspecting partitions...");
-            break;
-        case ApplicationState::FILESYSTEM_DETECTION:
-            statusLabel_->setText("Detecting filesystem...");
-            break;
-        case ApplicationState::FILESYSTEM_ANALYSIS:
-            statusLabel_->setText("Analyzing filesystem...");
-            break;
-        case ApplicationState::RECOVERY_CONFIGURATION:
-            statusLabel_->setText("Configuring recovery...");
-            break;
-        case ApplicationState::VALIDATION:
-            statusLabel_->setText("Validating recovery operation...");
-            break;
-        case ApplicationState::RECOVERY:
-            statusLabel_->setText("Recovery in progress...");
-            break;
-        case ApplicationState::RESULTS:
-            statusLabel_->setText("Recovery complete. Viewing results.");
-            break;
-        case ApplicationState::ERROR:
-            statusLabel_->setText("An error occurred.");
-            break;
-        case ApplicationState::EXIT:
-            statusLabel_->setText("Exiting...");
-            break;
-        default:
-            statusLabel_->setText("Ready");
-            break;
-    }
-}
-
-} // namespace core
-} // namespace gui
-} // namespace recoverysuite
-
-// Implementation of RecoveryWorker class
-recoverysuite::gui::core::RecoveryWorker::RecoveryWorker(
-    recoverysuite::application::service::GUIRecoveryService* recoveryService,
-    const std::string& devicePath,
-    uint64_t startSector,
-    uint64_t numSectors,
-    const std::string& outputPath)
-    : QObject(),
-      recoveryService_(recoveryService),
-      devicePath_(devicePath),
-      startSector_(startSector),
-      numSectors_(numSectors),
-      outputPath_(outputPath),
-      isCancelled_(false) {
-}
-
-void recoverysuite::gui::core::RecoveryWorker::process() {
-    // Set up progress callback
-    auto progressCallback = [this](const recoverysuite::application::service::models::RecoveryProgress& progress) {
-        // Emit progress update if not cancelled
-        if (!isCancelled_) {
-            emit progressUpdated(progress);
-        }
-    };
-
-    // Set up cancellation token
-    auto cancellationToken = [this]() -> bool {
-        return isCancelled_;
-    };
-
+void RecoveryWorker::cancel() { cancelled_ = true; }
+void RecoveryWorker::process() {
+    application::service::models::RecoveryResult result{};
     try {
-        // Perform the recovery operation using the GUI recovery service
-        // For now, we'll implement a basic file recovery operation
-        // In a full implementation, we would determine the operation type from context
-        auto result = recoveryService_->recoverFiles(
-            devicePath_,
-            startSector_,
-            numSectors_,
-            outputPath_,
-            progressCallback,
-            cancellationToken
-        );
-
-        emit finished(result);
-    } catch (const std::exception& e) {
-        // Create error result
-        recoverysuite::application::service::models::RecoveryResult result{};
-        result.success = false;
-        result.errorMessage = "Exception during recovery: " + std::string(e.what());
-        result.operationType = "file_recovery";
-
-        result.cancelled = isCancelled_;
-        emit finished(result);
-    }
+        if (!service_) throw std::runtime_error("Recovery service is unavailable");
+        result = service_->executeOperation(operation_, [this](const auto& progress) { emit progressUpdated(progress); }, [this] { return cancelled_.load(); });
+    } catch (const std::exception& failure) { result.errorMessage = failure.what(); result.cancelled = cancelled_.load(); }
+    emit finished(result);
 }
-
-void recoverysuite::gui::core::RecoveryWorker::cancel() {
-    isCancelled_ = true;
 }

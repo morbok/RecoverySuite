@@ -4,6 +4,10 @@
 #include <stdexcept>
 #include <chrono>
 #include <thread>
+#include <filesystem>
+#include <limits>
+#include "safe_file_exporter.h"
+#include "Recovery/signature_carver.h"
 
 namespace recoverysuite {
 namespace application {
@@ -22,22 +26,113 @@ GUIRecoveryService::~GUIRecoveryService() {
 }
 
 std::vector<models::StorageDevice> GUIRecoveryService::enumerateStorageDevices() {
-    // Note: This is a simplified implementation.
-    // In a real implementation, we would use the DiskManager or similar
-    // to enumerate actual storage devices.
+    if (!imageReader_) return {};
+    return {getStorageDeviceInfo(imageReader_->sourcePath())};
+}
 
-    if (!recoveryService_) {
-        recoverysuite::logging::Logger::instance().info("No recovery service available, returning empty device list");
-        // For now, return an empty vector as we don't have access to the disk manager here
-        // A full implementation would delegate to the underlying recovery service or disk manager
-        return std::vector<models::StorageDevice>();
+models::StorageDevice GUIRecoveryService::openImage(const std::string& path, uint32_t sectorSize) {
+    std::unique_lock lock(imageMutex_, std::try_to_lock);
+    if (!lock.owns_lock()) throw std::runtime_error("Wait for recovery to finish before changing the source");
+    auto reader = std::make_shared<disk::DiskImageReader>(sectorSize);
+    reader->open(path);
+    auto service = std::make_unique<RecoveryService>(reader);
+    imageReader_ = std::move(reader);
+    recoveryService_ = std::move(service);
+    return getStorageDeviceInfo(imageReader_->sourcePath());
+}
+
+std::string GUIRecoveryService::validateImageOperation(const models::RecoveryOperation& operation) const {
+    if (!imageReader_ || !imageReader_->isOpen()) return "Open a disk image first";
+    try { imageReader_->validateIdentity(); }
+    catch (const std::exception& failure) { return failure.what(); }
+    if (operation.operationType != "carving") return "Only signature carving is available in the image workflow";
+    std::error_code error;
+    const auto source = std::filesystem::canonical(operation.targetDevicePath, error);
+    if (error || source.string() != imageReader_->sourcePath()) return "The operation source does not match the opened image";
+    if (!operation.numSectors || operation.startSector >= imageReader_->getTotalSectors() ||
+        operation.numSectors > imageReader_->getTotalSectors() - operation.startSector ||
+        operation.numSectors > std::numeric_limits<uint64_t>::max() / imageReader_->getSectorSize())
+        return "The sector range is outside the opened image";
+    if (operation.createLogFile) return "Separate log file output is not available";
+    try { SafeFileExporter destination(operation.outputPath); }
+    catch (const std::exception& failure) { return failure.what(); }
+    return {};
+}
+std::string GUIRecoveryService::validateOperation(const models::RecoveryOperation& operation) const {
+    std::unique_lock lock(imageMutex_, std::try_to_lock);
+    if (!lock.owns_lock()) return "A recovery operation is already active";
+    return validateImageOperation(operation);
+}
+models::RecoveryResult GUIRecoveryService::executeOperation(const models::RecoveryOperation& operation,
+    std::function<void(const models::RecoveryProgress&)> progressCallback,
+    std::function<bool()> cancellationToken) {
+    models::RecoveryResult result{};
+    result.operationType = operation.operationType; result.destination = operation.outputPath;
+    result.startTime = std::chrono::system_clock::now();
+    const auto cancelled = [&] { return cancellationToken && cancellationToken(); };
+    std::unique_lock lock(imageMutex_, std::try_to_lock);
+    try {
+        if (!lock.owns_lock()) throw std::runtime_error("A recovery operation is already active");
+        if (cancelled()) result.cancelled = true;
+        else {
+            const auto error = validateImageOperation(operation);
+            if (!error.empty()) throw std::runtime_error(error);
+            SafeFileExporter exporter(operation.outputPath);
+            const auto totalBytes = operation.numSectors * imageReader_->getSectorSize();
+            result.processedBytesKnown = true; result.failedBytesKnown = true; result.failedItemsKnown = true;
+            const auto report = [&](uint64_t processed) {
+                result.processedBytes = processed;
+                if (!progressCallback) return;
+                models::RecoveryProgress progress{};
+                progress.operationType = operation.operationType; progress.status = "running";
+                progress.currentStep = "Scanning image and saving signature candidates";
+                progress.processedBytes = processed; progress.totalBytes = totalBytes;
+                progress.percentage = static_cast<uint32_t>((static_cast<long double>(processed) / totalBytes) * 100);
+                progress.recoveredItemsCount = result.recoveredItemsCount; progress.failedItemsCount = result.failedItemsCount;
+                progress.isCancellable = true; progress.timestamp = std::chrono::system_clock::now();
+                progress.elapsedSeconds = std::chrono::duration_cast<std::chrono::seconds>(progress.timestamp - result.startTime).count();
+                progressCallback(progress);
+            };
+            report(0);
+            const auto summary = recovery::carveSignatures(*imageReader_, operation.startSector, operation.numSectors,
+                [&](const std::string& name, const std::vector<uint8_t>& data) {
+                    if (result.recoveredItemsCount + result.failedItemsCount >= 10000)
+                        throw std::runtime_error("Maximum output item count reached");
+                    try {
+                        exporter.write(name, data, operation.verifyAfterRecovery, cancellationToken);
+                        result.recoveredItems.push_back({name, static_cast<uint64_t>(data.size())});
+                        ++result.recoveredItemsCount; result.recoveredBytes += data.size(); result.outputWritten = true;
+                    } catch (const std::exception& failure) {
+                        if (!cancelled()) {
+                            ++result.failedItemsCount; result.failedBytes += data.size();
+                            result.details[name] = failure.what();
+                        }
+                    }
+                }, report, cancellationToken);
+            result.processedBytes = summary.processedBytes; result.cancelled = summary.cancelled;
+            result.details["Skipped incomplete or oversized candidates"] = std::to_string(summary.skippedCandidates);
+            result.details["Verification"] = operation.verifyAfterRecovery ? "Saved bytes were read back and compared" : "Not requested";
+            result.success = !result.cancelled && !result.failedItemsCount && !summary.skippedCandidates;
+            if (result.failedItemsCount) result.errorMessage = "Some candidates could not be saved; existing files were kept";
+            else if (summary.skippedCandidates) result.errorMessage = "Some signature candidates were incomplete or larger than 16 MiB";
+        }
+    } catch (const std::exception& failure) { result.errorMessage = failure.what(); result.success = false; }
+    result.cancelled = result.cancelled || cancelled();
+    if (result.cancelled) result.success = false;
+    result.endTime = std::chrono::system_clock::now();
+    result.details["Export"] = result.outputWritten ? "Only the listed items were saved to the destination" : "No output files were saved";
+    result.details["Recovery method"] = "Signature candidates only; file structure and content may still be damaged";
+    if (progressCallback) {
+        models::RecoveryProgress progress{};
+        progress.operationType = operation.operationType;
+        progress.status = result.cancelled ? "cancelled" : (result.success ? "completed" : "failed");
+        progress.currentStep = result.cancelled ? "Cancelled; completed output files were kept" : (result.success ? "Scan complete" : result.errorMessage);
+        progress.processedBytes = result.processedBytes;
+        progress.recoveredItemsCount = result.recoveredItemsCount; progress.failedItemsCount = result.failedItemsCount;
+        progress.timestamp = result.endTime;
+        progressCallback(progress);
     }
-
-    recoverysuite::logging::Logger::instance().info("Enumerating storage devices (GUI level)");
-
-    // For now, return an empty vector as we don't have access to the disk manager here
-    // A full implementation would delegate to the underlying recovery service or disk manager
-    return std::vector<models::StorageDevice>();
+    return result;
 }
 
 models::StorageDevice GUIRecoveryService::getStorageDeviceInfo(const std::string& devicePath) {
@@ -356,7 +451,13 @@ uint64_t GUIRecoveryService::extractDiskNumber(const std::string& /*devicePath*/
     return 0;
 }
 
-std::shared_ptr<recoverysuite::disk::IDiskReader> GUIRecoveryService::getDiskReaderForDevice(const std::string& /*devicePath*/) const {
+std::shared_ptr<recoverysuite::disk::IDiskReader> GUIRecoveryService::getDiskReaderForDevice(const std::string& devicePath) const {
+    if (imageReader_) {
+        std::error_code error;
+        if (std::filesystem::canonical(devicePath, error).string() != imageReader_->sourcePath() || error)
+            throw std::invalid_argument("Source does not match the opened image");
+    }
+    if (!recoveryService_) return nullptr;
     // Delegate to the underlying recovery service's disk reader
     // In a more complex implementation, we might need to create a new reader
     // specific to this device path

@@ -4,6 +4,7 @@ find_package(Qt6 REQUIRED COMPONENTS Core)
 add_library(RecoverySuite_Application STATIC
     Service/RecoveryService.cpp
     Service/GUIRecoveryService.cpp
+    Service/safe_file_exporter.cpp
 )
 
 target_include_directories(RecoverySuite_Application

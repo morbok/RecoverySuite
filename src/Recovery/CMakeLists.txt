@@ -18,6 +18,7 @@ add_library(RecoverySuite_Recovery STATIC
     FileRecovery.cpp
     CarvingEngine.h
     CarvingEngine.cpp
+    signature_carver.cpp
     OutputExporter.h
     OutputExporter.cpp
     DiskReaderAdapter.hpp
