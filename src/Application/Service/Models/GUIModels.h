@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <chrono>
 #include <map>
+#include <vector>
 
 namespace recoverysuite {
 namespace application {
@@ -20,9 +21,9 @@ struct StorageDevice {
     std::string devicePath;
     std::string modelNumber;
     std::string serialNumber;
-    uint64_t totalBytes;
-    uint32_t bytesPerSector;
-    bool isReadOnly;
+    uint64_t totalBytes{};
+    uint32_t bytesPerSector{};
+    bool isReadOnly{};
 };
 
 /**
@@ -32,10 +33,10 @@ struct StorageDevice {
  */
 struct Partition {
     std::string partitionPath;
-    uint64_t startSector;
-    uint64_t numSectors;
+    uint64_t startSector{};
+    uint64_t numSectors{};
     std::string filesystemType;
-    bool isBootable;
+    bool isBootable{};
 };
 
 /**
@@ -46,14 +47,14 @@ struct Partition {
 struct FilesystemInfo {
     std::string type;
     std::string version;
-    uint64_t clusterSizeBytes;
+    uint64_t clusterSizeBytes{};
     std::string volumeLabel;
     std::string serialNumber;
-    uint64_t totalSizeBytes;
-    uint64_t usedSizeBytes;
-    uint64_t freeSizeBytes;
-    bool isReadOnly;
-    bool isCorrupted;
+    uint64_t totalSizeBytes{};
+    uint64_t usedSizeBytes{};
+    uint64_t freeSizeBytes{};
+    bool isReadOnly{};
+    bool isCorrupted{};
 };
 
 /**
@@ -62,7 +63,7 @@ struct FilesystemInfo {
  * Result of a filesystem analysis operation.
  */
 struct AnalysisResult {
-    bool success;
+    bool success{};
     std::string errorMessage;
     FilesystemInfo filesystemInfo;
 };
@@ -76,16 +77,16 @@ struct RecoveryProgress {
     std::string operationId;
     std::string operationType;
     std::string status;
-    uint32_t percentage;
+    uint32_t percentage{};
     std::string currentStep;
-    uint64_t processedBytes;
-    uint64_t totalBytes;
-    uint64_t elapsedSeconds;
-    uint64_t estimatedRemainingSeconds;
-    uint64_t recoveredItemsCount;
-    uint64_t failedItemsCount;
-    bool isCancellable;
-    bool isPausable;
+    uint64_t processedBytes{};
+    uint64_t totalBytes{};
+    uint64_t elapsedSeconds{};
+    uint64_t estimatedRemainingSeconds{};
+    uint64_t recoveredItemsCount{};
+    uint64_t failedItemsCount{};
+    bool isCancellable{};
+    bool isPausable{};
     std::chrono::system_clock::time_point timestamp;
 };
 
@@ -94,15 +95,27 @@ struct RecoveryProgress {
  *
  * Result of a recovery operation.
  */
+struct RecoveredItem {
+    std::string name;
+    uint64_t sizeBytes{};
+};
+
 struct RecoveryResult {
-    bool success;
+    bool success{};
     std::string errorMessage;
     std::string operationType;
-    uint64_t processedBytes;
-    uint64_t recoveredBytes;
-    uint64_t failedBytes;
-    uint64_t recoveredItemsCount;
-    uint64_t failedItemsCount;
+    std::string destination; // Requested output path; not proof of export
+    bool cancelled{};
+    bool processedBytesKnown{};
+    bool failedBytesKnown{};
+    bool failedItemsKnown{};
+    bool outputWritten{};
+    std::vector<RecoveredItem> recoveredItems;
+    uint64_t processedBytes{};
+    uint64_t recoveredBytes{};
+    uint64_t failedBytes{};
+    uint64_t recoveredItemsCount{};
+    uint64_t failedItemsCount{};
     std::chrono::system_clock::time_point startTime;
     std::chrono::system_clock::time_point endTime;
     std::map<std::string, std::string> details;
@@ -116,11 +129,11 @@ struct RecoveryResult {
 struct RecoveryOperation {
     std::string operationType;
     std::string targetDevicePath;
-    uint64_t startSector;
-    uint64_t numSectors;
+    uint64_t startSector{};
+    uint64_t numSectors{};
     std::string outputPath;
-    bool verifyAfterRecovery;
-    bool createLogFile;
+    bool verifyAfterRecovery{};
+    bool createLogFile{};
 };
 
 } // namespace models

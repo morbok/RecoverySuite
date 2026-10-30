@@ -1,3 +1,10 @@
+# Keep assert-based tests active in Release builds too.
+if(MSVC)
+    add_compile_options(/UNDEBUG)
+else()
+    add_compile_options(-UNDEBUG)
+endif()
+
 # RecoverySuite Tests
 enable_testing()
 
@@ -46,21 +53,6 @@ target_link_libraries(RecoverySuite_StorageTest
         RecoverySuite_Core
         RecoverySuite_Storage
 )
-
-# Platform-specific libraries for storage access (needed for static library linking)
-if(UNIX AND NOT APPLE)
-    target_link_libraries(RecoverySuite_StorageTest
-        PRIVATE
-            /usr/lib64/libudev.so.1
-    )
-elseif(APPLE)
-    target_link_libraries(RecoverySuite_StorageTest
-        PRIVATE
-            pthread
-            IOKit
-            CoreFoundation
-    )
-endif()
 
 # Add the test to CTest
 add_test(NAME RecoverySuite_StorageTest
@@ -406,3 +398,13 @@ target_link_libraries(test_recovery_operation_progress
 # Add the test to CTest
 add_test(NAME test_recovery_operation_progress
          COMMAND test_recovery_operation_progress)
+add_test(NAME test_gui_recovery_service COMMAND test_gui_recovery_service)
+
+set_tests_properties(test_recovery_operation_progress PROPERTIES ENVIRONMENT QT_QPA_PLATFORM=offscreen)
+
+find_package(Qt6 REQUIRED COMPONENTS Test)
+add_executable(test_recovery_results_widget test_recovery_results_widget.cpp)
+set_target_properties(test_recovery_results_widget PROPERTIES AUTOMOC ON)
+target_link_libraries(test_recovery_results_widget PRIVATE RecoverySuite_GUI RecoverySuite_Application Qt6::Test)
+add_test(NAME test_recovery_results_widget COMMAND test_recovery_results_widget)
+set_tests_properties(test_recovery_results_widget PROPERTIES ENVIRONMENT QT_QPA_PLATFORM=offscreen)

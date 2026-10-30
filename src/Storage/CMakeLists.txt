@@ -63,11 +63,11 @@ if(WIN32)
             wbemuuid
     )
 elseif(UNIX AND NOT APPLE)
-    # Linux-specific libraries
+    find_library(UDEV_LIBRARY NAMES udev libudev.so.1 REQUIRED)
     target_link_libraries(RecoverySuite_Storage
         PUBLIC
             pthread
-            /usr/lib64/libudev.so.1
+            ${UDEV_LIBRARY}
     )
 elseif(APPLE)
     # macOS-specific libraries

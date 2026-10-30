@@ -5,12 +5,12 @@
 #include <string>
 #include <functional>
 
-#include "../../../src/Application/Service/GUIRecoveryService.h"
-#include "../../../src/Application/Service/Models/GUIModels.h"
-#include "../../../src/Recovery/RecoveryOperationValidator.h"
-#include "../../../src/Recovery/RecoveryCapability.h"
-#include "../../../src/Recovery/RecoverySafetyPolicy.h"
-#include "../../../src/Disk/IDiskReader.hpp"
+#include "Application/Service/GUIRecoveryService.h"
+#include "Application/Service/Models/GUIModels.h"
+#include "Recovery/RecoveryOperationValidator.h"
+#include "Recovery/RecoveryCapability.h"
+#include "Recovery/RecoverySafetyPolicy.h"
+#include "Disk/IDiskReader.hpp"
 
 // Mock disk reader for testing
 class TestMockDiskReader : public recoverysuite::disk::IDiskReader {

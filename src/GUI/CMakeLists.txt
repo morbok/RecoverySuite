@@ -13,6 +13,7 @@ add_library(RecoverySuite_GUI STATIC
     widgets/RecoveryWorkflowWidget.cpp
     widgets/OperationProgressWidget.cpp
     widgets/SourceDiscoveryWidget.cpp
+    widgets/RecoveryResultsWidget.cpp
     widgets/RecoveryConfigurationWidget.cpp
     core/MainWindow.cpp
 )
@@ -23,6 +24,7 @@ set(GUI_MOC_HEADERS
     widgets/RecoveryWorkflowWidget.h
     widgets/OperationProgressWidget.h
     widgets/SourceDiscoveryWidget.h
+    widgets/RecoveryResultsWidget.h
     widgets/RecoveryConfigurationWidget.h
 )
 

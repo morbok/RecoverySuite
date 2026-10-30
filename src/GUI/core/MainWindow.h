@@ -8,6 +8,10 @@
 #include <QVBoxLayout>
 #include <QStackedWidget>
 #include <memory>
+#include <atomic>
+#include <QPointer>
+#include <QThread>
+#include <QMetaType>
 #include "../../Application/Service/GUIRecoveryService.h"
 #include "ApplicationState.h"
 #include "StateManager.h"
@@ -15,11 +19,14 @@
 #include "widgets/OperationProgressWidget.h"
 #include "widgets/SourceDiscoveryWidget.h"
 #include "widgets/RecoveryConfigurationWidget.h"
+#include "widgets/RecoveryResultsWidget.h"
 
 
 namespace recoverysuite {
 namespace gui {
 namespace core {
+
+class RecoveryWorker;
 
 /**
  * @brief MainWindow
@@ -196,10 +203,13 @@ private:
     recoverysuite::gui::widgets::OperationProgressWidget* progressWidget_;
     recoverysuite::gui::widgets::RecoveryConfigurationWidget* recoveryConfigurationWidget_;
     QWidget* workflowContainer_;
+    QStackedWidget* operationStackedWidget_;
+    recoverysuite::gui::widgets::RecoveryResultsWidget* recoveryResultsWidget_;
 
     // Application State Management
     recoverysuite::gui::core::StateManager stateManager_;
     bool isOperationRunning_;
+    QPointer<QThread> recoveryThread_;
 
     // Services
     recoverysuite::application::service::GUIRecoveryService* recoveryService_;
@@ -207,8 +217,6 @@ private:
     // Selected device path
     QString selectedDevice_;
 
-    // Recovery worker for background operations
-class RecoveryWorker;
 
 };
 
@@ -217,7 +225,9 @@ class RecoveryWorker;
 } // namespace recoverysuite
 
 // Recovery worker for background operations
-class recoverysuite::gui::core::MainWindow::RecoveryWorker : public QObject {
+namespace recoverysuite::gui::core {
+/** Runs recovery outside the UI thread; cancel() only sets an atomic flag. */
+class RecoveryWorker : public QObject {
     Q_OBJECT
 public:
     RecoveryWorker(recoverysuite::application::service::GUIRecoveryService* recoveryService,
@@ -237,7 +247,12 @@ private:
     uint64_t startSector_;
     uint64_t numSectors_;
     std::string outputPath_;
-    bool isCancelled_;
+    std::atomic_bool isCancelled_{false};
 };
+
+} // namespace recoverysuite::gui::core
+
+Q_DECLARE_METATYPE(recoverysuite::application::service::models::RecoveryProgress)
+Q_DECLARE_METATYPE(recoverysuite::application::service::models::RecoveryResult)
 
 #endif // RECOVERYSUITE_GUI_CORE_MAINWINDOW_H

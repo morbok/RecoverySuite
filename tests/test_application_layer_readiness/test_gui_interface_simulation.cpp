@@ -9,10 +9,10 @@
 #include <functional>
 #include <cassert>
 
-#include "../../src/Application/Service/RecoveryService.h"
-#include "../../src/Disk/IDiskReader.hpp"
-#include "../../src/Recovery/RecoveryCapability.h"
-#include "../../src/Logging/Logger.h"
+#include "Application/Service/RecoveryService.h"
+#include "Disk/IDiskReader.hpp"
+#include "Recovery/RecoveryCapability.h"
+#include "Logging/Logger.h"
 
 // Simulate what a future GUI would need to interact with the service layer
 class MockGuiController {

@@ -1,4 +1,6 @@
 # RecoverySuite Application Module
+find_package(Qt6 REQUIRED COMPONENTS Core)
+
 add_library(RecoverySuite_Application STATIC
     Service/RecoveryService.cpp
     Service/GUIRecoveryService.cpp
@@ -28,6 +30,7 @@ target_link_libraries(RecoverySuite_Application
         RecoverySuite_Filesystem
         RecoverySuite_Partition
         RecoverySuite_Storage
+        Qt6::Core
 )
 
 # Install headers

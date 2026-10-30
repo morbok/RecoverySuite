@@ -133,251 +133,170 @@ models::AnalysisResult GUIRecoveryService::analyzeFilesystem(const std::string& 
 }
 
 models::RecoveryResult GUIRecoveryService::recoverFiles(const std::string& devicePath, uint64_t startSector, uint64_t numSectors,
-                                                       const std::string& outputPath,
-                                                       std::function<void(const models::RecoveryProgress&)> progressCallback,
-                                                       std::function<bool()> cancellationToken) {
-    models::RecoveryResult result;
-    result.success = false;
-    result.errorMessage = "Recovery service not available";
-
-    if (!recoveryService_) {
-        recoverysuite::logging::Logger::instance().info("No recovery service available for file recovery");
-        return result;
-    }
-
+    const std::string& outputPath,
+    std::function<void(const models::RecoveryProgress&)> progressCallback,
+    std::function<bool()> cancellationToken) {
+    models::RecoveryResult result{};
+    result.operationType = "file_recovery";
+    result.destination = outputPath;
+    result.startTime = std::chrono::system_clock::now();
+    result.details["export"] = "Output files have not been saved.";
     try {
-        recoverysuite::logging::Logger::instance().info("GUI requesting file recovery: " + devicePath +
-                                                       ", start_sector=" + std::to_string(startSector) +
-                                                       ", num_sectors=" + std::to_string(numSectors) +
-                                                       ", output_path=" + outputPath);
-
-        // Generate operation ID for tracking
-        std::string operationId = "file_recovery_" + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count());
-
-        // Register cancellation token if provided
-        if (cancellationToken) {
-            operationCancellationTokens_[operationId] = cancellationToken;
+        if (cancellationToken && cancellationToken()) {
+            result.cancelled = true;
+        } else if (!recoveryService_) {
+            result.errorMessage = "Recovery service not available";
+        } else if (devicePath.empty() || !isSectorRangeValid(devicePath, startSector, numSectors)) {
+            result.errorMessage = "Invalid source or sector range";
+        } else {
+            models::RecoveryProgress progress{};
+            progress.operationType = result.operationType;
+            progress.status = "running";
+            progress.currentStep = "Processing source; detailed progress is not reported by the backend";
+            progress.isCancellable = true;
+            if (progressCallback) progressCallback(progress);
+            if (cancellationToken && cancellationToken()) {
+                result.cancelled = true;
+            } else {
+                const auto backend = recoveryService_->recoverFiles(startSector, numSectors);
+                result.success = backend.success;
+                result.errorMessage = backend.errorMessage;
+                for (const auto& [name, data] : backend.recoveredFiles) {
+                    result.recoveredItems.push_back({name, static_cast<uint64_t>(data.size())});
+                    result.recoveredBytes += data.size();
+                }
+                result.recoveredItemsCount = result.recoveredItems.size();
+                result.cancelled = cancellationToken && cancellationToken();
+                if (result.cancelled) result.success = false;
+            }
         }
-
-        // TODO: Implement actual progress reporting and cancellation checking
-        // For now, we'll call the underlying service and simulate progress
-
-        // Call the underlying recovery service
-        auto serviceResult = recoveryService_->recoverFiles(startSector, numSectors);
-
-        // Unregister cancellation token
-        operationCancellationTokens_.erase(operationId);
-
-        // Convert to GUI model
-        result.success = serviceResult.success;
-        result.errorMessage = serviceResult.errorMessage;
-        result.operationType = "file_recovery";
-        result.processedBytes = static_cast<uint64_t>(numSectors) * 512;  // Assuming 512 byte sectors
-        result.recoveredBytes = serviceResult.success ? result.processedBytes : 0;
-        result.failedBytes = serviceResult.success ? 0 : result.processedBytes;
-        result.recoveredItemsCount = serviceResult.success ? static_cast<uint64_t>(serviceResult.recoveredFiles.size()) : 0;
-        result.failedItemsCount = serviceResult.success ? 0 : 1;  // Simplified
-        result.startTime = std::chrono::system_clock::now() - std::chrono::seconds(5);  // Placeholder
-        result.endTime = std::chrono::system_clock::now();
-
-        // Add details
-        result.details["recovered_file_count"] = std::to_string(serviceResult.recoveredFiles.size());
-
-        // If we have a progress callback, simulate some progress updates
-        if (progressCallback && serviceResult.success) {
-            models::RecoveryProgress progress;
-            progress.operationId = operationId;
-            progress.operationType = "file_recovery";
-            progress.status = "completed";
-            progress.percentage = 100;
-            progress.currentStep = "Recovery completed";
-            progress.processedBytes = result.processedBytes;
-            progress.totalBytes = result.processedBytes;
-            progress.elapsedSeconds = 5;  // Placeholder
-            progress.estimatedRemainingSeconds = 0;
-            progress.recoveredItemsCount = result.recoveredItemsCount;
-            progress.failedItemsCount = result.failedItemsCount;
-            progress.isCancellable = false;
-            progress.isPausable = false;
-            progress.timestamp = std::chrono::system_clock::now();
-
-            progressCallback(progress);
-        }
-
-    } catch (const std::exception& e) {
+    } catch (const std::exception& error) {
         result.success = false;
-        result.errorMessage = "Exception during file recovery: " + std::string(e.what());
-        recoverysuite::logging::Logger::instance().error("Exception during file recovery: " + std::string(e.what()));
-
-        // Clean up cancellation token if registered
-        // Note: In a real implementation, we'd need to track the operationId properly
+        result.errorMessage = error.what();
     }
-
+    result.endTime = std::chrono::system_clock::now();
+    if (progressCallback) {
+        models::RecoveryProgress progress{};
+        progress.operationType = result.operationType;
+        progress.status = result.cancelled ? "cancelled" : (result.success ? "completed" : "failed");
+        progress.currentStep = result.cancelled ? "Cancelled" : (result.success ? "Processing complete; output has not been exported" : result.errorMessage);
+        progress.elapsedSeconds = std::chrono::duration_cast<std::chrono::seconds>(result.endTime - result.startTime).count();
+        progress.recoveredItemsCount = result.recoveredItemsCount;
+        progress.timestamp = result.endTime;
+        progressCallback(progress);
+    }
     return result;
 }
 
 models::RecoveryResult GUIRecoveryService::recoverMetadata(const std::string& devicePath, uint64_t startSector, uint64_t numSectors,
-                                                          const std::string& outputPath,
-                                                          std::function<void(const models::RecoveryProgress&)> progressCallback,
-                                                          std::function<bool()> cancellationToken) {
-    models::RecoveryResult result;
-    result.success = false;
-    result.errorMessage = "Recovery service not available";
-
-    if (!recoveryService_) {
-        recoverysuite::logging::Logger::instance().info("No recovery service available for metadata recovery");
-        return result;
-    }
-
+    const std::string& outputPath,
+    std::function<void(const models::RecoveryProgress&)> progressCallback,
+    std::function<bool()> cancellationToken) {
+    models::RecoveryResult result{};
+    result.operationType = "metadata_recovery";
+    result.destination = outputPath;
+    result.startTime = std::chrono::system_clock::now();
+    result.details["export"] = "Output files have not been saved.";
     try {
-        recoverysuite::logging::Logger::instance().info("GUI requesting metadata recovery: " + devicePath +
-                                                       ", start_sector=" + std::to_string(startSector) +
-                                                       ", num_sectors=" + std::to_string(numSectors) +
-                                                       ", output_path=" + outputPath);
-
-        // Generate operation ID for tracking
-        std::string operationId = "metadata_recovery_" + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count());
-
-        // Register cancellation token if provided
-        if (cancellationToken) {
-            operationCancellationTokens_[operationId] = cancellationToken;
+        if (cancellationToken && cancellationToken()) {
+            result.cancelled = true;
+        } else if (!recoveryService_) {
+            result.errorMessage = "Recovery service not available";
+        } else if (devicePath.empty() || !isSectorRangeValid(devicePath, startSector, numSectors)) {
+            result.errorMessage = "Invalid source or sector range";
+        } else {
+            models::RecoveryProgress progress{};
+            progress.operationType = result.operationType;
+            progress.status = "running";
+            progress.currentStep = "Processing source; detailed progress is not reported by the backend";
+            progress.isCancellable = true;
+            if (progressCallback) progressCallback(progress);
+            if (cancellationToken && cancellationToken()) {
+                result.cancelled = true;
+            } else {
+                const auto backend = recoveryService_->recoverMetadata(startSector, numSectors);
+                result.success = backend.success;
+                result.errorMessage = backend.errorMessage;
+                for (const auto& [name, data] : backend.recoveredMetadata) {
+                    result.recoveredItems.push_back({name, static_cast<uint64_t>(data.size())});
+                    result.recoveredBytes += data.size();
+                }
+                result.recoveredItemsCount = result.recoveredItems.size();
+                result.cancelled = cancellationToken && cancellationToken();
+                if (result.cancelled) result.success = false;
+            }
         }
-
-        // Call the underlying recovery service
-        auto serviceResult = recoveryService_->recoverMetadata(startSector, numSectors);
-
-        // Unregister cancellation token
-        operationCancellationTokens_.erase(operationId);
-
-        // Convert to GUI model
-        result.success = serviceResult.success;
-        result.errorMessage = serviceResult.errorMessage;
-        result.operationType = "metadata_recovery";
-        result.processedBytes = static_cast<uint64_t>(numSectors) * 512;  // Assuming 512 byte sectors
-        result.recoveredBytes = serviceResult.success ? result.processedBytes : 0;
-        result.failedBytes = serviceResult.success ? 0 : result.processedBytes;
-        result.recoveredItemsCount = serviceResult.success ? static_cast<uint64_t>(serviceResult.recoveredMetadata.size()) : 0;
-        result.failedItemsCount = serviceResult.success ? 0 : 1;  // Simplified
-        result.startTime = std::chrono::system_clock::now() - std::chrono::seconds(5);  // Placeholder
-        result.endTime = std::chrono::system_clock::now();
-
-        // Add details
-        result.details["recovered_metadata_count"] = std::to_string(serviceResult.recoveredMetadata.size());
-
-        // If we have a progress callback, simulate some progress updates
-        if (progressCallback && serviceResult.success) {
-            models::RecoveryProgress progress;
-            progress.operationId = operationId;
-            progress.operationType = "metadata_recovery";
-            progress.status = "completed";
-            progress.percentage = 100;
-            progress.currentStep = "Metadata recovery completed";
-            progress.processedBytes = result.processedBytes;
-            progress.totalBytes = result.processedBytes;
-            progress.elapsedSeconds = 5;  // Placeholder
-            progress.estimatedRemainingSeconds = 0;
-            progress.recoveredItemsCount = result.recoveredItemsCount;
-            progress.failedItemsCount = result.failedItemsCount;
-            progress.isCancellable = false;
-            progress.isPausable = false;
-            progress.timestamp = std::chrono::system_clock::now();
-
-            progressCallback(progress);
-        }
-
-    } catch (const std::exception& e) {
+    } catch (const std::exception& error) {
         result.success = false;
-        result.errorMessage = "Exception during metadata recovery: " + std::string(e.what());
-        recoverysuite::logging::Logger::instance().error("Exception during metadata recovery: " + std::string(e.what()));
-
-        // Clean up cancellation token if registered
-        // Note: In a real implementation, we'd need to track the operationId properly
+        result.errorMessage = error.what();
     }
-
+    result.endTime = std::chrono::system_clock::now();
+    if (progressCallback) {
+        models::RecoveryProgress progress{};
+        progress.operationType = result.operationType;
+        progress.status = result.cancelled ? "cancelled" : (result.success ? "completed" : "failed");
+        progress.currentStep = result.cancelled ? "Cancelled" : (result.success ? "Processing complete; output has not been exported" : result.errorMessage);
+        progress.elapsedSeconds = std::chrono::duration_cast<std::chrono::seconds>(result.endTime - result.startTime).count();
+        progress.recoveredItemsCount = result.recoveredItemsCount;
+        progress.timestamp = result.endTime;
+        progressCallback(progress);
+    }
     return result;
 }
 
 models::RecoveryResult GUIRecoveryService::carveFiles(const std::string& devicePath, uint64_t startSector, uint64_t numSectors,
-                                                     const std::string& outputPath,
-                                                     std::function<void(const models::RecoveryProgress&)> progressCallback,
-                                                     std::function<bool()> cancellationToken) {
-    models::RecoveryResult result;
-    result.success = false;
-    result.errorMessage = "Recovery service not available";
-
-    if (!recoveryService_) {
-        recoverysuite::logging::Logger::instance().info("No recovery service available for carving");
-        return result;
-    }
-
+    const std::string& outputPath,
+    std::function<void(const models::RecoveryProgress&)> progressCallback,
+    std::function<bool()> cancellationToken) {
+    models::RecoveryResult result{};
+    result.operationType = "carving";
+    result.destination = outputPath;
+    result.startTime = std::chrono::system_clock::now();
+    result.details["export"] = "Output files have not been saved.";
     try {
-        recoverysuite::logging::Logger::instance().info("GUI requesting carving: " + devicePath +
-                                                       ", start_sector=" + std::to_string(startSector) +
-                                                       ", num_sectors=" + std::to_string(numSectors) +
-                                                       ", output_path=" + outputPath);
-
-        // Generate operation ID for tracking
-        std::string operationId = "carving_" + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count());
-
-        // Register cancellation token if provided
-        if (cancellationToken) {
-            operationCancellationTokens_[operationId] = cancellationToken;
+        if (cancellationToken && cancellationToken()) {
+            result.cancelled = true;
+        } else if (!recoveryService_) {
+            result.errorMessage = "Recovery service not available";
+        } else if (devicePath.empty() || !isSectorRangeValid(devicePath, startSector, numSectors)) {
+            result.errorMessage = "Invalid source or sector range";
+        } else {
+            models::RecoveryProgress progress{};
+            progress.operationType = result.operationType;
+            progress.status = "running";
+            progress.currentStep = "Processing source; detailed progress is not reported by the backend";
+            progress.isCancellable = true;
+            if (progressCallback) progressCallback(progress);
+            if (cancellationToken && cancellationToken()) {
+                result.cancelled = true;
+            } else {
+                const auto backend = recoveryService_->carveFiles(startSector, numSectors);
+                result.success = backend.success;
+                result.errorMessage = backend.errorMessage;
+                for (const auto& [name, data] : backend.carvedFiles) {
+                    result.recoveredItems.push_back({name, static_cast<uint64_t>(data.size())});
+                    result.recoveredBytes += data.size();
+                }
+                result.recoveredItemsCount = result.recoveredItems.size();
+                result.cancelled = cancellationToken && cancellationToken();
+                if (result.cancelled) result.success = false;
+            }
         }
-
-        // Call the underlying recovery service
-        auto serviceResult = recoveryService_->carveFiles(startSector, numSectors);
-
-        // Unregister cancellation token
-        operationCancellationTokens_.erase(operationId);
-
-        // Convert to GUI model
-        result.success = serviceResult.success;
-        result.errorMessage = serviceResult.errorMessage;
-        result.operationType = "carving";
-        result.processedBytes = static_cast<uint64_t>(numSectors) * 512;  // Assuming 512 byte sectors
-        result.recoveredBytes = serviceResult.success ? result.processedBytes : 0;
-        result.failedBytes = serviceResult.success ? 0 : result.processedBytes;
-        result.recoveredItemsCount = serviceResult.success ? static_cast<uint64_t>(serviceResult.carvedFiles.size()) : 0;
-        result.failedItemsCount = serviceResult.success ? 0 : 1;  // Simplified
-        result.startTime = std::chrono::system_clock::now() - std::chrono::seconds(5);  // Placeholder
-        result.endTime = std::chrono::system_clock::now();
-
-        // Add details
-        result.details["carved_file_count"] = std::to_string(serviceResult.carvedFiles.size());
-
-        // If we have a progress callback, simulate some progress updates
-        if (progressCallback && serviceResult.success) {
-            models::RecoveryProgress progress;
-            progress.operationId = operationId;
-            progress.operationType = "carving";
-            progress.status = "completed";
-            progress.percentage = 100;
-            progress.currentStep = "Carving completed";
-            progress.processedBytes = result.processedBytes;
-            progress.totalBytes = result.processedBytes;
-            progress.elapsedSeconds = 5;  // Placeholder
-            progress.estimatedRemainingSeconds = 0;
-            progress.recoveredItemsCount = result.recoveredItemsCount;
-            progress.failedItemsCount = result.failedItemsCount;
-            progress.isCancellable = false;
-            progress.isPausable = false;
-            progress.timestamp = std::chrono::system_clock::now();
-
-            progressCallback(progress);
-        }
-
-    } catch (const std::exception& e) {
+    } catch (const std::exception& error) {
         result.success = false;
-        result.errorMessage = "Exception during carving: " + std::string(e.what());
-        recoverysuite::logging::Logger::instance().error("Exception during carving: " + std::string(e.what()));
-
-        // Clean up cancellation token if registered
-        // Note: In a real implementation, we'd need to track the operationId properly
+        result.errorMessage = error.what();
     }
-
+    result.endTime = std::chrono::system_clock::now();
+    if (progressCallback) {
+        models::RecoveryProgress progress{};
+        progress.operationType = result.operationType;
+        progress.status = result.cancelled ? "cancelled" : (result.success ? "completed" : "failed");
+        progress.currentStep = result.cancelled ? "Cancelled" : (result.success ? "Processing complete; output has not been exported" : result.errorMessage);
+        progress.elapsedSeconds = std::chrono::duration_cast<std::chrono::seconds>(result.endTime - result.startTime).count();
+        progress.recoveredItemsCount = result.recoveredItemsCount;
+        progress.timestamp = result.endTime;
+        progressCallback(progress);
+    }
     return result;
 }
 

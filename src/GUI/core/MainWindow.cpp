@@ -1,6 +1,6 @@
 #include "MainWindow.h"
-#include "Application/Service/GUIRecoveryService.h"
-#include "Application/Service/Models/GUIModels.h"
+#include "../../Application/Service/GUIRecoveryService.h"
+#include "../../Application/Service/Models/GUIModels.h"
 #include "Logging/Logger.h"
 #include <QLabel>
 #include <QMessageBox>
@@ -15,17 +15,22 @@
 #include <QtGui>
 #include <QObject>
 #include <QStackedWidget>
-#include <QVBoxLayout>
+#include <QHBoxLayout>
 #include <QThread>
 #include "widgets/SourceDiscoveryWidget.h"
 #include "widgets/RecoveryConfigurationWidget.h"
+#include "widgets/RecoveryResultsWidget.h"
+#include "widgets/OperationProgressWidget.h"
+#include "widgets/RecoveryWorkflowWidget.h"
+#include "ApplicationState.h"
+#include "StateManager.h"
 
 namespace recoverysuite {
 namespace gui {
 namespace core {
 
 
-MainWindow::MainWindow(recoverysuite::application::service::GUIRecoveryService* recoveryService, QWidget *parent)
+MainWindow::MainWindow(application::service::GUIRecoveryService* recoveryService, QWidget *parent)
     : QMainWindow(parent),
       stateManager_(),
       isOperationRunning_(false),
@@ -48,6 +53,11 @@ MainWindow::MainWindow(recoverysuite::application::service::GUIRecoveryService* 
 }
 
 MainWindow::~MainWindow() {
+    if (recoveryThread_) {
+        emit cancelRecovery();
+        recoveryThread_->quit();
+        recoveryThread_->wait();
+    }
     recoverysuite::logging::Logger::instance().info("MainWindow destroyed");
 }
 
@@ -160,24 +170,39 @@ void MainWindow::setupCentralWidget() {
 }
 
 void MainWindow::setupWorkflowContainer() {
-    // Create a container widget for the workflow and progress widgets
+    // Create a container widget for the workflow and operation widgets
     workflowContainer_ = new QWidget();
-    QVBoxLayout* workflowLayout = new QVBoxLayout(workflowContainer_);
+    auto* workflowLayout = new QHBoxLayout(workflowContainer_);
     workflowLayout->setContentsMargins(0, 0, 0, 0);
     workflowLayout->setSpacing(0);
 
-    // Create and add the workflow widget
+    // Create and add the workflow widget (always visible)
     workflowWidget_ = new recoverysuite::gui::widgets::RecoveryWorkflowWidget();
+    workflowWidget_->setMaximumWidth(320);
     workflowLayout->addWidget(workflowWidget_);
 
-    // Create and add the progress widget
-    progressWidget_ = new recoverysuite::gui::widgets::OperationProgressWidget();
-    workflowLayout->addWidget(progressWidget_);
+    // Create a stacked widget for operation-specific views (progress, results, configuration)
+    operationStackedWidget_ = new QStackedWidget();
 
-    // Create and add the recovery configuration widget
+    // Add an empty widget at index 0 (for states where we show only workflow buttons)
+    QWidget* emptyWidget = new QWidget();
+    operationStackedWidget_->addWidget(emptyWidget);
+
+    // Create and add the progress widget (index 1)
+    progressWidget_ = new recoverysuite::gui::widgets::OperationProgressWidget();
+    operationStackedWidget_->addWidget(progressWidget_);
+
+    // Create and add the recovery results widget (index 2)
+    recoveryResultsWidget_ = new recoverysuite::gui::widgets::RecoveryResultsWidget();
+    operationStackedWidget_->addWidget(recoveryResultsWidget_);
+
+    // Create and add the recovery configuration widget (index 3)
     recoveryConfigurationWidget_ = new recoverysuite::gui::widgets::RecoveryConfigurationWidget();
     recoveryConfigurationWidget_->setRecoveryService(recoveryService_);
-    workflowLayout->addWidget(recoveryConfigurationWidget_);
+    operationStackedWidget_->addWidget(recoveryConfigurationWidget_);
+
+    // Add the operation stacked widget to the workflow layout
+    workflowLayout->addWidget(operationStackedWidget_, 1);
 
     // Add the container to the stacked widget
     stackedWidget_->addWidget(workflowContainer_);
@@ -683,8 +708,13 @@ void MainWindow::handleStartRecovery() {
         workflowWidget_->setOperationRunning(true);
     }
 
+    isOperationRunning_ = true;
+    recoveryResultsWidget_->clear();
+    progressWidget_->resetProgress();
+    updateUIForState();
     // Create a thread and worker for the recovery operation
     QThread* thread = new QThread(this);
+    recoveryThread_ = thread;
     RecoveryWorker* worker = new RecoveryWorker(recoveryService_,
                                                selectedDevice_.toStdString(),
                                                startSector,
@@ -698,15 +728,14 @@ void MainWindow::handleStartRecovery() {
             this, &MainWindow::handleRecoveryProgress);
     connect(worker, &RecoveryWorker::finished,
             this, &MainWindow::handleRecoveryFinished);
-    connect(this, &MainWindow::cancelRecovery, worker, &RecoveryWorker::cancel);
-
-    // Start the thread
-    thread->start();
+    // cancel() only updates an atomic flag: it must not wait for the worker event loop.
+    connect(this, &MainWindow::cancelRecovery, worker, &RecoveryWorker::cancel, Qt::DirectConnection);
 
     // We must clean up the thread and worker when finished
-    connect(worker, &RecoveryWorker::finished, thread, &QThread::quit);
+    connect(worker, &RecoveryWorker::finished, thread, &QThread::quit, Qt::DirectConnection);
     connect(worker, &RecoveryWorker::finished, worker, &QObject::deleteLater);
     connect(thread, &QThread::finished, thread, &QObject::deleteLater);
+    thread->start();
 }
 
 void MainWindow::handleCancelOperation() {
@@ -723,7 +752,7 @@ void MainWindow::handleCancelOperation() {
 // Slot to update progress from service callbacks (kept for compatibility with existing code)
 void MainWindow::updateProgressFromService(const QString& operationName, int progress, const QString& statusText) {
     // Create a default RecoveryProgress object and call the new version
-    recoverysuite::application::service::models::RecoveryProgress progressObj;
+    recoverysuite::application::service::models::RecoveryProgress progressObj{};
     progressObj.operationType = operationName.toStdString();
     progressObj.percentage = progress;
     progressObj.currentStep = statusText.toStdString();
@@ -756,44 +785,17 @@ void MainWindow::handleRecoveryProgress(const recoverysuite::application::servic
 
 // Slot to handle finished recovery operation from the worker
 void MainWindow::handleRecoveryFinished(const recoverysuite::application::service::models::RecoveryResult& result) {
-    // Reset UI
-    statusLabel_->setText("Ready");
     isOperationRunning_ = false;
-    if (stackedWidget_->currentIndex() == 1) {
-        workflowWidget_->setOperationRunning(false);
-    }
+    workflowWidget_->setOperationRunning(false);
+    recoveryResultsWidget_->setRecoveryResult(result);
+    stateManager_.transitionTo(ApplicationState::RESULTS);
+    updateUIForState();
 
-    // Handle the result
-    if (result.success) {
-        // Transition to results state on success
-        stateManager_.transitionTo(ApplicationState::RESULTS);
-        updateUIForState();
-
-        QString message = QString("Recovery completed successfully!\n\n"
-                                  "Recovered: %1 files (%2 bytes)\n"
-                                  "Failed: %3 files (%4 bytes)\n"
-                                  "Time: %5 seconds")
-                          .arg(result.recoveredItemsCount)
-                          .arg(result.recoveredBytes)
-                          .arg(result.failedItemsCount)
-                          .arg(result.failedBytes)
-                          .arg(result.endTime > result.startTime ?
-                               std::chrono::duration_cast<std::chrono::seconds>(result.endTime - result.startTime).count() : 0);
-
-        QMessageBox::information(this, "Recovery Complete", message);
-    } else {
-        // Transition to error state on failure
-        stateManager_.transitionTo(ApplicationState::ERROR);
-        updateUIForState();
-
-        QMessageBox::warning(this, "Recovery Failed",
-            QString("Recovery failed: %1").arg(QString::fromStdString(result.errorMessage)));
-    }
 }
 
 void MainWindow::updateOperationProgress(const QString& operationName, int progress, const QString& statusText) {
     // Create a default RecoveryProgress object and call the new version
-    recoverysuite::application::service::models::RecoveryProgress progressObj;
+    recoverysuite::application::service::models::RecoveryProgress progressObj{};
     progressObj.operationType = operationName.toStdString();
     progressObj.percentage = progress;
     progressObj.currentStep = statusText.toStdString();
@@ -871,13 +873,13 @@ void MainWindow::onConfigurationReady(const recoverysuite::application::service:
                                  "Output Path: %5\n"
                                  "Verify After Recovery: %6\n"
                                  "Create Log File: %7")
-            .arg(QString::fromStdString(operation.operationType))
-            .arg(QString::fromStdString(operation.targetDevicePath))
-            .arg(operation.startSector)
-            .arg(operation.numSectors)
-            .arg(QString::fromStdString(operation.outputPath))
-            .arg(operation.verifyAfterRecovery ? "Yes" : "No")
-            .arg(operation.createLogFile ? "Yes" : "No");
+                .arg(QString::fromStdString(operation.operationType))
+                .arg(QString::fromStdString(operation.targetDevicePath))
+                .arg(operation.startSector)
+                .arg(operation.numSectors)
+                .arg(QString::fromStdString(operation.outputPath))
+                .arg(operation.verifyAfterRecovery ? "Yes" : "No")
+                .arg(operation.createLogFile ? "Yes" : "No");
 
         QMessageBox::information(this, "Configuration Ready", message);
     } else {
@@ -906,6 +908,45 @@ void MainWindow::updateUIForState() {
     // Update the widget's operation running state (if we are in the workflow view)
     if (stackedWidget_->currentIndex() == 1) {
         workflowWidget_->setOperationRunning(isOperationRunning_);
+    }
+
+    // Update the operation stacked widget index based on the state
+    if (stackedWidget_->currentIndex() == 1) { // Only change the operation stacked widget when in workflow view
+        switch (currentState) {
+        case ApplicationState::START:
+        case ApplicationState::SOURCE_SELECTION:
+        case ApplicationState::EXIT:
+            // These states are handled by the outer stackedWidget, so we don't change the operationStackedWidget_
+            break;
+        case ApplicationState::STORAGE_PARTITION_INSPECTION:
+        case ApplicationState::FILESYSTEM_DETECTION:
+        case ApplicationState::FILESYSTEM_ANALYSIS:
+        case ApplicationState::VALIDATION:
+            // Show the workflow buttons (index 0 of operationStackedWidget_)
+            operationStackedWidget_->setCurrentIndex(0);
+            break;
+        case ApplicationState::RECOVERY:
+            // Show the progress widget (index 1 of operationStackedWidget_)
+            operationStackedWidget_->setCurrentIndex(1);
+            break;
+        case ApplicationState::RESULTS:
+            // Show the recovery results widget (index 2 of operationStackedWidget_)
+            operationStackedWidget_->setCurrentIndex(2);
+            break;
+        case ApplicationState::RECOVERY_CONFIGURATION:
+            // Show the recovery configuration widget (index 3 of operationStackedWidget_)
+            operationStackedWidget_->setCurrentIndex(3);
+            break;
+        case ApplicationState::ERROR:
+            // Show an error state in the progress widget? Or just show the workflow buttons?
+            // We'll show the workflow buttons (index 0) and let the status bar show the error.
+            operationStackedWidget_->setCurrentIndex(0);
+            break;
+        default:
+            // Default to showing the workflow buttons
+            operationStackedWidget_->setCurrentIndex(0);
+            break;
+        }
     }
 
     // Update the status label based on the state (optional)
@@ -955,7 +996,7 @@ void MainWindow::updateUIForState() {
 } // namespace recoverysuite
 
 // Implementation of RecoveryWorker class
-recoverysuite::gui::core::MainWindow::RecoveryWorker::RecoveryWorker(
+recoverysuite::gui::core::RecoveryWorker::RecoveryWorker(
     recoverysuite::application::service::GUIRecoveryService* recoveryService,
     const std::string& devicePath,
     uint64_t startSector,
@@ -970,7 +1011,7 @@ recoverysuite::gui::core::MainWindow::RecoveryWorker::RecoveryWorker(
       isCancelled_(false) {
 }
 
-void recoverysuite::gui::core::MainWindow::RecoveryWorker::process() {
+void recoverysuite::gui::core::RecoveryWorker::process() {
     // Set up progress callback
     auto progressCallback = [this](const recoverysuite::application::service::models::RecoveryProgress& progress) {
         // Emit progress update if not cancelled
@@ -997,23 +1038,19 @@ void recoverysuite::gui::core::MainWindow::RecoveryWorker::process() {
             cancellationToken
         );
 
-        // Emit finished signal with result if not cancelled
-        if (!isCancelled_) {
-            emit finished(result);
-        }
+        emit finished(result);
     } catch (const std::exception& e) {
         // Create error result
-        recoverysuite::application::service::models::RecoveryResult result;
+        recoverysuite::application::service::models::RecoveryResult result{};
         result.success = false;
         result.errorMessage = "Exception during recovery: " + std::string(e.what());
         result.operationType = "file_recovery";
 
-        if (!isCancelled_) {
-            emit finished(result);
-        }
+        result.cancelled = isCancelled_;
+        emit finished(result);
     }
 }
 
-void recoverysuite::gui::core::MainWindow::RecoveryWorker::cancel() {
+void recoverysuite::gui::core::RecoveryWorker::cancel() {
     isCancelled_ = true;
 }
