@@ -378,7 +378,7 @@ void RecoveryConfigurationWidget::onValidateConfiguration() {
         // Prepare validation parameters
         bool sourceIsReadOnly = true;  // Assume source is read-only for safety
         bool destinationDiffersFromSource = !operation.outputPath.empty() &&
-                                          operation.outputPath != QString::fromStdString(operation.targetDevicePath);
+                                          operation.outputPath != operation.targetDevicePath;
         bool sourceRangesAreValid = true;  // Simplified - would check actual disk bounds in reality
         bool outputPathIsValid = !operation.outputPath.empty();  // Simplified
         bool arithmeticCannotOverflow = true;  // Simplified
@@ -476,7 +476,7 @@ void RecoveryConfigurationWidget::onConfigureRecovery() {
         // Prepare validation parameters
         bool sourceIsReadOnly = true;  // Assume source is read-only for safety
         bool destinationDiffersFromSource = !operation.outputPath.empty() &&
-                                          operation.outputPath != QString::fromStdString(operation.targetDevicePath);
+                                          operation.outputPath != operation.targetDevicePath;
         bool sourceRangesAreValid = true;  // Simplified - would check actual disk bounds in reality
         bool outputPathIsValid = !operation.outputPath.empty();  // Simplified
         bool arithmeticCannotOverflow = true;  // Simplified
