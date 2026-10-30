@@ -1,3 +1,9 @@
+# 2026-10-30 — CLI image export
+
+Added read-only image info/carve commands, verified filesystem export, strict flags, meaningful exit
+codes and cooperative Ctrl+C/SIGTERM cancellation. Removed misleading physical-recovery completion
+without saved output and fixed physical reader double ownership in analysis. Added subprocess tests.
+
 # 2026-10-30 — Read-only image recovery and safe export
 
 Added a real GUI source-to-output workflow for regular raw images, bounded streaming JPEG/PDF/ZIP

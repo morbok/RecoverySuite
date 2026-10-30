@@ -35,14 +35,27 @@ signature candidates, not proof of valid file contents. Original names, deleted-
 and fragmented files are not reconstructed. Incomplete/oversized candidates and output failures
 are reported; completed files remain available after cancellation or partial failure.
 
+## Recover from the terminal
+
+```sh
+./build/bin/RecoverySuite_CLI image info source.img
+./build/bin/RecoverySuite_CLI image carve source.img --output /existing/empty-folder --start 0
+```
+
+Use `--sector-size 4096` for a 4 KiB-sector image, `--count N` to bound the scan, and
+`--no-verify` to skip readback comparison. Ctrl+C or SIGTERM cancels cooperatively and keeps
+completed outputs. Exit codes: 0 complete, 1 failed/partial, 2 invalid arguments, 130 cancelled.
+Physical-device export and background operation tracking are unavailable; the legacy recovery
+command returns an error instead of reporting unsaved buffers as recovered files.
+
 ## Current state
 
-- GUI and CLI compile on Linux; all 24 registered CTest executables pass locally in Debug and Release.
+- GUI and CLI compile on Linux; all 25 registered CTest executables pass locally in Debug and Release.
 - The GUI connects real image selection, range/output validation, worker scanning, safe file export
   and results. Progress and cancellation reach the streaming scan and output loops.
 - POSIX output export rejects traversal, symlink components, unsafe names and existing files. It
   anchors the selected directory with a file descriptor; incomplete writes are removed on failure.
-- The image workflow is carving-only. Legacy filesystem recovery/metadata APIs and the CLI do not
+- The image workflow is carving-only. Legacy filesystem recovery/metadata APIs do not
   share this export workflow and need further implementation and validation.
 - Windows safe export is unavailable; Windows builds and recovery against real devices remain unvalidated.
 - Integration tests use synthetic images; the image workflow also passes AddressSanitizer/UBSan locally.

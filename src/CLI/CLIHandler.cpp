@@ -4,12 +4,15 @@
 #include <cctype>
 #include <sstream>
 #include <iomanip>
+#include <limits>
+#include <set>
+#include "Application/Service/GUIRecoveryService.h"
 
 namespace recoverysuite {
 namespace cli {
 
-CLIHandler::CLIHandler()
-    : diskManager_(std::make_unique<recoverysuite::disk::DiskManager>()),
+CLIHandler::CLIHandler(std::function<bool()> cancellation)
+    : cancellation_(std::move(cancellation)), diskManager_(std::make_unique<recoverysuite::disk::DiskManager>()),
       recoveryService_(nullptr) {
     // Initialize recovery service with a null disk reader initially
     // It will be properly initialized when we have a disk to work with
@@ -22,6 +25,7 @@ CLIHandler::~CLIHandler() {
 }
 
 int CLIHandler::run(int argc, char* argv[]) {
+    exitCode_ = 0;
     if (argc < 2) {
         showHelp({});
         return 0;
@@ -40,7 +44,9 @@ int CLIHandler::run(int argc, char* argv[]) {
                    [](unsigned char c){ return std::tolower(c); });
 
     // Route to appropriate handler
-    if (command == "list") {
+    if (command == "image") {
+        return handleImage(args);
+    } else if (command == "list") {
         handleList(args);
     } else if (command == "disk" && !args.empty() && args[0] == "info") {
         // Handle "disk info" command
@@ -71,7 +77,67 @@ int CLIHandler::run(int argc, char* argv[]) {
         return 1;
     }
 
-    return 0;
+    return exitCode_;
+}
+
+int CLIHandler::handleImage(const std::vector<std::string>& args) {
+    const auto usageError = [&](const std::string& message) { printError(message); return 2; };
+    if (args.size() < 2 || (args[0] != "info" && args[0] != "carve"))
+        return usageError("Use image info <path> or image carve <path> --output <existing-directory>");
+    const bool carve = args[0] == "carve";
+    uint64_t start = 0, count = 0, sectorSize = 512;
+    bool countGiven = false, verify = true;
+    std::string output;
+    std::set<std::string> seen;
+    for (size_t i = 2; i < args.size(); ++i) {
+        const auto& option = args[i];
+        if (!seen.insert(option).second) return usageError("Duplicate option: " + option);
+        if (carve && option == "--no-verify") { verify = false; continue; }
+        if (option != "--sector-size" && (!carve || (option != "--start" && option != "--count" && option != "--output")))
+            return usageError("Unknown option: " + option);
+        if (++i == args.size()) return usageError("Missing value for " + option);
+        if (option == "--output") { output = args[i]; continue; }
+        uint64_t value = 0;
+        if (!parseUint64(args[i], value)) return usageError("Invalid unsigned number for " + option);
+        if (option == "--sector-size") sectorSize = value;
+        else if (option == "--start") start = value;
+        else { count = value; countGiven = true; }
+    }
+    if (sectorSize != 512 && sectorSize != 1024 && sectorSize != 2048 && sectorSize != 4096)
+        return usageError("Sector size must be 512, 1024, 2048 or 4096");
+    if (carve && output.empty()) return usageError("Choose an existing output directory with --output");
+    try {
+        application::service::GUIRecoveryService service(nullptr);
+        const auto source = service.openImage(args[1], static_cast<uint32_t>(sectorSize));
+        const uint64_t total = source.totalBytes / sectorSize;
+        if (!carve) {
+            std::cout << "Source: " << source.devicePath << "\nRead-only: yes\nSector size: " << sectorSize
+                      << "\nSectors: " << total << "\nBytes: " << source.totalBytes << '\n';
+            return 0;
+        }
+        if (start >= total) return usageError("Start sector is outside the image");
+        if (!countGiven) count = total - start;
+        if (!count || count > total - start) return usageError("Sector range is outside the image");
+        application::service::models::RecoveryOperation operation{};
+        operation.operationType = "carving"; operation.targetDevicePath = source.devicePath;
+        operation.startSector = start; operation.numSectors = count; operation.outputPath = output;
+        operation.verifyAfterRecovery = verify;
+        unsigned lastPercent = std::numeric_limits<unsigned>::max();
+        const auto result = service.executeOperation(operation, [&](const auto& progress) {
+            if (progress.totalBytes && progress.percentage != lastPercent) {
+                lastPercent = progress.percentage;
+                std::cerr << "Progress: " << progress.percentage << "%; scanned " << progress.processedBytes << " bytes\n";
+            }
+        }, cancellation_);
+        for (const auto& item : result.recoveredItems)
+            std::cout << "Saved: " << item.name << " (" << item.sizeBytes << " bytes)\n";
+        std::cout << "Saved items: " << result.recoveredItemsCount << "\nSaved bytes: " << result.recoveredBytes
+                  << "\nFailed items: " << result.failedItemsCount << "\nProcessed bytes: " << result.processedBytes << '\n';
+        for (const auto& [key, value] : result.details) std::cout << key << ": " << value << '\n';
+        if (result.cancelled) { std::cerr << "Cancelled; completed output files were kept\n"; return 130; }
+        if (!result.success) { printError(result.errorMessage); return 1; }
+        printSuccess("Image scan complete"); return 0;
+    } catch (const std::exception& failure) { printError(failure.what()); return 1; }
 }
 
 void CLIHandler::handleList(const std::vector<std::string>& args) {
@@ -243,7 +309,7 @@ void CLIHandler::handleAnalyze(const std::vector<std::string>& args) {
 
         // Initialize recovery service with the disk
         recoveryService_ = std::make_unique<recoverysuite::application::service::RecoveryService>(
-            std::shared_ptr<recoverysuite::disk::IDiskReader>(disk.get()),
+            std::shared_ptr<recoverysuite::disk::IDiskReader>(std::move(disk)),
             recoverysuite::recovery::RecoverySafetyPolicy());
 
         // Perform analysis
@@ -337,7 +403,7 @@ void CLIHandler::handleValidate(const std::vector<std::string>& args) {
         // Get disk info to validate ranges
         auto diskInfo = disk->getDiskInfo();
         bool sourceRangesAreValid = (startSector < diskInfo.totalSectors) &&
-                                    (startSector + numSectors <= diskInfo.totalSectors);
+                                    (numSectors > 0 && numSectors <= diskInfo.totalSectors - startSector);
         bool arithmeticCannotOverflow = (startSector + numSectors >= startSector); // no wrap
 
         // Initialize validation components
@@ -363,7 +429,7 @@ void CLIHandler::handleValidate(const std::vector<std::string>& args) {
 
         printSeparator();
         if (report.validationPassed()) {
-            printSuccess("Validation PASSED - Operation is safe to proceed");
+            printSuccess("Source range validation passed; export destination and recovery support were not validated");
             recoverysuite::logging::Logger::instance().info("Validation PASSED: capability=" + capabilityToString(capability) +
               ", disk_number=" + std::to_string(diskNumber));
         } else {
@@ -387,345 +453,40 @@ void CLIHandler::handleValidate(const std::vector<std::string>& args) {
 }
 
 void CLIHandler::handleRecover(const std::vector<std::string>& args) {
-    if (args.size() < 4) {
-        printError("Missing required arguments");
-        showHelp({});
+    if (args.size() >= 4 && parseCapability(args[0]) == recovery::RecoveryCapability::FILESYSTEM_ANALYSIS) {
+        handleAnalyze({args[1], args[2], args[3]});
         return;
     }
-
-    // Parse capability
-    recoverysuite::recovery::RecoveryCapability capability = parseCapability(args[0]);
-    if (capability == recoverysuite::recovery::RecoveryCapability::NONE) {
-        printError("Unsupported capability: " + args[0]);
-        showHelp({});
-        return;
-    }
-
-    // Parse disk number
-    uint64_t diskNumber;
-    if (!parseUint64(args[1], diskNumber)) {
-        printError("Invalid disk number: " + args[1]);
-        return;
-    }
-
-    // Parse start sector
-    uint64_t startSector;
-    if (!parseUint64(args[2], startSector)) {
-        printError("Invalid start sector: " + args[2]);
-        return;
-    }
-
-    // Parse number of sectors
-    uint64_t numSectors;
-    if (!parseUint64(args[3], numSectors)) {
-        printError("Invalid number of sectors: " + args[3]);
-        return;
-    }
-
-    // Parse output path (optional)
-    std::string outputPath = "./recovered";
-    if (args.size() >= 5) {
-        outputPath = args[4];
-    }
-
-    printInfo("Preparing to perform " + capabilityToString(capability) +
-              " operation on disk #" + std::to_string(diskNumber) +
-              ", starting at sector " + std::to_string(startSector) +
-              ", length " + std::to_string(numSectors) + " sectors" +
-              ", output to: " + outputPath);
-
-    // Confirmation for potentially destructive operations
-    if (capability != recoverysuite::recovery::RecoveryCapability::FILESYSTEM_ANALYSIS) {
-        printWarning("This operation may modify data on the target device.");
-        if (!confirmAction("Are you sure you want to continue? (y/N): ")) {
-            printInfo("Operation cancelled by user");
-            return;
-        }
-    }
-
-    try {
-        // Open the disk
-        auto disk = diskManager_->openDisk(diskNumber, true); // Open read-only for safety
-        if (!disk) {
-            printError("Failed to open disk #" + std::to_string(diskNumber));
-            return;
-        }
-
-        // Initialize recovery service
-        recoveryService_ = std::make_unique<recoverysuite::application::service::RecoveryService>(
-            std::shared_ptr<recoverysuite::disk::IDiskReader>(disk.get()),
-            recoverysuite::recovery::RecoverySafetyPolicy());
-
-        // Generate operation ID for tracking
-        std::string operationId = generateOperationId();
-        auto& opInfo = activeOperations_[operationId];
-        opInfo.id = operationId;
-        opInfo.type = capabilityToString(capability);
-        opInfo.status = "Starting...";
-        opInfo.startTime = std::chrono::steady_clock::now();
-        opInfo.cancellable = true;
-        opInfo.cancelled = false;
-
-        // Perform the appropriate operation based on capability
-        bool success = false;
-        std::string errorMessage;
-        recoverysuite::application::service::RecoveryService::FileRecoveryResult fileResult;
-        recoverysuite::application::service::RecoveryService::MetadataRecoveryResult metadataResult;
-        recoverysuite::application::service::RecoveryService::CarvingResult carvingResult;
-        recoverysuite::application::service::RecoveryService::FilesystemAnalysisResult analysisResult;
-
-        opInfo.status = "In progress...";
-
-        switch (capability) {
-            case recoverysuite::recovery::RecoveryCapability::FILESYSTEM_ANALYSIS:
-                analysisResult = recoveryService_->analyzeFilesystem(startSector, numSectors);
-                success = analysisResult.success;
-                errorMessage = analysisResult.errorMessage;
-                break;
-
-            case recoverysuite::recovery::RecoveryCapability::FILE_RECOVERY:
-                fileResult = recoveryService_->recoverFiles(startSector, numSectors);
-                success = fileResult.success;
-                errorMessage = fileResult.errorMessage;
-                if (success) {
-                    // In a real implementation, we would save the recovered files to outputPath
-                    printInfo("Recovered " + std::to_string(fileResult.recoveredFiles.size()) + " files");
-                }
-                break;
-
-            case recoverysuite::recovery::RecoveryCapability::METADATA_RECOVERY:
-                metadataResult = recoveryService_->recoverMetadata(startSector, numSectors);
-                success = metadataResult.success;
-                errorMessage = metadataResult.errorMessage;
-                break;
-
-            case recoverysuite::recovery::RecoveryCapability::CARVING:
-                carvingResult = recoveryService_->carveFiles(startSector, numSectors);
-                success = carvingResult.success;
-                errorMessage = carvingResult.errorMessage;
-                break;
-
-            default:
-                printError("Unsupported capability for recovery operation");
-                return;
-        }
-
-        // Update operation status
-        if (success) {
-            opInfo.status = "Completed successfully";
-            printSeparator();
-            printSuccess(capabilityToString(capability) + " operation completed successfully");
-
-            // Show results based on operation type
-            switch (capability) {
-                case recoverysuite::recovery::RecoveryCapability::FILESYSTEM_ANALYSIS:
-                    if (!analysisResult.analysisResults.empty()) {
-                        std::cout << "Analysis Results:" << std::endl;
-                        printSeparator();
-                        for (const auto& [key, value] : analysisResult.analysisResults) {
-                            std::cout << std::left << std::setw(25) << key << ": " << value << std::endl;
-                        }
-                    }
-                    break;
-
-                case recoverysuite::recovery::RecoveryCapability::FILE_RECOVERY:
-                    if (!fileResult.recoveredFiles.empty()) {
-                        std::cout << "Recovered Files:" << std::endl;
-                        printSeparator();
-                        for (const auto& [filename, data] : fileResult.recoveredFiles) {
-                            std::cout << std::left << std::setw(30) << filename << ": "
-                                      << data.size() << " bytes" << std::endl;
-                        }
-                    }
-                    break;
-
-                case recoverysuite::recovery::RecoveryCapability::METADATA_RECOVERY:
-                    if (!metadataResult.recoveredMetadata.empty()) {
-                        std::cout << "Recovered Metadata:" << std::endl;
-                        printSeparator();
-                        for (const auto& [key, data] : metadataResult.recoveredMetadata) {
-                            std::cout << std::left << std::setw(30) << key << ": "
-                                      << data.size() << " bytes" << std::endl;
-                        }
-                    }
-                    break;
-
-                case recoverysuite::recovery::RecoveryCapability::CARVING:
-                    if (!carvingResult.carvedFiles.empty()) {
-                        std::cout << "Carved Files:" << std::endl;
-                        printSeparator();
-                        for (const auto& [filename, data] : carvingResult.carvedFiles) {
-                            std::cout << std::left << std::setw(30) << filename << ": "
-                                      << data.size() << " bytes" << std::endl;
-                        }
-                    }
-                    break;
-
-                default:
-                    break;
-            }
-
-            printSeparator();
-        } else {
-            opInfo.status = "Failed: " + errorMessage;
-            printSeparator();
-            printError(capabilityToString(capability) + " operation failed");
-            if (!errorMessage.empty()) {
-                std::cout << "Error: " << errorMessage << std::endl;
-            }
-            printSeparator();
-        }
-
-    } catch (const std::exception& e) {
-        printError("Exception during operation: " + std::string(e.what()));
-        if (!activeOperations_.empty()) {
-            auto& lastOp = activeOperations_.rbegin()->second;
-            lastOp.status = "Error: " + std::string(e.what());
-        }
-    }
+    printError("Physical-device recovery export is unavailable. Use image carve <path> --output <existing-directory>.");
 }
 
-void CLIHandler::handleCancel(const std::vector<std::string>& args) {
-    if (args.empty()) {
-        printError("Missing operation ID");
-        showHelp({});
-        recoverysuite::logging::Logger::instance().warn("Cancel command failed: missing operation ID");
-        return;
-    }
-
-    std::string operationId = args[0];
-    auto it = activeOperations_.find(operationId);
-
-    if (it == activeOperations_.end()) {
-        printError("Operation not found: " + operationId);
-        recoverysuite::logging::Logger::instance().warn("Cancel command failed: operation not found: " + operationId);
-        return;
-    }
-
-    auto& opInfo = it->second;
-    if (!opInfo.cancellable) {
-        printError("Operation cannot be cancelled: " + operationId);
-        recoverysuite::logging::Logger::instance().warn("Cancel command failed: operation cannot be cancelled: " + operationId);
-        return;
-    }
-
-    if (opInfo.status == "Completed successfully" ||
-        opInfo.status.rfind("Failed:", 0) == 0) {
-        printError("Operation already finished: " + operationId);
-        recoverysuite::logging::Logger::instance().warn("Cancel command failed: operation already finished: " + operationId);
-        return;
-    }
-
-    printInfo("Cancelling operation: " + operationId);
-    opInfo.cancelled = true;
-    opInfo.status = "Cancelling...";
-    recoverysuite::logging::Logger::instance().info("Cancellation requested for operation: " + operationId +
-      ", type=" + opInfo.type);
-
-    // In a full implementation, we would signal the operation to stop
-    // For this MVP, we'll just mark it as cancelled
-    printSuccess("Cancellation requested for operation: " + operationId);
+void CLIHandler::handleCancel(const std::vector<std::string>&) {
+    printError("Recovery runs in the foreground. Press Ctrl+C in its terminal to cancel it.");
+}
+void CLIHandler::handleStatus(const std::vector<std::string>&) {
+    printError("There is no background operation registry. Foreground recovery reports its own progress and result.");
 }
 
-void CLIHandler::handleStatus(const std::vector<std::string>& args) {
-    if (activeOperations_.empty()) {
-        printInfo("No active operations");
-        recoverysuite::logging::Logger::instance().debug("Status command: no active operations");
-        return;
-    }
+void CLIHandler::showHelp(const std::vector<std::string>&) {
+    std::cout << R"(RecoverySuite — read-only image recovery
+Usage: RecoverySuite_CLI <command> [arguments]
 
-    if (!args.empty()) {
-        // Show status for specific operation
-        std::string operationId = args[0];
-        auto it = activeOperations_.find(operationId);
-        if (it == activeOperations_.end()) {
-            printError("Operation not found: " + operationId);
-            recoverysuite::logging::Logger::instance().warn("Status command failed: operation not found: " + operationId);
-            return;
-        }
+  image info <image> [--sector-size 512|1024|2048|4096]
+  image carve <image> --output <existing-folder>
+      [--start <sector>] [--count <sectors>] [--sector-size <bytes>] [--no-verify]
+  list
+  disk info <disk-number>
+  analyze <disk-number> [start-sector] [sector-count]
+  validate <capability> <disk-number> [start-sector] [sector-count]
+  help | version
 
-        const auto& opInfo = it->second;
-        auto duration = std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::steady_clock::now() - opInfo.startTime);
-
-        printSeparator();
-        std::cout << "Operation Status: " << operationId << std::endl;
-        printSeparator();
-        std::cout << "Type:           " << opInfo.type << std::endl;
-        std::cout << "Status:         " << opInfo.status << std::endl;
-        std::cout << "Started:        " << duration.count() << " seconds ago" << std::endl;
-        std::cout << "Cancellable:    " << (opInfo.cancellable ? "Yes" : "No") << std::endl;
-        if (opInfo.cancelled) {
-            std::cout << "Cancellation:   Requested" << std::endl;
-        }
-        printSeparator();
-        recoverysuite::logging::Logger::instance().debug("Status command executed for operation: " + operationId);
-    } else {
-        // Show all operations
-        printSeparator();
-        std::cout << "Active Operations (" << activeOperations_.size() << ")" << std::endl;
-        printSeparator();
-        std::cout << std::left << std::setw(10) << "ID"
-                  << std::setw(20) << "Type"
-                  << std::setw(15) << "Status"
-                  << std::setw(10) << "Time"
-                  << std::setw(10) << "Cancel"
-                  << std::endl;
-        printSeparator();
-
-        for (const auto& [id, opInfo] : activeOperations_) {
-            auto duration = std::chrono::duration_cast<std::chrono::seconds>(
-                std::chrono::steady_clock::now() - opInfo.startTime);
-
-            std::cout << std::left << std::setw(10) << id.substr(0, 8)
-                      << std::setw(20) << opInfo.type.substr(0, 19)
-                      << std::setw(15) << opInfo.status.substr(0, 14)
-                      << std::setw(10) << duration.count() << "s"
-                      << std::setw(10) << (opInfo.cancellable ? "Yes" : "No")
-                      << std::endl;
-        }
-
-        printSeparator();
-        recoverysuite::logging::Logger::instance().debug("Status command executed: showing " + std::to_string(activeOperations_.size()) + " active operations");
-    }
-}
-
-void CLIHandler::showHelp(const std::vector<std::string>& args) {
-    (void)args;
-
-    printSeparator();
-    std::cout << "RecoverySuite Command Line Interface" << std::endl;
-    printSeparator();
-    std::cout << "Usage: recoverysuite <command> [arguments]" << std::endl;
-    std::cout << std::endl;
-    std::cout << "Commands:" << std::endl;
-    std::cout << "  list                                     List available storage devices" << std::endl;
-    std::cout << "  disk info <disk_number>                  Show detailed information for a disk" << std::endl;
-    std::cout << "  analyze <disk_number> [start_sector] [num_sectors]" << std::endl;
-    std::cout << "                                           Analyze filesystem on specified disk range" << std::endl;
-    std::cout << "  validate <capability> <disk_number> [start_sector] [num_sectors]" << std::endl;
-    std::cout << "                                           Validate a recovery operation before execution" << std::endl;
-    std::cout << "  recover <capability> <disk_number> <start_sector> <num_sectors> [output_path]" << std::endl;
-    std::cout << "                                           Perform recovery operation" << std::endl;
-    std::cout << "  cancel <operation_id>                    Cancel an active operation" << std::endl;
-    std::cout << "  status [operation_id]                    Show status of operations (all if no ID specified)" << std::endl;
-    std::cout << "  help, -h, --help                         Show this help message" << std::endl;
-    std::cout << "  version, -v, --version                   Show version information" << std::endl;
-    std::cout << std::endl;
-    std::cout << "Capabilities:" << std::endl;
-    std::cout << "  filesystem_analysis                      Analyze filesystem structure" << std::endl;
-    std::cout << "  file_recovery                            Recover files from filesystem" << std::endl;
-    std::cout << "  metadata_recovery                        Recover filesystem metadata" << std::endl;
-    std::cout << "  carving                                  Carve files from raw disk data" << std::endl;
-    std::cout << std::endl;
-    std::cout << "Examples:" << std::endl;
-    std::cout << "  recoverysuite list" << std::endl;
-    std::cout << "  recoverysuite disk info 0" << std::endl;
-    std::cout << "  recoverysuite analyze 0 0 100" << std::endl;
-    std::cout << "  recoverysuite validate file_recovery 0 0 100" << std::endl;
-    std::cout << "  recoverysuite recover file_recovery 0 0 100 1000 ./recovered" << std::endl;
-    printSeparator();
-    recoverysuite::logging::Logger::instance().debug("Help command executed");
+Image carving saves JPEG/PDF/ZIP signature candidates, with readback verification by default.
+Existing files are not replaced. Limits: 16 MiB per candidate, 10,000 attempted outputs.
+Candidates may contain damaged data; names and fragmented files are not reconstructed.
+Omitted --count scans from --start to the end of the image. Press Ctrl+C to cancel;
+completed output files are kept. Exit: 0 complete, 1 failed/partial, 2 usage, 130 cancelled.
+Safe output export currently requires POSIX. Physical-device export is unavailable.
+)";
 }
 
 void CLIHandler::showVersion(const std::vector<std::string>& args) {
@@ -747,6 +508,7 @@ void CLIHandler::printSuccess(const std::string& message) {
 }
 
 void CLIHandler::printError(const std::string& message) {
+    exitCode_ = 1;
     std::cerr << "[ERROR] " << message << std::endl;
 }
 

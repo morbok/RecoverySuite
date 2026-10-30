@@ -11,6 +11,7 @@
 #include <chrono>
 #include <thread>
 #include <atomic>
+#include <functional>
 
 #include "../Application/Service/RecoveryService.h"
 #include "../Disk/IDiskReader.hpp"
@@ -26,7 +27,7 @@ namespace cli {
 
 class CLIHandler {
 public:
-    CLIHandler();
+    explicit CLIHandler(std::function<bool()> cancellation = {});
     ~CLIHandler();
 
     // Main CLI loop
@@ -48,6 +49,10 @@ public:
     recoverysuite::recovery::RecoveryCapability parseCapability(const std::string& capStr);
 
 private:
+    int handleImage(const std::vector<std::string>& args);
+    std::function<bool()> cancellation_;
+    int exitCode_{};
+
     // Helper methods
     void printSeparator();
     void printSuccess(const std::string& message);

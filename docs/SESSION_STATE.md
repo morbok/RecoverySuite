@@ -25,7 +25,7 @@ the recovery product. README.md describes the supported workflow and MASTER_TODO
 
 ## Validation
 
-24 CTest executables pass locally in Debug and Release with assertions active. The image integration
+25 CTest executables pass locally in Debug and Release with assertions active. The image integration
 suite also passes AddressSanitizer/UBSan. Tests cover source mutation, invalid ranges/destinations,
 symlinks/hardlinks/traversal, no-overwrite/partial output, cancellation, incomplete/oversized candidates,
 GUI clicks and closing during recovery. Source hashes and saved bytes are checked on synthetic images.
@@ -33,7 +33,7 @@ Remote CI must be checked for the current PR head before merge.
 
 ## Limits and next work
 
-Only the new image GUI workflow exports files. Legacy file/metadata recovery, CLI export, raw-device
+Only the new image GUI workflow exports files. Legacy file/metadata recovery, raw-device
 discovery, FAT/NTFS completeness, fragmentation, resumable sessions and Windows export remain work.
 The signature carver does not validate full file formats. Limits: 16 MiB/candidate, 10,000 attempted
 outputs, 64 KiB scan chunks. Windows and real hardware have not been validated.
@@ -41,3 +41,10 @@ outputs, 64 KiB scan chunks. Windows and real hardware have not been validated.
 Graphify 0.9.97 was installed as a local developer tool and Codex skill. The ignored graphify-out/
 contains the AST graph, report, HTML and query memory. Use scoped queries first and update after edits;
 inferred call edges require source verification. No new runtime dependency was added to the product.
+
+## CLI checkpoint
+
+Added image info/carve commands using the same read-only source, validated range and safe export as
+the GUI. Added foreground SIGINT/SIGTERM cancellation and meaningful exit codes. Removed legacy
+physical-recovery success claims without export, and fixed double ownership of physical disk readers
+in analysis. A real-process QtTest suite checks saved bytes, parser failures, no-overwrite and signals.

@@ -9,15 +9,17 @@ JPEG/PDF/ZIP signature candidates and saves their bytes with no-overwrite POSIX 
 partial output failures and keeps completed files after cancellation. Closing cancels then waits for
 worker cleanup. Cancellation uses an atomic flag, not a queued slot on the busy worker event loop.
 
-Build/test commands are in README.md. There are 24 registered CTest executables; test_image_recovery
+Build/test commands are in README.md. There are 25 registered CTest executables; test_image_recovery
 covers the source-to-output flow, hostile paths, source mutation, stream boundaries, bounded incomplete
 candidates, worker cancellation and actual GUI interaction. It passes ASan/UBSan locally as well.
 
 Do not generalize the image workflow to legacy recoverFiles/recoverMetadata/carveFiles APIs: those
-still expose backend buffers/results without filesystem export. Only executeOperation connects the
+still expose backend buffers/results without filesystem export. CLI image carve and GUI executeOperation connect the
 new carver and safe exporter. Physical devices, fragmented/deleted-file reconstruction and Windows
 safe export remain unsupported/unvalidated. Candidates can contain damaged data despite readback equality.
 
 Graphify is installed globally as a Codex skill and CLI. Run scoped queries against the ignored
 `graphify-out/graph.json`, then verify relevant source; use `graphify update .` after code edits.
 Keep generated graphs, build products and local agent configuration out of commits.
+
+CLI image info/carve now uses executeOperation; test_cli_image launches the executable and verifies exit codes, exact output, no-overwrite and SIGINT/SIGTERM cancellation.
