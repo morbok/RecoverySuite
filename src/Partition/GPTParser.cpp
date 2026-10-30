@@ -166,8 +166,8 @@ void GPTParser::readSector(uint64_t lba, std::vector<std::byte>& buffer) const {
     }
     uint32_t sectorSize = m_reader->getSectorSize();
     buffer.resize(sectorSize);
-    uint64_t sectorsRead = m_reader->readSectors(lba, 1, buffer);
-    if (sectorsRead != 1) {
+    if (lba >= m_reader->getTotalSectors() ||
+        !m_reader->readSectors(lba, 1, buffer) || buffer.size() < sectorSize) {
         throw PartitionException("Failed to read sector");
     }
 }

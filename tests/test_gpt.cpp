@@ -364,6 +364,12 @@ int main() {
         badHeader.headerCRC32 ^= 1;
         assert(rejected([&] { validator.validateHeader(badHeader); }));
 
+        // A reader reporting success with a truncated sector must fail before header memcpy.
+        auto shortReader = std::make_shared<MockDiskReader>(mbrBuffer, std::vector<std::byte>(31),
+            std::vector<std::byte>{}, entryArrayBuffer, 131072);
+        shortReader->open("mock");
+        assert(rejected([&] { (void)recoverysuite::partition::GPTParser(shortReader).parseGPT(); }));
+
         // Extended entries can span multiple sectors; only the 128-byte common prefix is parsed.
         auto extendedHeader = gptHeader;
         extendedHeader.sizeofPartitionEntry = 1024;

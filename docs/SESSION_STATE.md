@@ -24,7 +24,7 @@ complete recovery product is finished. See MASTER_TODO.md for the remaining rele
 - Unknown progress uses an indeterminate progress bar.
 - Fixed filesystem range checks, validated boot-sector arithmetic, and recognized 512-byte NTFS boot sectors.
 - Fixed MBR partition offset/signature byte order, GPT name bounds, declared-size CRCs, extended-entry
-  bounds, entry-array resource/disk bounds and boolean disk-read handling.
+  bounds, entry-array resource/disk bounds, truncated sectors and boolean disk-read handling.
 - Enabled assert-based tests in Release. Repaired invalid fixtures and tests that accessed private APIs.
 - Added Linux Debug/Release GitHub Actions checks. Remote CI results are separate from local verification.
 
@@ -32,7 +32,7 @@ complete recovery product is finished. See MASTER_TODO.md for the remaining rele
 
 Local Debug and Release configure/build and all 23 registered CTest executables pass, including real Qt widget
 assertions, worker cancellation completion and malformed boot-sector/GPT input regressions.
-All 23 tests also pass in Release with assertions active. Remote CI is still to be checked. Tests use synthetic data; no claim of
+All 23 tests also pass in Release with assertions active. Consult the PR checks for the remote CI outcome. Tests use synthetic data; no claim of
 end-to-end recovery against real hardware is made.
 
 ## Next work
