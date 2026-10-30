@@ -495,10 +495,10 @@ Existing files are not replaced. Limits: 16 MiB per candidate, 10,000 attempted 
 Candidates may contain damaged data; names and fragmented files are not reconstructed.
 Omitted --count scans from --start to the end of the image. Press Ctrl+C to cancel;
 completed output files are kept. Exit: 0 complete, 1 failed/partial, 2 usage, 130 cancelled.
-Files copies allocated FAT12/16 root files using 8.3 aliases and cluster chains (16 MiB/file).
-Deleted entries, subdirectories and FAT32/NTFS files are skipped or unsupported.
+Files copies allocated FAT12/16/32 root files using 8.3 aliases and cluster chains (16 MiB/file).
+Deleted entries, subdirectories and NTFS files are skipped or unsupported.
 Metadata saves actual FAT boot/FAT copies and FAT12/16 fixed root entries (16 MiB per region).
-No NTFS MFT or FAT32 root-chain reconstruction. Safe output export currently requires POSIX. Physical-device export is unavailable.
+Metadata mode does not reconstruct NTFS MFT or FAT32 root chains. Safe output export currently requires POSIX. Physical-device export is unavailable.
 )";
 }
 

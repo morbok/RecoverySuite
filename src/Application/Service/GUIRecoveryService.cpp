@@ -47,7 +47,7 @@ std::string GUIRecoveryService::validateImageOperation(const models::RecoveryOpe
     try { imageReader_->validateIdentity(); }
     catch (const std::exception& failure) { return failure.what(); }
     if (operation.operationType != "carving" && operation.operationType != "metadata_recovery" && operation.operationType != "file_recovery")
-        return "Choose signature carving, a FAT metadata snapshot or FAT12/16 root files";
+        return "Choose signature carving, a FAT metadata snapshot or FAT12/16/32 root files";
     std::error_code error;
     const auto source = std::filesystem::canonical(operation.targetDevicePath, error);
     if (error || source.string() != imageReader_->sourcePath()) return "The operation source does not match the opened image";
@@ -151,7 +151,7 @@ models::RecoveryResult GUIRecoveryService::executeOperation(const models::Recove
     result.details["Export"] = result.outputWritten ? "Only the listed items were saved to the destination" : "No output files were saved";
     result.details["Recovery method"] = operation.operationType == "metadata_recovery"
         ? "FAT metadata snapshot: boot sector and FAT copies; FAT12/16 root entries included. No repair, FAT32 root chain or NTFS MFT reconstruction."
-        : operation.operationType == "file_recovery" ? "Allocated FAT12/16 root files using 8.3 aliases and cluster chains. No deleted-file guessing or subdirectory traversal."
+        : operation.operationType == "file_recovery" ? "Allocated FAT12/16/32 root files using 8.3 aliases and cluster chains. No deleted-file guessing or subdirectory traversal."
         : "Signature candidates only; file structure and content may still be damaged";
     if (progressCallback) {
         models::RecoveryProgress progress{};

@@ -1,6 +1,6 @@
 # RecoverySuite active roadmap
 
-Updated: 2026-10-30. Historical phase summaries are not the release checklist.
+Updated: 2026-10-31. Historical phase summaries are not the release checklist.
 
 ## Completed in the handoff
 
@@ -17,8 +17,8 @@ Updated: 2026-10-30. Historical phase summaries are not the release checklist.
 2. [x] Bind opened images to GUIRecoveryService and reject operations on another source.
 3. [x] Execute the configured carving operation and replace hard-coded validation with actual checks.
        [x] Add verified CLI export and bounded FAT metadata snapshots.
-       [x] Copy allocated FAT12/16 root files with 8.3 aliases and fragmented cluster chains.
-       [ ] Add recursive directories/long names, deleted-chain inference, FAT32 files and NTFS MFT recovery.
+       [x] Copy allocated FAT12/16/32 root files with 8.3 aliases and fragmented cluster chains.
+       [ ] Add recursive directories/long names, deleted-chain inference and NTFS MFT recovery.
 4. [x] Export signature candidates safely on POSIX, preserving bytes and rejecting traversal, symlinks,
        overwrite and invalid destinations; verify saved bytes in integration tests.
 5. [x] Propagate cancellation/progress into image scan/export loops and test worker shutdown.

@@ -6,8 +6,8 @@ Read README.md, SESSION_STATE.md and MASTER_TODO.md. Older phase-completion note
 Supported read-only image workflows:
 - GUI and CLI signature carving for JPEG/PDF/ZIP candidates.
 - FAT12/16/32 metadata snapshots: boot/FAT copies and FAT12/16 fixed root bytes.
-- Allocated FAT12/16 root files using ASCII 8.3 aliases and verified cluster chains, including
-  fragmentation and zero-length files. Deleted entries, LFN records and subdirectories are skipped.
+- Allocated FAT12/16/32 root files using ASCII 8.3 aliases and verified cluster chains, including
+  fragmentation and zero-length files. FAT32 follows the root chain and honors the active FAT. Deleted entries, LFN records and subdirectories are skipped.
 - CLI image info/analyze for geometry and FAT/NTFS boot-sector fields; unknown metrics stay unknown.
 
 All image export uses a directory-anchored POSIX writer with exclusive creation, path/name checks,
@@ -22,8 +22,8 @@ Legacy RecoveryService recoverMetadata/recoverFiles/carveFiles return buffers, w
 GUI executeOperation and CLI image commands provide actual filesystem output. CarvingEngine uses
 the shared scanner and absolute offsets. Never restore manufactured file/FAT/MFT contents.
 
-Remaining scope includes deleted-file chain inference, recursive directories/long names, FAT32 file
-chains, NTFS MFT/files, Windows safe export, session resume, hardware QA and packaging. Signature
+Remaining scope includes deleted-file chain inference, recursive directories/long names,
+NTFS MFT/files, Windows safe export, session resume, hardware QA and packaging. Signature
 candidates and readback equality do not establish full format or filesystem validity.
 
 Graphify is installed as a CLI/Codex skill. Query the ignored graphify-out/graph.json first, verify

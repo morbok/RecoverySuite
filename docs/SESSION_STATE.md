@@ -90,3 +90,22 @@ and subdirectories are skipped. FAT32/NTFS file reconstruction remains unsupport
 
 27 registered CTest executables now include a real fragmented-chain fixture on FAT12 and 4 KiB FAT16,
 corruption cases, GUI/CLI output, no-overwrite, source preservation and cancellation.
+
+
+## 2026-10-31 — FAT32 allocated root-file checkpoint
+
+Extended the shared root-file reader to FAT32. It follows bounded fragmented root-directory
+chains, reserves directory clusters against file cross-links, combines directory high/low cluster
+words, masks reserved FAT nibbles, accepts dirty/error status flags, and honors active-FAT selection.
+Mirrored copies must agree on meaningful cluster values. Unknown versions, malformed geometry,
+root-chain corruption and invalid active indexes fail before output. ASCII 8.3 aliases remain the
+filename format; no recursive/deleted/NTFS recovery was added. FAT32 metadata snapshot behavior
+is unchanged (boot/FAT regions only).
+
+Validation: all 27 CTest executables passed in Debug and Release. Image, metadata snapshot and
+FAT-file suites passed ASan/UBSan with leak detection disabled for Qt. FAT32 fixtures cover a
+fragmented root, clusters above 65535, active second FAT, ignored high FAT bits, dirty flags,
+cycles, cross-links, copy mismatches, invalid versions/flags and cancellation. CLI export is exercised.
+Graphify AST update: 3695 nodes / 6468 edges; existing 20 source_file warnings concern config nodes.
+Remote CI remains unverified because browser access is unavailable and the connector needs an
+account connection. Do not merge until current CI and code review have been checked.

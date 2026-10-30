@@ -64,15 +64,17 @@ cluster chains, NTFS MFT reconstruction, deleted-file recovery and metadata repa
 The reader sector size must match the BPB. Each region is limited to 16 MiB; malformed geometry,
 short reads and out-of-range regions fail before any output is saved. Existing outputs are preserved.
 
-## FAT12/16 root files
+## FAT12/16/32 root files
 
-Choose **FAT12/16 allocated root files (8.3)** or run `image files`. Select the volume boot sector
+Choose **FAT12/16/32 allocated root files (8.3)** or run `image files`. Select the volume boot sector
 and its complete declared sector range. This copies allocated root files, including fragmented
 cluster chains, with ASCII 8.3 aliases. Zero-byte files are preserved. Deleted entries, long-name
-records and subdirectories are skipped; subdirectories are not traversed. FAT32/NTFS files and
+records and subdirectories are skipped; subdirectories are not traversed. NTFS files and
 guessed deleted-file chains are unsupported. Each file is limited to 16 MiB.
 
-FAT copies must agree. Invalid names, cyclic/short/overlong/bad/out-of-range/cross-linked chains
+Mirrored FAT copies must agree on cluster values. FAT32 volumes with mirroring disabled use the
+selected active FAT. FAT32 root directories are followed through their cluster chain (16 MiB maximum),
+and their clusters cannot be reused as file data. Invalid names, cyclic/short/overlong/bad/out-of-range/cross-linked chains
 are reported as skipped invalid files. Completed outputs are kept after a later error or cancellation.
 Readback verification checks saved bytes; it does not prove that the source filesystem is intact.
 
@@ -83,8 +85,8 @@ Readback verification checks saved bytes; it does not prove that the source file
   and results. Progress and cancellation reach the streaming scan and output loops.
 - POSIX output export rejects traversal, symlink components, unsafe names and existing files. It
   anchors the selected directory with a file descriptor; incomplete writes are removed on failure.
-- The image workflow supports signature carving, FAT metadata snapshots and allocated FAT12/16 root
-  files. Recursive directories, deleted FAT chains, FAT32 files and NTFS MFT recovery remain unavailable.
+- The image workflow supports signature carving, FAT metadata snapshots and allocated FAT12/16/32 root
+  files. Recursive directories, deleted FAT chains and NTFS MFT recovery remain unavailable.
 - Windows safe export is unavailable; Windows builds and recovery against real devices remain unvalidated.
 - Integration tests use synthetic images; the image workflow also passes AddressSanitizer/UBSan locally.
 

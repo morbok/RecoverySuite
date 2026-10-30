@@ -1,3 +1,13 @@
+# 2026-10-31 — Allocated FAT32 root-file recovery
+
+Extended GUI/CLI/legacy root-file recovery to FAT32: fragmented root chains, 28-bit FAT values,
+full directory first-cluster fields, active-FAT selection when mirroring is disabled, and masked
+comparison of mirrored cluster values. Root chains are bounded to 16 MiB and reserved against file
+cross-links. Invalid root geometry/chains and unsupported FAT32 versions fail before output.
+Added synthetic FAT32 fixtures covering fragmented high-numbered file clusters, dirty flags,
+reserved FAT bits, active/mirrored copies, corruption and cancellation. Metadata snapshot mode
+still exports boot/FAT regions only for FAT32; NTFS, deleted chains and recursive recovery remain open.
+
 # 2026-10-31 — Allocated FAT12/16 root-file recovery
 
 Added actual root-file copying with ASCII 8.3 aliases, fragmented allocated chains, zero-byte files,
