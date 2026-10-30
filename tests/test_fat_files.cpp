@@ -56,6 +56,17 @@ class TestFatFiles : public QObject {
         void entry(int cluster,uint32_t value,int copy=-1){for(int n=0;n<2;++n)if(copy<0||n==copy)le(data,(32+n*fatSectors)*ss+cluster*4,value,4);}
         QByteArray expected()const{return QByteArray(ss,'X')+QByteArray(ss,'Y')+QByteArray(17,'Z');}
     };
+    static int longEntries(QByteArray& directory,const QString& name,const QByteArray& alias){
+        const int count=(name.size()+12)/13;unsigned checksum=0;
+        for(unsigned char c:alias)checksum=(((checksum&1)?128:0)+(checksum>>1)+c)&255;
+        constexpr int offsets[]{1,3,5,7,9,14,16,18,20,22,24,28,30};
+        for(int order=count;order>0;--order){const int pos=(count-order)*32;
+            directory.replace(pos,32,QByteArray(32,char(0xff)));directory[pos]=char(order|(order==count?0x40:0));
+            directory[pos+11]=char(0x0f);directory[pos+12]=0;directory[pos+13]=char(checksum);le(directory,pos+26,0);
+            for(int j=0;j<13;++j){const int index=(order-1)*13+j;le(directory,pos+offsets[j],index<name.size()?name.utf16()[index]:(index==name.size()?0:0xffff));}
+        }
+        return count;
+    }
     static application::service::models::RecoveryOperation operation(const std::string& path,const QString& output,uint64_t start,uint64_t count){
         application::service::models::RecoveryOperation op{};op.operationType="file_recovery";op.targetDevicePath=path;op.outputPath=output.toStdString();op.startSector=start;op.numSectors=count;op.verifyAfterRecovery=true;return op;}
 private slots:
@@ -95,6 +106,60 @@ private slots:
         if(fault=="mirrors"||fault=="range"){QVERIFY(!result.outputWritten);QVERIFY(!QFile::exists(root.filePath("EMPTY.TXT")));}
         else {QVERIFY(QFile::exists(root.filePath("EMPTY.TXT")));QCOMPARE(result.details.at("Invalid or unsupported root files"),std::string("1"));}
         if(fault!="crosslink")QVERIFY(!QFile::exists(root.filePath("FRAG.TXT")));
+#endif
+    }
+    void longNames_data(){
+        QTest::addColumn<QString>("variant");QTest::addColumn<QString>("name");QTest::addColumn<int>("kind");
+        QTest::newRow("unicode-FAT12")<<QString("valid")<<QString::fromUtf8("Kurtarılan fotoğraf 📷.bin")<<12;
+        QTest::newRow("surrogate-across-records-FAT16")<<QString("valid")<<QString::fromUtf8("abcdefghijkl📷.bin")<<16;
+        QTest::newRow("across-root-clusters-FAT32")<<QString("valid")<<QString("Long fragmented root filename.bin")<<32;
+        QTest::newRow("exact-thirteen")<<QString("valid")<<QString("123456789.bin")<<12;
+        QTest::newRow("maximum-name")<<QString("valid")<<QString(251,'a').append(".bin")<<12;
+        for(const char* fault:{"checksum","ordinal","missing-last","type","cluster","padding","surrogate","reserved-order","deleted","interrupted"})
+            QTest::newRow(fault)<<QString(fault)<<QString("A longer restored filename.bin")<<12;
+        for(const char* unsafe:{"../evil.bin","folder/file.bin","drive:file.bin","trailing.","trailing ",".",".."})
+            QTest::newRow(unsafe)<<QString("unsafe")<<QString(unsafe)<<12;
+        QTest::newRow("utf8-byte-limit")<<QString("unsafe")<<QString(100,QChar(0x4e2d))<<12;
+    }
+    void longNames(){
+#ifndef _WIN32
+        QFETCH(QString,variant);QFETCH(QString,name);QFETCH(int,kind);QTemporaryDir root;
+        Volume fixed(kind==16,kind==16?4096:512);Fat32Volume large;
+        QByteArray directory(1024,char{0});const QByteArray alias=kind==32?QByteArray("HIGH    BIN"):QByteArray("FRAG    TXT");
+        const int records=longEntries(directory,name,alias),shortPos=records*32;
+        const int original=kind==32?(large.dataStart+8)*512:fixed.rootStart*fixed.ss;
+        directory.replace(shortPos,32,(kind==32?large.data:fixed.data).mid(original,32));
+        if(variant=="checksum")directory[13]^=1;
+        if(variant=="ordinal")directory[32]=char(3);
+        if(variant=="missing-last")directory[0]=char(static_cast<unsigned char>(directory[0])&~0x40);
+        if(variant=="type")directory[12]=1;
+        if(variant=="cluster")le(directory,26,1);
+        if(variant=="padding")le(directory,30,'x');
+        if(variant=="surrogate")le(directory,(records-1)*32+1,0xd800);
+        if(variant=="reserved-order")directory[0]=char(static_cast<unsigned char>(directory[0])|0x20);
+        if(variant=="deleted")directory[32]=char(0xe5);
+        if(variant=="interrupted")directory[32+11]=char(8);
+        QByteArray image;int sectors=0;QString aliasName;
+        if(kind==32){
+            // Split the LFN sequence itself across two noncontiguous root clusters.
+            QByteArray logical(1024,char{0});for(int i=0;i<15;++i)logical[i*32]=char(0xe5);
+            logical.replace(15*32,directory.size()-15*32,directory.left(directory.size()-15*32));
+            large.data.replace(large.dataStart*512,512,logical.left(512));large.data.replace((large.dataStart+8)*512,512,logical.mid(512));
+            image=large.data;sectors=large.sectors;aliasName="HIGH.BIN";
+        }else {fixed.data.replace(fixed.rootStart*fixed.ss,1024,directory);image=fixed.data;sectors=fixed.sectors;aliasName="FRAG.TXT";}
+        const auto path=root.filePath("source.img");save(path,image);application::service::GUIRecoveryService service(nullptr);
+        const auto source=service.openImage(path.toStdString(),kind==16?4096:512);const auto result=service.executeOperation(operation(source.devicePath,root.path(),0,sectors));
+        QVERIFY2(result.success,result.errorMessage.c_str());QCOMPARE(result.recoveredItemsCount,uint64_t{1});
+        const auto outputName=variant=="valid"?name:aliasName;QCOMPARE(load(root.filePath(outputName)),kind==32?large.expected():fixed.expected());
+        if(variant!="valid"&&name!=aliasName&&name!="."&&name!=".."&&name.toUtf8().size()<=255)QVERIFY(!QFile::exists(root.filePath(name)));
+        QCOMPARE(load(path),image);
+        if(variant=="valid")QCOMPARE(result.details.at("Long names rejected (8.3 fallback)"),std::string("0"));
+        if(kind==32){
+            const auto output=root.filePath("cli");QVERIFY(QDir().mkdir(output));QProcess cli;
+            cli.start(QCoreApplication::applicationDirPath()+"/RecoverySuite_CLI",{"image","files",path,"--output",output});
+            QVERIFY(cli.waitForFinished(5000));QCOMPARE(cli.exitCode(),0);QCOMPARE(load(QDir(output).filePath(name)),large.expected());
+        }
+        if(variant=="checksum"||variant=="unsafe")QCOMPARE(result.details.at("Long names rejected (8.3 fallback)"),std::string("1"));
 #endif
     }
     void fat32RootChains_data(){

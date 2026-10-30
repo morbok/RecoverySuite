@@ -119,6 +119,7 @@ models::RecoveryResult GUIRecoveryService::executeOperation(const models::Recove
                 const auto files=recovery::recoverFatRootFiles(*imageReader_,operation.startSector,operation.numSectors,saveItem,report,cancellationToken);
                 summary.processedBytes=files.processedBytes;summary.cancelled=files.cancelled;summary.skippedCandidates=files.invalidFiles;
                 result.details["Invalid or unsupported root files"]=std::to_string(files.invalidFiles);
+                result.details["Long names rejected (8.3 fallback)"]=std::to_string(files.longNameFallbacks);
                 result.details["Deleted entries not reconstructed"]=std::to_string(files.deletedEntries);
                 result.details["Subdirectories not traversed"]=std::to_string(files.directories);
             } else {
@@ -151,7 +152,7 @@ models::RecoveryResult GUIRecoveryService::executeOperation(const models::Recove
     result.details["Export"] = result.outputWritten ? "Only the listed items were saved to the destination" : "No output files were saved";
     result.details["Recovery method"] = operation.operationType == "metadata_recovery"
         ? "FAT metadata snapshot: boot sector and FAT copies; FAT12/16 root entries included. No repair, FAT32 root chain or NTFS MFT reconstruction."
-        : operation.operationType == "file_recovery" ? "Allocated FAT12/16/32 root files using 8.3 aliases and cluster chains. No deleted-file guessing or subdirectory traversal."
+        : operation.operationType == "file_recovery" ? "Allocated FAT12/16/32 root files using verified long names or 8.3 aliases and cluster chains. No deleted-file guessing or subdirectory traversal."
         : "Signature candidates only; file structure and content may still be damaged";
     if (progressCallback) {
         models::RecoveryProgress progress{};

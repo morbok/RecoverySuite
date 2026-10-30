@@ -1,3 +1,10 @@
+# 2026-10-31 — Validated FAT long filenames
+
+FAT12/16/32 root-file recovery now uses Unicode LFN names after validating ordinal order, checksum,
+entry metadata, terminators/padding and UTF-16. Unsafe/malformed/overlong names fall back to ASCII
+8.3 aliases and are counted in results. File creation remains exclusive; collisions never rename or
+overwrite previous outputs. Added synthetic Unicode, record/cluster-boundary and corruption cases.
+
 # 2026-10-31 — Allocated FAT32 root-file recovery
 
 Extended GUI/CLI/legacy root-file recovery to FAT32: fragmented root chains, 28-bit FAT values,

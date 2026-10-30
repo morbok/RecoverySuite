@@ -3,10 +3,10 @@
 #include <functional>
 namespace recoverysuite::recovery {
 struct FatRootSummary {
-    uint64_t processedBytes{}, foundItems{}, invalidFiles{}, deletedEntries{}, directories{};
+    uint64_t processedBytes{}, foundItems{}, invalidFiles{}, deletedEntries{}, directories{}, longNameFallbacks{};
     bool cancelled{};
 };
-// Copies allocated FAT12/16/32 root files using their 8.3 aliases and exact cluster chains.
+// Copies allocated FAT12/16/32 root files using verified Unicode long names or 8.3 aliases and exact cluster chains.
 // Does not infer deleted chains, traverse subdirectories, or support NTFS. Max file: 16 MiB.
 FatRootSummary recoverFatRootFiles(disk::IDiskReader& reader, uint64_t start, uint64_t count,
     const std::function<void(const std::string&,const std::vector<uint8_t>&)>& item,

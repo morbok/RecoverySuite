@@ -1,4 +1,5 @@
 #include "fat_root_files.h"
+#include "fat_long_name.h"
 #include "source_bytes.h"
 #include "BootSectorDetection.h"
 #include <set>
@@ -94,19 +95,26 @@ FatRootSummary recoverFatRootFiles(disk::IDiskReader& reader,uint64_t start,uint
             if(root.empty())throw std::runtime_error("FAT32 root directory has no allocated cluster");
             entries=root.size()/32;
         }else root=read(rootStart*sectorSize,rootSectors*sectorSize);
+        FatLongName longName;
         for(size_t index=0;index<entries;++index) {
             check();const size_t pos=index*32;
             if(root[pos]==0)break;
-            if(root[pos]==0xe5){++summary.deletedEntries;continue;}
+            if(root[pos]==0xe5){longName.reset();++summary.deletedEntries;continue;}
             const auto attributes=root[pos+11];
-            if((attributes&0x0f)==0x0f||(attributes&8))continue;
-            if(attributes&16){++summary.directories;continue;}
+            if((attributes&0x0f)==0x0f){longName.consume(root,pos);continue;}
+            if(attributes&8){longName.reset();continue;}
+            if(attributes&16){longName.reset();++summary.directories;continue;}
             if(summary.foundItems+summary.invalidFiles>=10000)throw std::runtime_error("FAT output item limit reached");
+            bool fallback=false;
+            auto name=longName.take(root,pos,fallback);
+            if(fallback)++summary.longNameFallbacks;
             try {
                 if(attributes&0xc0)throw InvalidFile("Reserved directory attributes are set");
-                auto name=shortPart(root,pos,8);const auto extension=shortPart(root,pos+8,3);
-                if(name.empty())throw InvalidFile("Empty filename");
-                if(!extension.empty())name+='.'+extension;
+                if(name.empty()) {
+                    name=shortPart(root,pos,8);const auto extension=shortPart(root,pos+8,3);
+                    if(name.empty())throw InvalidFile("Empty filename");
+                    if(!extension.empty())name+='.'+extension;
+                }
                 const uint64_t size=sourceLe32(root,pos+28),high=sourceLe16(root,pos+20);
                 const uint64_t first=sourceLe16(root,pos+26)|(fat32?high<<16:0);
                 if(size>16*1024*1024||(fat32?(high&0xf000)!=0:high!=0)||(!size&&first))throw InvalidFile("Unsupported file size or first cluster");

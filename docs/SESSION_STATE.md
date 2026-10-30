@@ -109,3 +109,21 @@ cycles, cross-links, copy mismatches, invalid versions/flags and cancellation. C
 Graphify AST update: 3695 nodes / 6468 edges; existing 20 source_file warnings concern config nodes.
 Remote CI remains unverified because browser access is unavailable and the connector needs an
 account connection. Do not merge until current CI and code review have been checked.
+
+
+## 2026-10-31 — Unicode FAT long-name checkpoint
+
+Added a bounded, dependency-free LFN decoder for FAT12/16/32 root files. It validates contiguous
+reverse ordinal sequences, entry fields, matching short-name checksums, terminators/padding and
+UTF-16 (including surrogate pairs). Invalid sequences, unsafe names and names exceeding 255 UTF-8
+bytes fall back to ASCII 8.3 aliases. Results expose the fallback count. State is reset across deleted
+entries, directories and volume labels so names cannot attach across unrelated records. Exclusive
+safe output creation and the existing chain/range limits remain in force. OEM short-name code-page
+reconstruction and recursive directories are still pending.
+
+Validation: 27/27 Debug and Release CTest executables; image, FAT metadata and FAT-file integration
+suites passed ASan/UBSan (Qt leak detection disabled). Fixtures cover Turkish/emoji names, surrogate
+pairs split across records, LFNs split across FAT32 root clusters, 13/255-unit boundaries, unsafe
+names, invalid Unicode, checksum/order/type/cluster/padding errors, interruptions and CLI export.
+Graphify AST update: 3716 nodes / 6512 edges; 20 existing config-node source_file warnings remain.
+Remote CI is unverified; current code review/CI is required before merge.

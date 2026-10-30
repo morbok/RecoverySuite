@@ -66,16 +66,20 @@ short reads and out-of-range regions fail before any output is saved. Existing o
 
 ## FAT12/16/32 root files
 
-Choose **FAT12/16/32 allocated root files (8.3)** or run `image files`. Select the volume boot sector
+Choose **FAT12/16/32 allocated root files (long names / 8.3)** or run `image files`. Select the volume boot sector
 and its complete declared sector range. This copies allocated root files, including fragmented
-cluster chains, with ASCII 8.3 aliases. Zero-byte files are preserved. Deleted entries, long-name
-records and subdirectories are skipped; subdirectories are not traversed. NTFS files and
+cluster chains, with verified Unicode long names or ASCII 8.3 aliases. Zero-byte files are preserved.
+Deleted entries and subdirectories are skipped; subdirectories are not traversed. NTFS files and
 guessed deleted-file chains are unsupported. Each file is limited to 16 MiB.
 
 Mirrored FAT copies must agree on cluster values. FAT32 volumes with mirroring disabled use the
 selected active FAT. FAT32 root directories are followed through their cluster chain (16 MiB maximum),
 and their clusters cannot be reused as file data. Invalid names, cyclic/short/overlong/bad/out-of-range/cross-linked chains
 are reported as skipped invalid files. Completed outputs are kept after a later error or cancellation.
+Long names require a contiguous, ordered LFN sequence with matching short-name checksums, valid
+UTF-16 and padding. Invalid sequences, unsafe names and names exceeding 255 UTF-8 bytes fall back
+to the ASCII short alias; the result reports how many names fell back. Original case/OEM short-name
+code pages are not reconstructed. Names are never shortened or rewritten to resolve collisions.
 Readback verification checks saved bytes; it does not prove that the source filesystem is intact.
 
 ## Current state
