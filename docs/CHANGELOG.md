@@ -1,3 +1,9 @@
+# 2026-10-31 — Reject directory/file cross-links
+
+Fixed root-file recovery exporting directory clusters as file data when the directory entry appeared
+later in the root. Reserve child-directory chains before file reads; added first-cluster and tail
+cross-link regression images. Debug/Release: 27/27; targeted ASan/UBSan: 3/3.
+
 # 2026-10-31 — Validated FAT long filenames
 
 FAT12/16/32 root-file recovery now uses Unicode LFN names after validating ordinal order, checksum,

@@ -127,3 +127,13 @@ pairs split across records, LFNs split across FAT32 root clusters, 13/255-unit b
 names, invalid Unicode, checksum/order/type/cluster/padding errors, interruptions and CLI export.
 Graphify AST update: 3716 nodes / 6512 edges; 20 existing config-node source_file warnings remain.
 Remote CI is unverified; current code review/CI is required before merge.
+
+
+## 2026-10-31 — Debug: directory/file cross-links
+
+A Debug baseline passed all 27 CTest targets. Two new corrupt-image regression cases then failed:
+a root file sharing the first or a later cluster of a child-directory chain was exported as successful.
+Root-file recovery now reserves known child-directory chains before any file export, regardless of
+entry order, without reading or exporting those subdirectories. Cyclic chains are bounded by the
+visited-cluster set and cancellation is checked throughout. Both new regressions pass; all 27 Debug
+and Release CTest targets and the image/metadata/FAT-file ASan+UBSan suites pass.

@@ -86,7 +86,7 @@ private slots:
         QCOMPARE(QByteArray(reinterpret_cast<const char*>(buffered.recoveredFiles.at("FRAG.TXT").data()),buffered.recoveredFiles.at("FRAG.TXT").size()),volume.expected());
 #endif
     }
-    void invalidChainsNamesAndMirrors_data(){QTest::addColumn<QString>("fault");for(const char* value:{"cycle","short","long","free","bad","outside","name","size","crosslink","mirrors","range"})QTest::newRow(value)<<QString(value);}
+    void invalidChainsNamesAndMirrors_data(){QTest::addColumn<QString>("fault");for(const char* value:{"cycle","short","long","free","bad","outside","name","size","crosslink","directory-first","directory-tail","mirrors","range"})QTest::newRow(value)<<QString(value);}
     void invalidChainsNamesAndMirrors(){
 #ifndef _WIN32
         QFETCH(QString,fault);QTemporaryDir root;Volume volume;uint64_t count=volume.sectors;
@@ -99,6 +99,10 @@ private slots:
         if(fault=="name")volume.directory(0,"../EVIL TXT",2,2*volume.ss+17);
         if(fault=="size")volume.directory(0,"FRAG    TXT",2,17*1024*1024);
         if(fault=="crosslink")volume.directory(2,"OTHER   TXT",2,2*volume.ss+17);
+        if(fault=="directory-first"||fault=="directory-tail"){
+            volume.directory(3,"SUBDIR     ",fault=="directory-first"?2:5,0);volume.data[volume.rootStart*volume.ss+3*32+11]=char(0x10);
+            if(fault=="directory-tail")volume.entry(5,7);
+        }
         if(fault=="mirrors")volume.data[(1+volume.fatSectors)*volume.ss+5]^=1;
         if(fault=="range")count=volume.sectors-1;
         const auto path=root.filePath("source.img");save(path,volume.data);application::service::GUIRecoveryService service(nullptr);const auto source=service.openImage(path.toStdString());

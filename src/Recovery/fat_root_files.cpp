@@ -95,6 +95,19 @@ FatRootSummary recoverFatRootFiles(disk::IDiskReader& reader,uint64_t start,uint
             if(root.empty())throw std::runtime_error("FAT32 root directory has no allocated cluster");
             entries=root.size()/32;
         }else root=read(rootStart*sectorSize,rootSectors*sectorSize);
+        // Reserve known child-directory chains before exporting any root file. Directory
+        // entries can occur after files, so a single output pass would otherwise miss these
+        // cross-links and export directory metadata as if it were file contents.
+        for(size_t index=0;index<entries;++index) {
+            check();const size_t pos=index*32;
+            if(root[pos]==0)break;
+            if(root[pos]==0xe5||(root[pos+11]&0x18)!=0x10)continue;
+            uint64_t cluster=sourceLe16(root,pos+26)|(fat32?sourceLe16(root,pos+20)<<16:0);
+            while(cluster>=2&&cluster<clusters+2&&cluster<reservedCluster) {
+                check();if(!usedClusters.insert(cluster).second)break;
+                cluster=next(cluster);
+            }
+        }
         FatLongName longName;
         for(size_t index=0;index<entries;++index) {
             check();const size_t pos=index*32;
