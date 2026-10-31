@@ -167,3 +167,27 @@ Remote CI remains unverified; do not merge without checking current CI and code 
 
 Next release work: OEM short-name encoding, deleted-file reconstruction, NTFS MFT/files, Windows
 safe export, persisted sessions/resume, real-device QA and packaging. Do not label the product done.
+
+
+## 2026-10-31 — NTFS initialized-MFT snapshot checkpoint
+
+Added an independent byte-wise NTFS reader (no packed legacy boot/attribute casts) and GUI/CLI
+image mft. Validates 64-bit declared geometry, boot record size, bootstrap FILE header/USA fixups,
+resident attribute bounds and unnamed nonresident DATA mapping pairs. Supports positive/negative
+LCN deltas and fragmented streams; rejects overlaps, invalid lengths/ranges, sparse/compressed/
+encrypted data, attribute-list extensions and noncontiguous bootstrap records. Reads only initialized
+MFT bytes, capped at 16 MiB; each nonzero FILE slot has header/fixup validation. Raw output bytes
+are preserved, including update-sequence tags, unused slots and zero-filled slots. Counts describe
+header flags/slots, not confirmed user-file counts. Metadata failures precede any output writes.
+
+The existing safe exporter handles boot/MFT outputs, no-overwrite, verification and cancellation.
+New test_ntfs_mft covers actual GUI and CLI actions, 512/4096-byte sectors, backward/fragmented
+runs, attributes crossing a 512-byte fixup stride, malicious geometry/attributes/runlists, torn later
+records, source preservation, cancellation and partial output conflicts. A sparse reader validates
+LCNs/volume sizes above 32 bits at a nonzero partition offset, plus short/oversized/failed reads.
+
+Validation: 28/28 Debug and Release CTest targets pass. Image, FAT metadata, FAT files and NTFS MFT
+integration suites pass ASan/UBSan (Qt leak detection disabled). Selected NTFS workflows exit normally
+under GDB, 7 QtTest passes including setup/cleanup. Graphify: 3798 nodes / 6721 edges; 20 existing
+config-node source_file warnings. Remote CI remains unverified; no merge. Next: actual NTFS user-file
+reconstruction. Legacy NTFS factory structs/analyzer remain unvalidated and are not used by this path.

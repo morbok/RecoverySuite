@@ -44,6 +44,7 @@ are reported; completed files remain available after cancellation or partial fai
 ./build/bin/RecoverySuite_CLI image metadata fat-volume.img --output /another/existing-folder
 ./build/bin/RecoverySuite_CLI image files fat-volume.img --output /existing/files-folder
 ./build/bin/RecoverySuite_CLI image tree fat-volume.img --output /existing/tree-folder
+./build/bin/RecoverySuite_CLI image mft ntfs-volume.img --output /existing/mft-folder
 ```
 
 Use `--sector-size 4096` for a 4 KiB-sector image, `--count N` to bound the scan, and
@@ -102,9 +103,25 @@ rejects symlinks in every component and creates files exclusively with mode 0600
 and cancellation may leave empty created folders. Existing output files are never replaced or
 renamed to resolve name collisions. Cancellation removes the operation's incomplete file.
 
+## NTFS MFT snapshot
+
+Choose **NTFS boot and initialized MFT snapshot**, or run `image mft`. Select the volume boot
+sector and its complete declared sector range with the correct sector size. The reader locates
+record zero from the boot sector and follows its unnamed DATA mapping pairs, including backward
+and fragmented extents. It checks ranges, overlapping runs, FILE headers and update-sequence
+fixups before writing. Outputs **NTFS_BootSector** and **NTFS_MFTInitialized** preserve the raw
+on-disk bytes; fixups are applied only to parsing copies. The latter includes only initialized
+MFT bytes, including unused/zero-filled slots. Reported counts describe record flags/slots.
+
+The initialized stream is limited to 16 MiB, records to 512–65536 bytes and mapping pairs to 4096
+runs. Record zero must fit contiguously within the first run. Attribute-list extensions, sparse,
+compressed/encrypted MFT data and MFT-mirror fallback are unsupported. Invalid metadata or a
+failed/short read prevents output; later output failures retain completed files. This is a bounded
+metadata snapshot, not NTFS user-file reconstruction, metadata repair or whole-volume validation.
+
 ## Current state
 
-- GUI and CLI compile on Linux; all 27 registered CTest executables pass locally in Debug and Release.
+- GUI and CLI compile on Linux; all 28 registered CTest executables pass locally in Debug and Release.
 - The GUI connects real image selection, range/output validation, worker scanning, safe file export
   and results. Progress and cancellation reach the streaming scan and output loops.
 - POSIX output export rejects traversal, symlink components, unsafe names and existing files. It

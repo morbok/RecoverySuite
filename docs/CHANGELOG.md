@@ -1,3 +1,12 @@
+# 2026-10-31 — Bounded NTFS MFT snapshots
+
+Added GUI/CLI image mft exports of the actual NTFS boot sector and initialized MFT stream.
+Validate 64-bit geometry, bootstrap attributes, mapping pairs (including backward/fragmented
+extents), overlapping runs, FILE header bounds and 512-byte update-sequence fixups. Preserve raw
+output bytes and stop before export on unsupported/corrupt metadata. New NTFS integration suite
+covers GUI/CLI output, corruption, large offsets, cancellation, read failures and partial output.
+User-file reconstruction, attribute-list extensions and mirror fallback remain unsupported.
+
 # 2026-10-31 — Bounded recursive FAT recovery
 
 Added GUI files-with-subfolders and CLI image tree for allocated FAT12/16/32 directories/files,

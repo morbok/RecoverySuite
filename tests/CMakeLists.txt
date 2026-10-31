@@ -434,3 +434,10 @@ target_link_libraries(test_fat_files PRIVATE RecoverySuite_GUI RecoverySuite_App
 add_dependencies(test_fat_files RecoverySuite_CLI)
 add_test(NAME test_fat_files COMMAND test_fat_files)
 set_tests_properties(test_fat_files PROPERTIES ENVIRONMENT QT_QPA_PLATFORM=offscreen)
+
+add_executable(test_ntfs_mft test_ntfs_mft.cpp)
+set_target_properties(test_ntfs_mft PROPERTIES AUTOMOC ON)
+target_link_libraries(test_ntfs_mft PRIVATE RecoverySuite_GUI RecoverySuite_Application Qt6::Test)
+add_dependencies(test_ntfs_mft RecoverySuite_CLI)
+add_test(NAME test_ntfs_mft COMMAND test_ntfs_mft)
+set_tests_properties(test_ntfs_mft PROPERTIES ENVIRONMENT QT_QPA_PLATFORM=offscreen)

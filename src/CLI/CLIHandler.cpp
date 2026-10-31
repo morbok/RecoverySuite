@@ -82,9 +82,9 @@ int CLIHandler::run(int argc, char* argv[]) {
 
 int CLIHandler::handleImage(const std::vector<std::string>& args) {
     const auto usageError = [&](const std::string& message) { printError(message); return 2; };
-    if (args.size() < 2 || (args[0] != "info" && args[0] != "carve" && args[0] != "metadata" && args[0] != "analyze" && args[0] != "files" && args[0] != "tree"))
-        return usageError("Use image info/analyze <path> or image carve/metadata/files/tree <path> --output <existing-directory>");
-    const bool carve = args[0] == "carve" || args[0] == "metadata" || args[0] == "files" || args[0] == "tree";
+    if (args.size() < 2 || (args[0] != "info" && args[0] != "carve" && args[0] != "metadata" && args[0] != "analyze" && args[0] != "files" && args[0] != "tree" && args[0] != "mft"))
+        return usageError("Use image info/analyze <path> or image carve/metadata/files/tree/mft <path> --output <existing-directory>");
+    const bool carve = args[0] == "carve" || args[0] == "metadata" || args[0] == "files" || args[0] == "tree" || args[0] == "mft";
     const bool analyze = args[0] == "analyze";
     uint64_t start = 0, count = 0, sectorSize = 512;
     bool countGiven = false, verify = true;
@@ -126,7 +126,7 @@ int CLIHandler::handleImage(const std::vector<std::string>& args) {
             return 0;
         }
         application::service::models::RecoveryOperation operation{};
-        operation.operationType = args[0] == "metadata" ? "metadata_recovery" : (args[0] == "files" ? "file_recovery" : (args[0] == "tree" ? "file_tree_recovery" : "carving")); operation.targetDevicePath = source.devicePath;
+        operation.operationType = args[0] == "mft" ? "ntfs_mft_snapshot" : args[0] == "metadata" ? "metadata_recovery" : (args[0] == "files" ? "file_recovery" : (args[0] == "tree" ? "file_tree_recovery" : "carving")); operation.targetDevicePath = source.devicePath;
         operation.startSector = start; operation.numSectors = count; operation.outputPath = output;
         operation.verifyAfterRecovery = verify;
         unsigned lastPercent = std::numeric_limits<unsigned>::max();
@@ -484,6 +484,7 @@ Usage: RecoverySuite_CLI <command> [arguments]
   image metadata <image> --output <existing-folder>
   image files <image> --output <existing-folder>
   image tree <image> --output <existing-folder>
+  image mft <image> --output <existing-folder>
       [--start <sector>] [--count <sectors>] [--sector-size <bytes>] [--no-verify]
   list
   disk info <disk-number>
@@ -500,7 +501,8 @@ Files copies allocated FAT12/16/32 root files using verified long names or 8.3 a
 Tree adds recursive FAT subfolders (32 levels, 1023 directories, 64 MiB directory reads).
 Empty folders, deleted entries and NTFS files are not exported. Files mode skips subdirectories.
 Metadata saves actual FAT boot/FAT copies and FAT12/16 fixed root entries (16 MiB per region).
-Metadata mode does not reconstruct NTFS MFT or FAT32 root chains. Safe output export currently requires POSIX. Physical-device export is unavailable.
+Mft saves raw NTFS boot and initialized MFT bytes (up to 16 MiB), validating mapping pairs and FILE fixups.
+No NTFS file reconstruction, attribute-list extensions or MFT mirror fallback. FAT metadata mode does not follow FAT32 root chains. Safe output export currently requires POSIX. Physical-device export is unavailable.
 )";
 }
 

@@ -10,6 +10,8 @@ Supported read-only image workflows:
   fragmentation and zero-length files. FAT32 follows the root chain and honors the active FAT. Deleted entries and subdirectories are skipped; invalid long names fall back to ASCII aliases.
 - Optional FAT directory traversal via GUI files-with-subfolders or CLI image tree, with 32-level,
   1023-directory and 64 MiB directory-read limits. Empty folders/permissions/timestamps are not exported.
+- NTFS boot/initialized-MFT snapshots via GUI or CLI image mft: bounded mapping pairs and FILE
+  update-sequence validation, raw bytes preserved. No user-file reconstruction or mirror fallback.
 - CLI image info/analyze for geometry and FAT/NTFS boot-sector fields; unknown metrics stay unknown.
 
 All image export uses a directory-anchored POSIX writer with exclusive creation, path/name checks,
@@ -17,8 +19,8 @@ component-by-component safe directory creation for tree mode,
 optional readback comparison and partial-output cleanup. Cancellation reaches source reads and writes.
 Closing the GUI cancels and waits for worker cleanup; use the atomic flag, not queued cancellation.
 
-There are 27 registered CTest executables. New integration suites cover images, CLI processes, FAT
-snapshots and FAT root files. Build/test commands and limits are in README.md. Check actual CI on the
+There are 28 registered CTest executables. New integration suites cover images, CLI processes, FAT
+snapshots, FAT files and NTFS MFT snapshots. Build/test commands and limits are in README.md. Check actual CI on the
 current head before merge. Keep generated Graphify output and local configuration out of commits.
 
 Legacy RecoveryService recoverMetadata/recoverFiles/carveFiles return buffers, without export. The

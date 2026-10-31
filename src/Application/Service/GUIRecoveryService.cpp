@@ -9,6 +9,7 @@
 #include "safe_file_exporter.h"
 #include "Recovery/signature_carver.h"
 #include "Recovery/fat_root_files.h"
+#include "Recovery/ntfs_mft.h"
 
 namespace recoverysuite {
 namespace application {
@@ -46,8 +47,8 @@ std::string GUIRecoveryService::validateImageOperation(const models::RecoveryOpe
     if (!imageReader_ || !imageReader_->isOpen()) return "Open a disk image first";
     try { imageReader_->validateIdentity(); }
     catch (const std::exception& failure) { return failure.what(); }
-    if (operation.operationType != "carving" && operation.operationType != "metadata_recovery" && operation.operationType != "file_recovery" && operation.operationType != "file_tree_recovery")
-        return "Choose signature carving, a FAT metadata snapshot or FAT12/16/32 file recovery";
+    if (operation.operationType != "carving" && operation.operationType != "metadata_recovery" && operation.operationType != "file_recovery" && operation.operationType != "file_tree_recovery" && operation.operationType != "ntfs_mft_snapshot")
+        return "Choose signature carving, a metadata snapshot or FAT12/16/32 file recovery";
     std::error_code error;
     const auto source = std::filesystem::canonical(operation.targetDevicePath, error);
     if (error || source.string() != imageReader_->sourcePath()) return "The operation source does not match the opened image";
@@ -117,6 +118,15 @@ models::RecoveryResult GUIRecoveryService::executeOperation(const models::Recove
             if (carving) {
                 summary = recovery::carveSignatures(*imageReader_,operation.startSector,operation.numSectors,
                     saveItem,report,cancellationToken);
+            } else if(operation.operationType=="ntfs_mft_snapshot") {
+                const auto mft=recovery::readNtfsMft(*imageReader_,operation.startSector,operation.numSectors,report,cancellationToken);
+                result.details["MFT record bytes"]=std::to_string(mft.recordSize);
+                result.details["MFT in-use record flags"]=std::to_string(mft.inUseRecords);
+                result.details["MFT unused record flags"]=std::to_string(mft.unusedRecords);
+                result.details["MFT zero-filled record slots"]=std::to_string(mft.blankRecords);
+                saveItem("NTFS_BootSector",mft.bootSector);
+                if(!cancelled())saveItem("NTFS_MFTInitialized",mft.initializedRecords);
+                summary.processedBytes=mft.processedBytes;summary.cancelled=cancelled();
             } else if (operation.operationType == "file_recovery" || tree) {
                 const auto files=recovery::recoverFatRootFiles(*imageReader_,operation.startSector,operation.numSectors,saveItem,report,cancellationToken,tree);
                 summary.processedBytes=files.processedBytes;summary.cancelled=files.cancelled;summary.skippedCandidates=files.invalidFiles+files.invalidDirectories;
@@ -155,7 +165,9 @@ models::RecoveryResult GUIRecoveryService::executeOperation(const models::Recove
     if (result.cancelled) result.success = false;
     result.endTime = std::chrono::system_clock::now();
     result.details["Export"] = result.outputWritten ? "Only the listed items were saved to the destination" : "No output files were saved";
-    result.details["Recovery method"] = operation.operationType == "metadata_recovery"
+    result.details["Recovery method"] = operation.operationType == "ntfs_mft_snapshot"
+        ? "NTFS boot and initialized MFT bytes. Mapping pairs, FILE headers and update-sequence fixups checked; raw on-disk bytes preserved. No file reconstruction, mirror fallback or attribute-list extensions."
+        : operation.operationType == "metadata_recovery"
         ? "FAT metadata snapshot: boot sector and FAT copies; FAT12/16 root entries included. No repair, FAT32 root chain or NTFS MFT reconstruction."
         : operation.operationType == "file_tree_recovery" ? "Allocated FAT12/16/32 files with bounded recursive directory traversal. Deleted chains are not inferred; empty directories and original permissions/timestamps are not exported."
         : operation.operationType == "file_recovery" ? "Allocated FAT12/16/32 root files using verified long names or 8.3 aliases and cluster chains. No deleted-file guessing or subdirectory traversal."
