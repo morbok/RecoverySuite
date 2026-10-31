@@ -61,6 +61,9 @@ jobs:
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure --timeout 60
 
+      - name: Read-only synthetic Windows VHD QA
+        shell: pwsh
+        run: ./scripts/qa_vhd_device.ps1 -Cli build/bin/Release/RecoverySuite_CLI.exe
       - name: Windows portable package and extracted CLI smoke
         shell: pwsh
         run: |
@@ -90,7 +93,7 @@ jobs:
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y cmake ninja-build clang libclang-rt-dev qt6-base-dev libudev-dev
       - name: Configure instrumented parsers
-        run: cmake -S . -B build-fuzz -G Ninja -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_BUILD_TYPE=Debug -DRECOVERYSUITE_FUZZING=ON
+        run: cmake -S . -B build-fuzz -G Ninja -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_BUILD_TYPE=RelWithDebInfo -DRECOVERYSUITE_FUZZING=ON
       - name: Build parser harness
         run: cmake --build build-fuzz --target fuzz_recovery_parsers --parallel 2
       - name: Seed and fuzz

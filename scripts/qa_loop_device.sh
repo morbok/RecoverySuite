@@ -24,9 +24,9 @@ test ! -e "$fixture/output/mounted.img"
 sudo umount "$fixture/mount"
 mounted=0
 sudo "$cli" device capture "$loop_device" --output "$fixture/output/captured.img"
-cmp "$fixture/source.img" "$fixture/output/captured.img"
+sudo cmp "$fixture/source.img" "$fixture/output/captured.img"
 if sudo "$cli" device capture "$loop_device" --output "$fixture/output/captured.img"; then
     echo 'Existing destination was incorrectly accepted' >&2; exit 1
 fi
-cmp "$fixture/source.img" "$fixture/output/captured.img"
+sudo cmp "$fixture/source.img" "$fixture/output/captured.img"
 echo 'Read-only loop acquisition passed: mounted-source rejection, exact bytes, no-overwrite'

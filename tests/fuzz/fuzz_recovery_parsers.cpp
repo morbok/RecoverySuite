@@ -1,6 +1,8 @@
 #include "Recovery/fat_root_files.h"
 #include "Recovery/ntfs_mft.h"
 #include "Recovery/signature_carver.h"
+#include "RecoverySuite/Partition/GPTParser.hpp"
+#include "RecoverySuite/Partition/PartitionManager.hpp"
 #include <algorithm>
 #include <cstring>
 #include <stdexcept>
@@ -44,7 +46,8 @@ template <class F> void parse(F &&parser) {
   // findings still abort.
   try {
     parser();
-  } catch (const std::exception &) {
+  } catch (const std::runtime_error &) {
+  } catch (const std::invalid_argument &) {
   }
 }
 } // namespace
@@ -53,6 +56,10 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size) {
     return 0;
   MemorySource source(input, size);
   const auto count = source.getTotalSectors();
+  const auto borrowed =
+      std::shared_ptr<disk::IDiskReader>(&source, [](disk::IDiskReader *) {});
+  parse([&] { partition::PartitionManager(borrowed).validatePartitions(); });
+  parse([&] { partition::GPTParser(borrowed).parseGPT(); });
   const auto discard = [](const std::string &, const std::vector<uint8_t> &) {};
   parse([&] { recovery::carveSignatures(source, 0, count, discard); });
   parse([&] {

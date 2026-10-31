@@ -36,13 +36,13 @@ no-overwrite behavior. It does not touch real devices.
 ## Fuzzing
 
 ```sh
-cmake -S . -B build-fuzz -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_BUILD_TYPE=Debug -DRECOVERYSUITE_FUZZING=ON
+cmake -S . -B build-fuzz -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_BUILD_TYPE=RelWithDebInfo -DRECOVERYSUITE_FUZZING=ON
 cmake --build build-fuzz --target fuzz_recovery_parsers --parallel 2
 python3 scripts/fuzz_corpus.py build-fuzz/corpus
 ASAN_OPTIONS=detect_leaks=0 build-fuzz/bin/fuzz_recovery_parsers build-fuzz/corpus -runs=20000 -max_len=262144 -timeout=5
 ```
 
-The harness exercises FAT files/trees/deleted candidates, NTFS MFT/root/tree/checked/deleted
+The harness exercises MBR/GPT partition parsers, FAT files/trees/deleted candidates, NTFS MFT/root/tree/checked/deleted
 parsers and signature carving with bounded in-memory sources. Valid synthetic seeds reach
 metadata paths; mutations explore corruption. Expected validation exceptions are accepted;
 ASan/UBSan failures, process crashes and timeouts fail the job. Fuzzing is bounded and is not
@@ -51,8 +51,10 @@ a proof that every malformed disk is safe.
 ## Hardware and release gate
 
 CI loop-device acquisition tests operate only on a fresh synthetic read-only loop device.
-Physical USB/SATA/NVMe disks, disconnects, permission policies, failing media and Windows VHD/device
-acquisition still require dedicated QA before a stable release. Verify same-disk rejection,
+Windows CI creates a fresh fixed VHD, attaches it read-only and checks online-source rejection,
+offline capture, exact payload hashes and no-overwrite. It changes only this new fixture disk.
+Physical USB/SATA/NVMe disks, disconnects, permission policies and failing media still require
+dedicated QA before a stable release. Verify same-disk rejection,
 source hashes, cancellation, no-overwrite and exact-byte output using disposable fixtures.
 Do not select the OS/system disk as a source. Windows requires an already offline source;
 Linux requires an unmounted source. Acquisition stops on read errors and offers no rescue retries.

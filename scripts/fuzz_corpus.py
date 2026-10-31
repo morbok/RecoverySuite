@@ -70,7 +70,27 @@ def fixtures():
     return {'fat12.img': bytes(fat), 'ntfs.img': bytes(ntfs), 'signature.img': bytes(signature)}
 
 
+def gpt_fixture():
+    import zlib
+    image = bytearray(64 * 512)
+    image[450] = 0xEE; put(image, 454, 1, 4); put(image, 458, 63, 4)
+    put(image, 510, 0xAA55)
+    header = bytearray(512); header[:8] = b'EFI PART'
+    put(header, 8, 0x10000, 4); put(header, 12, 92, 4)
+    put(header, 24, 1, 8); put(header, 32, 63, 8)
+    put(header, 40, 3, 8); put(header, 48, 61, 8)
+    header[56:72] = bytes(range(1, 17))
+    put(header, 72, 2, 8); put(header, 80, 4, 4); put(header, 84, 128, 4)
+    put(header, 88, zlib.crc32(bytes(512)), 4)
+    put(header, 16, zlib.crc32(header[:92]), 4)
+    image[512:1024] = header
+    put(header, 24, 63, 8); put(header, 32, 1, 8); put(header, 16, 0, 4)
+    put(header, 16, zlib.crc32(header[:92]), 4)
+    image[-512:] = header
+    return bytes(image)
+
+
 if __name__ == '__main__':
     target = Path(sys.argv[1]); target.mkdir(parents=True, exist_ok=True)
-    for name, data in fixtures().items():
+    for name, data in {**fixtures(), "gpt.img": gpt_fixture()}.items():
         (target / name).write_bytes(data)

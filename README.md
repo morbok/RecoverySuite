@@ -19,7 +19,8 @@ ctest --test-dir build --output-on-failure --timeout 30
 ```
 
 Tests run on synthetic inputs; GUI tests use Qt's offscreen platform. Assertions remain enabled
-in Release test targets. CI runs both Debug and Release builds on Linux.
+in Release test targets. CI runs Linux Debug/Release, Windows x64 Release and a bounded Clang sanitizer fuzz job.
+See [development packages and release QA](docs/RELEASE_QA.md) for artifacts and validation gates.
 
 ## Recover from a disk image
 
@@ -29,7 +30,7 @@ existing output folder, and choose **Validate and start recovery**. Saved bytes 
 and compared by default. Existing files are never replaced; use an empty folder for another run.
 The source is opened read-only. Linux rejects replaced, resized or modified sources during reads.
 
-The image workflow scans for contiguous JPEG, PDF and ZIP signatures with explicit end markers.
+The signature-carving mode scans for contiguous JPEG, PDF and ZIP signatures with explicit end markers.
 It saves candidates up to 16 MiB each, with a maximum of 10,000 attempted outputs. These are
 signature candidates, not proof of valid file contents. Original names, deleted-file metadata
 and fragmented files are not reconstructed. Incomplete/oversized candidates and output failures
@@ -51,8 +52,8 @@ are reported; completed files remain available after cancellation or partial fai
 Use `--sector-size 4096` for a 4 KiB-sector image, `--count N` to bound the scan, and
 `--no-verify` to skip readback comparison. Ctrl+C or SIGTERM cancels cooperatively and keeps
 completed outputs. Exit codes: 0 complete, 1 failed/partial, 2 invalid arguments, 130 cancelled.
-Physical-device export and background operation tracking are unavailable; the legacy recovery
-command returns an error instead of reporting unsaved buffers as recovered files.
+Native acquisition is available through `device capture` (see below); image recovery runs in the
+foreground. The legacy recovery command returns an error instead of reporting unsaved buffers as recovered files.
 
 `image analyze` reports FAT/NTFS boot-sector fields, declared geometry and source-size warnings.
 Free/used space, filesystem version and other unexamined properties remain `unknown`. It does not
@@ -241,3 +242,20 @@ output. Open the resulting image with GUI/CLI recovery and its optional recovery
 Enumeration reports actual OS metadata only. SMART/NVMe health, NAND estimates and vendor commands
 are unavailable. Windows native export and acquisition are development features pending CI and
 real-device QA; do not infer real-hardware validation from synthetic image tests.
+
+### Build on Windows x64
+
+Use Visual Studio 2022 C++ tools, CMake and Qt 6.8+ MSVC x64 (Core/Gui/Widgets/Test). Make Qt's
+`bin` directory available on PATH / CMAKE_PREFIX_PATH before configuring:
+
+```powershell
+cmake -S . -B build -A x64
+cmake --build build --config Release --parallel 2
+ctest --test-dir build -C Release --output-on-failure --timeout 60
+cd build
+cpack -C Release -G ZIP
+```
+
+The CLI accepts Unicode arguments through the native Windows wide-character entry point.
+Windows output is limited to local drive paths; unsafe/reserved names and reparse points are
+rejected. The portable package bundles Qt; see RELEASE_QA.md for runtime prerequisites.

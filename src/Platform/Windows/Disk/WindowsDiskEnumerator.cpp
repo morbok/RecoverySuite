@@ -3,11 +3,10 @@
 #include <cstddef>
 #include <set>
 #include <vector>
-// Windows base types must precede storage headers; initguid must precede ntddstor.
+// The user-mode winioctl header supplies storage types and disk interface GUIDs.
 // clang-format off
 #include <windows.h>
 #include <initguid.h>
-#include <ntddstor.h>
 #include <setupapi.h>
 #include <winioctl.h>
 // clang-format on
