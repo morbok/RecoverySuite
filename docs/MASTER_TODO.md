@@ -38,11 +38,18 @@ Updated: 2026-10-31. Historical phase summaries are not the release checklist.
        [x] Correct legacy NTFS boot fields and remove fabricated consistency/allocation/repair metrics.
 7. [ ] Add end-to-end fixtures for deleted files, fragmentation, corruption and partial output failures;
        run sanitizers and fuzz parsers before real-device testing.
-8. [ ] Validate Windows builds/device access and Linux device enumeration; make permissions and errors explicit.
-9. [ ] Implement session persistence and resume with versioned state and source identity checks.
+8. [ ] Complete native platform validation (real hardware remains open).
+       [x] Replace fake inventory with Linux sysfs / Windows storage metadata.
+       [x] Add guarded read-only physical acquisition, source/destination checks and safe Windows output.
+       [x] Add Windows build/tests and Linux synthetic loop acquisition CI.
+       [ ] Verify Windows device acquisition and physical USB/SATA/NVMe behavior.
+9. [x] Implement session persistence and resume with versioned state and source identity checks.
 10. [ ] Complete intended SSD diagnostics, hex inspection and optional plugin support according to actual
         product scope; expose unavailable features honestly.
-11. [ ] Package installers, document supported recovery capabilities and limitations, and complete release QA.
+11. [ ] Finish stable-release QA and redistribution decisions.
+        [x] Add development Linux TGZ/Ubuntu DEB and Windows ZIP with checksums.
+        [x] Add installed/extracted CLI and GUI smoke tests and instrumented parser fuzzing.
+        [ ] Complete hardware matrix, signing, application license and third-party notices, and code review.
 
 ## Git workflow
 

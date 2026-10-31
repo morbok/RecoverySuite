@@ -75,4 +75,4 @@ install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/ DESTINATION include/RecoverySuite
         FILES_MATCHING PATTERN "*.h")
 
 # Install the executable
-install(TARGETS RecoverySuite_GUI_Exe DESTINATION bin)
+install(TARGETS RecoverySuite_GUI_Exe RUNTIME DESTINATION bin COMPONENT Runtime)

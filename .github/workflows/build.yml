@@ -21,7 +21,29 @@ jobs:
       - name: Build
         run: cmake --build build --parallel 2
       - name: Test
-        run: ctest --test-dir build --output-on-failure --timeout 30
+        run: ctest --test-dir build --output-on-failure --timeout 60
+
+      - name: Installed package smoke and Linux packages
+        if: matrix.build_type == 'Release'
+        run: |
+          cmake --install build --prefix "$RUNNER_TEMP/recoverysuite-stage" --component Runtime
+          python3 scripts/package_smoke.py "$RUNNER_TEMP/recoverysuite-stage/bin/RecoverySuite_CLI"
+          cd build
+          cpack -G 'TGZ;DEB'
+          mkdir unpacked
+          tar -xzf RecoverySuite-*-Linux-*.tar.gz -C unpacked
+          python3 ../scripts/package_smoke.py "$(find unpacked -type f -name RecoverySuite_CLI)"
+      - name: Read-only synthetic block device QA
+        if: matrix.build_type == 'Release'
+        run: bash scripts/qa_loop_device.sh build/bin/RecoverySuite_CLI
+      - uses: actions/upload-artifact@v4
+        if: matrix.build_type == 'Release'
+        with:
+          name: RecoverySuite-Linux-development
+          path: |
+            build/RecoverySuite-*.tar.gz*
+            build/RecoverySuite-*.deb*
+          if-no-files-found: error
 
   windows:
     runs-on: windows-2022
@@ -38,3 +60,47 @@ jobs:
         run: cmake --build build --config Release --parallel 2
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure --timeout 60
+
+      - name: Windows portable package and extracted CLI smoke
+        shell: pwsh
+        run: |
+          cmake --install build --config Release --prefix "$env:RUNNER_TEMP/recoverysuite-stage" --component Runtime
+          if ($LASTEXITCODE -ne 0) { throw 'Install failed' }
+          python scripts/package_smoke.py "$env:RUNNER_TEMP/recoverysuite-stage/bin/RecoverySuite_CLI.exe"
+          if ($LASTEXITCODE -ne 0) { throw 'Installed CLI smoke failed' }
+          Push-Location build
+          cpack -C Release -G ZIP
+          if ($LASTEXITCODE -ne 0) { throw 'CPack failed' }
+          $archive = Get-ChildItem RecoverySuite-*.zip | Select-Object -First 1
+          Expand-Archive $archive.FullName unpacked
+          $cli = Get-ChildItem unpacked -Filter RecoverySuite_CLI.exe -Recurse | Select-Object -First 1
+          python ../scripts/package_smoke.py $cli.FullName
+          if ($LASTEXITCODE -ne 0) { throw 'Extracted CLI smoke failed' }
+          Pop-Location
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RecoverySuite-Windows-development
+          path: build/RecoverySuite-*.zip*
+          if-no-files-found: error
+
+  fuzz:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build clang libclang-rt-dev qt6-base-dev libudev-dev
+      - name: Configure instrumented parsers
+        run: cmake -S . -B build-fuzz -G Ninja -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_BUILD_TYPE=Debug -DRECOVERYSUITE_FUZZING=ON
+      - name: Build parser harness
+        run: cmake --build build-fuzz --target fuzz_recovery_parsers --parallel 2
+      - name: Seed and fuzz
+        run: |
+          python3 scripts/fuzz_corpus.py build-fuzz/corpus
+          mkdir build-fuzz/findings
+          ASAN_OPTIONS=detect_leaks=0 build-fuzz/bin/fuzz_recovery_parsers build-fuzz/corpus -runs=5000 -max_len=262144 -timeout=5 -artifact_prefix=build-fuzz/findings/
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: fuzz-findings
+          path: build-fuzz/findings
+          if-no-files-found: ignore

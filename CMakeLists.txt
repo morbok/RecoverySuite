@@ -63,6 +63,15 @@ configure_file(
     "${CMAKE_CURRENT_BINARY_DIR}/src/Core/config.h"
 )
 
+option(RECOVERYSUITE_FUZZING "Build Clang libFuzzer parser harness" OFF)
+if(RECOVERYSUITE_FUZZING)
+    if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+        message(FATAL_ERROR "RECOVERYSUITE_FUZZING requires Clang")
+    endif()
+    add_compile_options(-fsanitize=fuzzer-no-link,address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=address,undefined)
+endif()
+
 # Add source directories
 add_subdirectory(src)
 
@@ -72,3 +81,8 @@ add_subdirectory(tests)
 
 # Install headers
 install(DIRECTORY include/ DESTINATION ${INSTALL_INCLUDE_DIR})
+
+if(RECOVERYSUITE_FUZZING)
+    add_subdirectory(tests/fuzz)
+endif()
+include(cmake/Packaging.cmake)

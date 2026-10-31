@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=RecoverySuite (Development)
+Comment=Recover files from disk images
+Exec=RecoverySuite_GUI
+Icon=recoverysuite
+Terminal=false
+Categories=Utility;System;

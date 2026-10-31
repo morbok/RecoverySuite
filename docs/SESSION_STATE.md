@@ -348,3 +348,20 @@ selected session state. The Windows CI job compiles and runs all registered test
 will be recorded separately. Native I/O tests cover Unicode, source identity, output paths, state
 replacement, no-overwrite, cancellation, regular-file/device rejection and injectable Linux sysfs.
 Local Debug: 30 registered test executables. Real hardware remains untested.
+
+## Stage 6 — Development packaging and parser fuzzing
+
+Added CPack runtime-only Linux TGZ/Ubuntu DEB and Windows portable ZIP generation, package SHA-256
+files, desktop integration and release-QA instructions. Windows bundles Qt via windeployqt; the
+official VC redistributable is a documented prerequisite. CI uploads development artifacts only.
+A shared synthetic corpus feeds installed/extracted package smoke tests (FAT/NTFS exact bytes,
+carving, Unicode source/output paths, resume, no-overwrite, source preservation and GUI startup).
+Clang libFuzzer instruments library code with ASan/UBSan and exercises carving plus FAT/NTFS
+metadata/file/tree/checked/deleted parsers. CI includes a bounded fuzz run and fresh read-only
+Linux loop-device acquisition with mounted-source rejection and output comparison.
+
+Local TGZ generation and extracted-package CLI/GUI smoke passed. No local Debian packaging tools
+or passwordless loop-device permissions are available; those checks run on dedicated CI fixtures.
+Windows first CI caught storage-header include ordering, fixed at 6206532. Further CI validation
+and fuzz/sanitizer totals are recorded in the final checkpoint. Real hardware, signing, application
+license decision/third-party notice review and code review remain stable-release gates.
