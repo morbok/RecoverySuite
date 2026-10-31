@@ -25,16 +25,20 @@ the recovery product. README.md describes the supported workflow and MASTER_TODO
 
 ## Validation
 
-27 CTest executables pass locally in Debug and Release with assertions active. The image integration
-suite also passes AddressSanitizer/UBSan. Tests cover source mutation, invalid ranges/destinations,
+28 CTest executables pass locally in Debug and Release with assertions active. The image, FAT metadata,
+FAT file and NTFS integration suites also pass AddressSanitizer/UBSan. Tests cover source mutation, invalid ranges/destinations,
 symlinks/hardlinks/traversal, no-overwrite/partial output, cancellation, incomplete/oversized candidates,
 GUI clicks and closing during recovery. Source hashes and saved bytes are checked on synthetic images.
-Remote CI must be checked for the current PR head before merge.
+GitHub Linux Debug and Release checks passed for code revision `7606815ff46a4aef9efe2423abbf80982a1e7a2b`
+(run `41153617015`), verified in the PR checks UI on 2026-10-31. Any newer head needs its own CI check
+before merge; code review remains outstanding. Earlier checkpoint CI notes below are historical.
 
 ## Limits and next work
 
-Only the new image GUI workflow exports files. Legacy file/metadata recovery, raw-device
-discovery, FAT/NTFS completeness, fragmentation, resumable sessions and Windows export remain work.
+GUI and CLI image workflows export signature candidates, FAT metadata, allocated FAT directory trees,
+initialized NTFS MFT snapshots and resident NTFS root files. Fragmented FAT chains and MFT streams
+are supported within documented bounds. Nonresident/recursive NTFS files, allocation/index consistency,
+deleted reconstruction, raw-device workflows, resumable sessions and Windows export remain work.
 The signature carver does not validate full file formats. Limits: 16 MiB/candidate, 10,000 attempted
 outputs, 64 KiB scan chunks. Windows and real hardware have not been validated.
 
@@ -244,3 +248,15 @@ detection disabled. Legacy regression exits normally under GDB (3 passes includi
 Graphify: 3861 nodes / 6866 edges; 20 existing config-node source_file warnings. Remote CI remains
 unverified; no merge. Still open: nonresident/recursive NTFS files, allocation/index consistency,
 deleted recovery, Windows safe export, persisted sessions, hardware QA and packaging.
+
+## 2026-10-31 — Verification checkpoint
+
+Rebuilt Debug, Release and ASan/UBSan configurations at code revision `7606815` and reran validation:
+28/28 Debug tests (3.96 s), 28/28 Release tests (1.62 s), and 4/4 sanitizer integration suites
+(14.12 s; ASAN_OPTIONS=detect_leaks=0 for Qt). Local HEAD matched the remote branch before this
+documentation update. No source changes or newly failing tests were found.
+
+Verified both GitHub Linux jobs succeeded for that exact code revision:
+https://github.com/morbok/RecoverySuite/actions/runs/41153617015
+This checkpoint updates the current validation/scope summary above; it does not imply release
+completion, Windows/hardware validation or completed code review.
