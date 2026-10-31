@@ -181,6 +181,7 @@ void ReadOnlyDevice::open(const std::string &path) {
 #endif
   if (candidate->sector < 512 || candidate->sector > 4096 ||
       (candidate->sector & (candidate->sector - 1)) || !candidate->size ||
+      candidate->size > uint64_t(std::numeric_limits<int64_t>::max()) ||
       candidate->size % candidate->sector)
     throw DiskException("Unsupported physical sector geometry");
   impl_ = std::move(candidate);
@@ -204,7 +205,13 @@ DeviceInformation ReadOnlyDevice::getDiskInfo() const {
   DeviceInformation info;
   info.devicePath = impl_->path;
   info.isReadOnly = true;
-  info.modelNumber = "Read-only physical source";
+  info.modelNumber = "Unknown";
+#ifdef _WIN32
+  info.diskNumber = impl_->number;
+#elif defined(__linux__)
+  info.diskNumber = (uint64_t(major(dev_t(impl_->identity))) << 32) |
+                    minor(dev_t(impl_->identity));
+#endif
   info.bytesPerSector = impl_->sector;
   info.logicalBytesPerSector = impl_->sector;
   info.totalSizeBytes = impl_->size;

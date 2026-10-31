@@ -33,6 +33,8 @@ jobs:
           mkdir unpacked
           tar -xzf RecoverySuite-*-Linux-*.tar.gz -C unpacked
           python3 ../scripts/package_smoke.py "$(find unpacked -type f -name RecoverySuite_CLI)"
+          dpkg-deb -x RecoverySuite-*-Linux-*.deb unpacked-deb
+          python3 ../scripts/package_smoke.py unpacked-deb/usr/bin/RecoverySuite_CLI
       - name: Read-only synthetic block device QA
         if: matrix.build_type == 'Release'
         run: bash scripts/qa_loop_device.sh build/bin/RecoverySuite_CLI

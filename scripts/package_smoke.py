@@ -3,15 +3,23 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import hashlib
 import json
+import os
 import subprocess
 import sys
 from fuzz_corpus import fixtures
 
 cli = str(Path(sys.argv[1]).resolve())
+runtime_env = dict(os.environ)
+for key in ('QT_PLUGIN_PATH', 'QML2_IMPORT_PATH', 'QML_IMPORT_PATH'):
+    runtime_env.pop(key, None)
+if os.name == 'nt' and os.environ.get('QT_ROOT_DIR'):
+    qt_root = os.path.normcase(os.path.abspath(os.environ['QT_ROOT_DIR']))
+    runtime_env['PATH'] = os.pathsep.join(item for item in runtime_env.get('PATH', '').split(os.pathsep)
+        if not os.path.normcase(os.path.abspath(item)).startswith(qt_root + os.sep))
 
 
 def run(*args, expected=0):
-    result = subprocess.run([cli, *map(str, args)], capture_output=True, timeout=30)
+    result = subprocess.run([cli, *map(str, args)], capture_output=True, timeout=30, env=runtime_env)
     if result.returncode != expected:
         raise RuntimeError(f'{args}: exit {result.returncode}\n{result.stdout!r}\n{result.stderr!r}')
     return result
@@ -37,17 +45,16 @@ with TemporaryDirectory(prefix='recoverysuite-package-') as name:
             method = 'files' if filename.startswith('fat') else 'ntfs-files'
             run('image', method, source, '--output', output)
             assert (output / 'HELLO.TXT').read_bytes() == b'hello'
-            result = subprocess.run([cli, 'image', method, str(source), '--output', str(output)], capture_output=True, timeout=30)
+            result = subprocess.run([cli, 'image', method, str(source), '--output', str(output)], capture_output=True, timeout=30, env=runtime_env)
             assert result.returncode != 0, 'existing output was accepted'
             assert (output / 'HELLO.TXT').read_bytes() == b'hello'
         assert hashlib.sha256(source.read_bytes()).digest() == digest
 print('Package smoke passed: FAT/NTFS exact bytes, carving, resume, source preservation, no-overwrite')
 
 # A running GUI confirms that Qt libraries and the platform plugin load from the package.
-import os
 import time
 gui = Path(cli).with_name('RecoverySuite_GUI.exe' if os.name == 'nt' else 'RecoverySuite_GUI')
-env = dict(os.environ, QT_QPA_PLATFORM='offscreen')
+env = dict(runtime_env, QT_QPA_PLATFORM='offscreen')
 process = subprocess.Popen([str(gui)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
 try:
     time.sleep(1)

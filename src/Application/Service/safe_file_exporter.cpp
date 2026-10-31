@@ -492,6 +492,8 @@ WinHandle output(HANDLE parent, const std::string &name, uint64_t size,
                  const SafeFileExporter::ReadAt &read, bool verify,
                  const std::function<bool()> &cancelled) {
   winCancel(cancelled);
+  if (size > uint64_t(std::numeric_limits<LONGLONG>::max()))
+    throw std::runtime_error("Output exceeds platform offset limit");
   auto file =
       relative(parent, wide(name),
                FILE_GENERIC_READ | FILE_GENERIC_WRITE | DELETE, 2, false);

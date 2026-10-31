@@ -8,6 +8,7 @@
 #include <QFile>
 #include <QTemporaryDir>
 #include <QTest>
+#include <limits>
 #ifdef __linux__
 #include "Platform/Linux/Disk/LinuxDiskEnumerator.h"
 #endif
@@ -91,6 +92,22 @@ private slots:
     save(root.filePath(QString::fromStdString(name)), "changed");
     QVERIFY_EXCEPTION_THROWN(writer.verifyStream(name, 150000, source, true),
                              std::runtime_error);
+  }
+  void rejectsOversizedOutput() {
+    QTemporaryDir root;
+    application::service::SafeFileExporter writer(root.path().toStdString());
+    bool requested = false;
+    const auto source = [&](uint64_t, size_t n) {
+      requested = true;
+      return std::vector<uint8_t>(n);
+    };
+    QVERIFY_EXCEPTION_THROWN(
+        writer.writeStream("oversized.bin",
+                           std::numeric_limits<uint64_t>::max(), source, true,
+                           false),
+        std::runtime_error);
+    QVERIFY(!requested);
+    QVERIFY(!QFileInfo::exists(root.filePath("oversized.bin")));
   }
   void rejectsLinks() {
     QTemporaryDir root;

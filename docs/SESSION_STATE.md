@@ -25,8 +25,8 @@ the recovery product. README.md describes the supported workflow and MASTER_TODO
 
 ## Validation
 
-28 CTest executables pass locally in Debug and Release with assertions active. The image, FAT metadata,
-FAT file and NTFS integration suites also pass AddressSanitizer/UBSan. Tests cover source mutation, invalid ranges/destinations,
+30 CTest executables pass locally in Debug and Release with assertions active. The image, FAT metadata,
+FAT file, NTFS, persistent-session and native-I/O integration suites also pass AddressSanitizer/UBSan. Tests cover source mutation, invalid ranges/destinations,
 symlinks/hardlinks/traversal, no-overwrite/partial output, cancellation, incomplete/oversized candidates,
 GUI clicks and closing during recovery. Source hashes and saved bytes are checked on synthetic images.
 GitHub Linux Debug and Release checks passed for code revision `7606815ff46a4aef9efe2423abbf80982a1e7a2b`
@@ -39,8 +39,9 @@ GUI and CLI image workflows export signature candidates, FAT metadata, allocated
 initialized NTFS MFT snapshots and resident/nonresident NTFS root files. Fragmented FAT chains and MFT streams
 are supported within documented bounds. Checked NTFS mode now adds directory paths, bounded user-file attribute-list extensions, allocation/index
 cross-checks and streamed files up to 2 GiB; separate FAT/NTFS modes export deleted candidates with
-explicit uncertainty. MFT bootstrap/nested lists, broader damaged/deleted-chain inference, raw-device
-workflows, resumable sessions and Windows export remain work.
+explicit uncertainty. MFT bootstrap/nested lists and broader damaged/deleted-chain inference remain work. Persistent
+image sessions, native read-only CLI acquisition and anchored Windows export are implemented;
+see current platform CI results below and RELEASE_QA.md for remaining hardware/release gates.
 The signature carver does not validate full file formats. Limits: 16 MiB/candidate, 10,000 attempted
 outputs, 64 KiB scan chunks. Windows and real hardware have not been validated.
 
@@ -365,3 +366,12 @@ or passwordless loop-device permissions are available; those checks run on dedic
 Windows first CI caught storage-header include ordering, fixed at 6206532. Further CI validation
 and fuzz/sanitizer totals are recorded in the final checkpoint. Real hardware, signing, application
 license decision/third-party notice review and code review remain stable-release gates.
+
+Local stage 4–6 validation: Debug 30/30 (6.27 s), Release 30/30 (2.03 s), six ASan/UBSan
+integration executables 6/6 (29.04 s; Qt leak detection disabled). The final optimized Clang harness,
+including MBR/GPT, completed 20,000 fuzz runs in 32 s (625/s; peak RSS 445 MiB), with fatal
+sanitizer recovery disabled and no findings. The earlier exploratory Debug harness is separate.
+Linux CI at 2b716c2 passed all tests and generated TGZ/DEB packages with installed/extracted smoke;
+its loop capture produced a verified 32 MiB image, then its unprivileged comparison failed on the
+root-owned 0600 output. The fixture comparison now uses sudo. Windows SDK duplication was narrowed
+to the user-mode winioctl header. A fresh head must pass all jobs before merge.
