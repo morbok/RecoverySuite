@@ -320,3 +320,13 @@ no-overwrite, partial-output cleanup and cancellation are verified on synthetic 
 Graphify: 3971 nodes / 7240 edges; 20 existing config-node source_file warnings. Stage-two GitHub
 Linux Debug and Release passed for 36909e2 (run 41225845937). Final head needs its own CI check.
 No Windows or real-hardware validation, release completion or merge is claimed.
+
+## Stage 4 — Persistent recovery sessions
+
+Added optional versioned JSON sessions across image export methods, full-source SHA-256 identity,
+pending/completed per-output hashes, atomic state replacement and single-process locking. Resume
+replays discovery, verifies earlier files through anchored handles and retries remaining items without
+overwrite. CLI image --session and session resume; GUI session path and File/Resume configuration
+review. Tests cover interruption/restart, CLI, source/output tampering, malformed schema/engine,
+configuration mismatch, pending/missing outputs and concurrent locks. Hard-killed incomplete output
+is reported as a conflict; no arbitrary file is deleted. Linux integration validation follows.

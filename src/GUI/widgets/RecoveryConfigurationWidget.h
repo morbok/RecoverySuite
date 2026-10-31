@@ -12,6 +12,7 @@ class RecoveryConfigurationWidget : public QWidget {
 public:
     explicit RecoveryConfigurationWidget(QWidget* parent = nullptr);
     void setRecoveryService(application::service::GUIRecoveryService* service);
+    void setOperation(const application::service::models::RecoveryOperation& operation);
     void setSelectedDevice(const QString& path);
     application::service::models::RecoveryOperation getRecoveryOperation() const;
 public slots:
@@ -26,6 +27,8 @@ private:
     QLineEdit* start_;
     QLineEdit* count_;
     QLineEdit* output_;
+    QLineEdit* session_;
+    bool resumeSession_{};
     QCheckBox* verify_;
     QComboBox* method_;
 };

@@ -135,6 +135,8 @@ struct RecoveryOperation {
     std::string outputPath;
     bool verifyAfterRecovery{};
     bool createLogFile{};
+    std::string sessionPath;
+    bool resumeSession{};
 };
 
 } // namespace models

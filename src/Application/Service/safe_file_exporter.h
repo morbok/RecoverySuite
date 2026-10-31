@@ -20,6 +20,11 @@ public:
     // Pulls <=64 KiB at a time; exact-length chunks required. Cleanup and no-overwrite match write().
     void writeStream(const std::string& path,uint64_t size,const ReadAt& read,bool verify,bool tree,
                      const std::function<bool()>& cancelled = {});
+    // Verify an existing anchored regular output without changing it.
+    void verifyStream(const std::string& path,uint64_t size,const ReadAt& read,bool tree,
+                      const std::function<bool()>& cancelled = {});
+    // Atomic replacement reserved for an explicitly selected application state file.
+    void replaceState(const std::string& name,const std::vector<uint8_t>& data);
     // Relative tree paths are validated component by component; directories use mode 0700.
     // Existing real directories may be reused; symlinks and existing files are rejected.
     void writeTree(const std::string& path, const std::vector<uint8_t>& data, bool verify,

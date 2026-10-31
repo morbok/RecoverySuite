@@ -34,7 +34,8 @@ RecoveryConfigurationWidget::RecoveryConfigurationWidget(QWidget* parent) : QWid
     count_ = new QLineEdit(this); count_->setObjectName("recoveryCount");
     output_ = new QLineEdit(this); output_->setObjectName("recoveryOutput");
     form->addRow(tr("Start sector"), start_); form->addRow(tr("Number of sectors"), count_);
-    form->addRow(tr("Existing output folder"), output_); layout->addLayout(form);
+    form->addRow(tr("Existing output folder"), output_);
+    session_=new QLineEdit(this);session_->setObjectName("recoverySession");session_->setPlaceholderText(tr("Optional new session file; use File → Resume session for an existing one"));form->addRow(tr("Session file"),session_); layout->addLayout(form);
     auto* browse = new QPushButton(tr("Choose output folder…"), this); layout->addWidget(browse);
     connect(browse, &QPushButton::clicked, this, [this] {
         const auto directory = QFileDialog::getExistingDirectory(this, tr("Output folder"));
@@ -49,6 +50,7 @@ RecoveryConfigurationWidget::RecoveryConfigurationWidget(QWidget* parent) : QWid
 }
 void RecoveryConfigurationWidget::setRecoveryService(application::service::GUIRecoveryService* service) { service_ = service; }
 void RecoveryConfigurationWidget::setSelectedDevice(const QString& path) {
+    resumeSession_=false;session_->clear();
     source_ = path; sourceLabel_->setText(path); start_->setText("0"); status_->clear();
     if (service_) count_->setText(QString::number(service_->getDiskInfo(path.toStdString()).totalSectors));
 }
@@ -62,8 +64,12 @@ application::service::models::RecoveryOperation RecoveryConfigurationWidget::get
     };
     operation.operationType = method_->currentData().toString().toStdString(); operation.targetDevicePath = source_.toStdString();
     operation.startSector = parse(start_->text()); operation.numSectors = parse(count_->text());
+    operation.sessionPath=session_->text().toStdString();operation.resumeSession=resumeSession_;
     operation.outputPath = output_->text().toStdString(); operation.verifyAfterRecovery = verify_->isChecked();
     return operation;
+}
+void RecoveryConfigurationWidget::setOperation(const application::service::models::RecoveryOperation& operation) {
+    source_=QString::fromStdString(operation.targetDevicePath);sourceLabel_->setText(source_);method_->setCurrentIndex(method_->findData(QString::fromStdString(operation.operationType)));start_->setText(QString::number(operation.startSector));count_->setText(QString::number(operation.numSectors));output_->setText(QString::fromStdString(operation.outputPath));verify_->setChecked(operation.verifyAfterRecovery);session_->setText(QString::fromStdString(operation.sessionPath));resumeSession_=operation.resumeSession;status_->setText(tr("Review the saved configuration. Resume rechecks the source and completed outputs, then replays discovery."));
 }
 void RecoveryConfigurationWidget::validateConfiguration() {
     if (!service_) { status_->setText(tr("Recovery service is unavailable")); return; }

@@ -7,6 +7,7 @@
 #include <limits>
 #include <set>
 #include "Application/Service/GUIRecoveryService.h"
+#include "Application/Service/recovery_session.h"
 
 namespace recoverysuite {
 namespace cli {
@@ -44,7 +45,17 @@ int CLIHandler::run(int argc, char* argv[]) {
                    [](unsigned char c){ return std::tolower(c); });
 
     // Route to appropriate handler
-    if (command == "image") {
+    if(command=="session") {
+        if(args.size()!=2||args[0]!="resume"){printError("Use session resume <session.json>");return 2;}
+        try {
+            const auto session=application::service::RecoverySession::inspect(args[1]);application::service::GUIRecoveryService service(nullptr);service.openImage(session.operation.targetDevicePath,session.sectorSize);
+            const auto result=service.executeOperation(session.operation,{},cancellation_);
+            for(const auto& [key,value]:result.details)std::cout<<key<<": "<<value<<'\n';
+            std::cout<<"Available items: "<<result.recoveredItemsCount<<"\n";
+            if(result.cancelled)return 130;
+            if(!result.success){printError(result.errorMessage);return 1;}return 0;
+        }catch(const std::exception& failure){printError(failure.what());return 1;}
+    } else if (command == "image") {
         return handleImage(args);
     } else if (command == "list") {
         handleList(args);
@@ -88,16 +99,17 @@ int CLIHandler::handleImage(const std::vector<std::string>& args) {
     const bool analyze = args[0] == "analyze";
     uint64_t start = 0, count = 0, sectorSize = 512;
     bool countGiven = false, verify = true;
-    std::string output;
+    std::string output,sessionPath;
     std::set<std::string> seen;
     for (size_t i = 2; i < args.size(); ++i) {
         const auto& option = args[i];
         if (!seen.insert(option).second) return usageError("Duplicate option: " + option);
         if (carve && option == "--no-verify") { verify = false; continue; }
-        if (option != "--sector-size" && !((carve || analyze) && (option == "--start" || option == "--count")) && !(carve && option == "--output"))
+        if (option != "--sector-size" && !((carve || analyze) && (option == "--start" || option == "--count")) && !(carve && (option == "--output"||option=="--session")))
             return usageError("Unknown option: " + option);
         if (++i == args.size()) return usageError("Missing value for " + option);
         if (option == "--output") { output = args[i]; continue; }
+        if(option=="--session"){sessionPath=args[i];continue;}
         uint64_t value = 0;
         if (!parseUint64(args[i], value)) return usageError("Invalid unsigned number for " + option);
         if (option == "--sector-size") sectorSize = value;
@@ -128,7 +140,7 @@ int CLIHandler::handleImage(const std::vector<std::string>& args) {
         application::service::models::RecoveryOperation operation{};
         operation.operationType = args[0] == "ntfs-deleted" ? "ntfs_deleted_recovery" : args[0] == "fat-deleted" ? "fat_deleted_recovery" : args[0] == "ntfs-checked" ? "ntfs_checked_recovery" : args[0] == "ntfs-tree" ? "ntfs_tree_recovery" : args[0] == "ntfs-files" ? "ntfs_resident_recovery" : args[0] == "mft" ? "ntfs_mft_snapshot" : args[0] == "metadata" ? "metadata_recovery" : (args[0] == "files" ? "file_recovery" : (args[0] == "tree" ? "file_tree_recovery" : "carving")); operation.targetDevicePath = source.devicePath;
         operation.startSector = start; operation.numSectors = count; operation.outputPath = output;
-        operation.verifyAfterRecovery = verify;
+        operation.verifyAfterRecovery = verify;operation.sessionPath=sessionPath;
         unsigned lastPercent = std::numeric_limits<unsigned>::max();
         const auto result = service.executeOperation(operation, [&](const auto& progress) {
             if (progress.totalBytes && progress.percentage != lastPercent) {
@@ -485,6 +497,8 @@ Usage: RecoverySuite_CLI <command> [arguments]
   image files <image> --output <existing-folder>
   image tree <image> --output <existing-folder>
   image mft <image> --output <existing-folder>
+  session resume <session.json>
+  image <method> <image> --output <folder> --session <session.json>
   image ntfs-deleted <image> --output <existing-folder>
   image fat-deleted <image> --output <existing-folder>
   image ntfs-checked <image> --output <existing-folder>

@@ -5,6 +5,7 @@ add_library(RecoverySuite_Application STATIC
     Service/RecoveryService.cpp
     Service/GUIRecoveryService.cpp
     Service/safe_file_exporter.cpp
+    Service/recovery_session.cpp
 )
 
 target_include_directories(RecoverySuite_Application

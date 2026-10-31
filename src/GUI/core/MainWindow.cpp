@@ -12,6 +12,8 @@
 #include <QPushButton>
 #include <QCloseEvent>
 #include <QTimer>
+#include <QFileDialog>
+#include "Application/Service/recovery_session.h"
 namespace recoverysuite::gui::core {
 MainWindow::MainWindow(application::service::GUIRecoveryService* service, QWidget* parent)
     : QMainWindow(parent), service_(service) {
@@ -20,6 +22,12 @@ MainWindow::MainWindow(application::service::GUIRecoveryService* service, QWidge
     setWindowTitle(tr("RecoverySuite — Disk image recovery")); resize(1100, 800); setMinimumSize(800, 600);
     auto* file = menuBar()->addMenu(tr("File"));
     file->addAction(tr("Open disk image…"), this, &MainWindow::showSources);
+    file->addAction(tr("Resume session…"),this,[this] {
+        if(running_)return;
+        const auto path=QFileDialog::getOpenFileName(this,tr("Resume recovery session"),{},tr("Recovery session (*.json);;All files (*)"));if(path.isEmpty())return;
+        try{const auto saved=application::service::RecoverySession::inspect(path.toStdString());service_->openImage(saved.operation.targetDevicePath,saved.sectorSize);onSourceSelected(QString::fromStdString(saved.operation.targetDevicePath));operation_=saved.operation;configuration_->setOperation(saved.operation);updateControls();}
+        catch(const std::exception& failure){status_->setText(QString::fromUtf8(failure.what()));}
+    });
     file->addAction(tr("Exit"), this, &QWidget::close);
     auto* central = new QWidget(this); auto* layout = new QVBoxLayout(central);
     auto* actions = new QHBoxLayout;

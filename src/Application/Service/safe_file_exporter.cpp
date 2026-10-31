@@ -5,6 +5,8 @@
 #include <stdexcept>
 #include <system_error>
 #include <limits>
+#include <random>
+#include <atomic>
 #ifndef _WIN32
 #include <fcntl.h>
 #include <unistd.h>
@@ -145,6 +147,40 @@ void SafeFileExporter::writeStream(const std::string& path,uint64_t size,const R
     }
     writeAt(parent.get(),components.back(),size,read,verify,cancelled);
 }
+void SafeFileExporter::verifyStream(const std::string& path,uint64_t size,const ReadAt& read,bool tree,const std::function<bool()>& cancelled) {
+    if(path.empty()||path.size()>4095||(!tree&&path.find('/')!=std::string::npos))throw std::invalid_argument("Invalid saved output path");
+    Descriptor parent(::fcntl(impl_->directory.get(),F_DUPFD_CLOEXEC,0));
+    if(parent.get()<0)throw std::runtime_error("Cannot anchor saved output");
+    size_t start=0,depth=0;
+    while(true) {
+        checkCancel(cancelled);const auto end=path.find('/',start),length=end==std::string::npos?path.size()-start:end-start;
+        const auto part=path.substr(start,length);
+        if(part.empty()||part.size()>255||part=="."||part==".."||part.find_first_of("\\:")!=std::string::npos||std::any_of(part.begin(),part.end(),[](unsigned char c){return c<32||c==127;}))throw std::invalid_argument("Unsafe saved output path");
+        if(end==std::string::npos) {
+            Descriptor file(::openat(parent.get(),part.c_str(),O_RDONLY|O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC));struct stat info{};
+            if(file.get()<0||::fstat(file.get(),&info)||!S_ISREG(info.st_mode)||info.st_size<0||uint64_t(info.st_size)!=size)throw std::runtime_error("Saved output is missing or changed");
+            for(uint64_t offset=0;offset<size;) {
+                checkCancel(cancelled);const auto n=static_cast<size_t>(std::min<uint64_t>(65536,size-offset));const auto expected=read(offset,n);
+                std::vector<uint8_t> actual(n);size_t got=0;
+                while(got<n){const auto count=::pread(file.get(),actual.data()+got,n-got,static_cast<off_t>(offset+got));if(count<0&&errno==EINTR)continue;if(count<=0)throw std::runtime_error("Saved output read failed");got+=static_cast<size_t>(count);}
+                if(expected.size()!=n||actual!=expected)throw std::runtime_error("Saved output bytes changed");
+                offset+=n;
+            }
+            struct stat after{},named{};if(::fstat(file.get(),&after)||::fstatat(parent.get(),part.c_str(),&named,AT_SYMLINK_NOFOLLOW)||after.st_dev!=named.st_dev||after.st_ino!=named.st_ino||after.st_size!=info.st_size)throw std::runtime_error("Saved output changed during verification");
+            return;
+        }
+        if(++depth>32)throw std::invalid_argument("Saved output depth exceeds 32");
+        const int next=::openat(parent.get(),part.c_str(),O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);if(next<0)throw std::runtime_error("Saved output folder is missing or contains a symlink");parent.reset(next);start=end+1;
+    }
+}
+void SafeFileExporter::replaceState(const std::string& name,const std::vector<uint8_t>& data) {
+    if(name.empty()||name.size()>255||name=="."||name==".."||name.find_first_of("/\\:")!=std::string::npos||std::any_of(name.begin(),name.end(),[](unsigned char c){return c<32||c==127;}))throw std::invalid_argument("Unsafe session filename");
+    static std::atomic_uint64_t sequence{0};const auto temporary=".rs-state-"+std::to_string(std::random_device{}())+"-"+std::to_string(++sequence);
+    writeAt(impl_->directory.get(),temporary,data.size(),[&](uint64_t offset,size_t length){return std::vector<uint8_t>(data.begin()+offset,data.begin()+offset+length);},true,{});
+    if(::renameat(impl_->directory.get(),temporary.c_str(),impl_->directory.get(),name.c_str())){(void)::unlinkat(impl_->directory.get(),temporary.c_str(),0);throw std::runtime_error("Cannot commit session checkpoint");}
+    if(::fsync(impl_->directory.get()))throw std::runtime_error("Cannot flush session checkpoint directory");
+}
+
 #else
 struct SafeFileExporter::Impl {};
 SafeFileExporter::SafeFileExporter(const std::string&) { throw std::runtime_error("Safe output export is currently supported on POSIX systems only"); }

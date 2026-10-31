@@ -441,3 +441,9 @@ target_link_libraries(test_ntfs_mft PRIVATE RecoverySuite_GUI RecoverySuite_Appl
 add_dependencies(test_ntfs_mft RecoverySuite_CLI)
 add_test(NAME test_ntfs_mft COMMAND test_ntfs_mft)
 set_tests_properties(test_ntfs_mft PROPERTIES ENVIRONMENT QT_QPA_PLATFORM=offscreen)
+
+add_executable(test_recovery_session test_recovery_session.cpp)
+set_target_properties(test_recovery_session PROPERTIES AUTOMOC ON)
+target_link_libraries(test_recovery_session PRIVATE RecoverySuite_Application Qt6::Test)
+add_dependencies(test_recovery_session RecoverySuite_CLI)
+add_test(NAME test_recovery_session COMMAND test_recovery_session)

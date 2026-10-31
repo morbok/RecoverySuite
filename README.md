@@ -193,6 +193,23 @@ low because its cleared chain must be inferred. Names are never rewritten to rep
 Partial failures/cancellation preserve completed files and remove the current incomplete output.
 NTFS allocation analysis is capped at 64 million cluster-bit checks and 100000 index entries in total.
 
+## Save and resume a recovery session
+
+Add `--session /existing/folder/scan.json` to an image export command, then use
+`RecoverySuite_CLI session resume /existing/folder/scan.json`. In the GUI, enter an optional new
+session filename in Recovery settings; use **File → Resume session** to review and restart a saved
+operation. The session stores versioned settings, the full source SHA-256, and pending/completed
+output names, sizes and SHA-256 values. One process may use a session at a time.
+
+Resume fingerprints the entire source again and replays discovery from the beginning. Earlier outputs
+are read back and compared with the newly discovered source bytes; unchanged outputs are reused and
+remaining items are retried. This avoids losing signature boundaries or filesystem traversal state.
+It does not resume midway through a file or skip initial metadata discovery. Full fingerprinting adds
+one sequential source pass. Changed sources, changed outputs, malformed schemas and configuration
+mismatches fail explicitly. Files are never overwritten. A hard kill can leave an incomplete output;
+resume reports that conflict rather than deleting an unverified file. Normal cancellation cleans it up.
+Session files use atomic replacement; do not select the source image as the session filename.
+
 ## Current state
 
 - GUI and CLI compile on Linux; all 28 registered CTest executables pass locally in Debug and Release.

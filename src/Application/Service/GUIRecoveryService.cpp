@@ -1,3 +1,4 @@
+#include "recovery_session.h"
 #include "GUIRecoveryService.h"
 #include "RecoveryService.h"
 #include "../../Logging/Logger.h"
@@ -56,6 +57,7 @@ std::string GUIRecoveryService::validateImageOperation(const models::RecoveryOpe
         operation.numSectors > imageReader_->getTotalSectors() - operation.startSector ||
         operation.numSectors > std::numeric_limits<uint64_t>::max() / imageReader_->getSectorSize())
         return "The sector range is outside the opened image";
+    if(operation.resumeSession&&operation.sessionPath.empty())return "Choose a saved session to resume";
     if (operation.createLogFile) return "Separate log file output is not available";
     try { SafeFileExporter destination(operation.outputPath); }
     catch (const std::exception& failure) { return failure.what(); }
@@ -74,6 +76,7 @@ models::RecoveryResult GUIRecoveryService::executeOperation(const models::Recove
     result.startTime = std::chrono::system_clock::now();
     const auto cancelled = [&] { return cancellationToken && cancellationToken(); };
     std::unique_lock lock(imageMutex_, std::try_to_lock);
+    std::unique_ptr<RecoverySession> session;uint64_t resumedItems=0;
     try {
         if (!lock.owns_lock()) throw std::runtime_error("A recovery operation is already active");
         if (cancelled()) result.cancelled = true;
@@ -98,31 +101,29 @@ models::RecoveryResult GUIRecoveryService::executeOperation(const models::Recove
                 progress.elapsedSeconds = std::chrono::duration_cast<std::chrono::seconds>(progress.timestamp - result.startTime).count();
                 progressCallback(progress);
             };
+            if(!operation.sessionPath.empty())session=std::make_unique<RecoverySession>(operation,*imageReader_,exporter,cancellationToken,[&](uint64_t checked){
+                if(!progressCallback)return;
+                models::RecoveryProgress p{};p.operationType=operation.operationType;p.status="running";p.currentStep="Checking source fingerprint for session";p.processedBytes=checked;p.totalBytes=imageReader_->getTotalSectors()*imageReader_->getSectorSize();p.percentage=uint32_t(100.0L*checked/p.totalBytes);p.isCancellable=true;progressCallback(p);
+            });
             report(0);
-            const auto saveItem = [&](const std::string& name, const std::vector<uint8_t>& data) {
-                    if (result.recoveredItemsCount + result.failedItemsCount >= 10000)
-                        throw std::runtime_error("Maximum output item count reached");
-                    try {
-                        if(tree||operation.operationType=="ntfs_tree_recovery"||operation.operationType=="fat_deleted_recovery")exporter.writeTree(name,data,operation.verifyAfterRecovery,cancellationToken);
-                        else exporter.write(name, data, operation.verifyAfterRecovery, cancellationToken);
-                        result.recoveredItems.push_back({name, static_cast<uint64_t>(data.size())});
-                        ++result.recoveredItemsCount; result.recoveredBytes += data.size(); result.outputWritten = true;
-                    } catch (const std::exception& failure) {
-                        if (!cancelled()) {
-                            ++result.failedItemsCount; result.failedBytes += data.size();
-                            result.details[name] = failure.what();
-                        }
-                    }
-                };
+            const auto saveStream=[&](const std::string& name,uint64_t size,const SafeFileExporter::ReadAt& read,bool hierarchical,const std::string& confidence=std::string{}) {
+                if(result.recoveredItemsCount+result.failedItemsCount>=10000)throw std::runtime_error("Maximum output item count reached");
+                try {
+                    const bool resumed=session?session->exportItem(name,size,read,hierarchical,operation.verifyAfterRecovery):false;
+                    if(!session)exporter.writeStream(name,size,read,operation.verifyAfterRecovery,hierarchical,cancellationToken);
+                    if(resumed)++resumedItems;
+                    result.recoveredItems.push_back({name,size});++result.recoveredItemsCount;result.recoveredBytes+=size;result.outputWritten=true;
+                    if(!confidence.empty())result.details[name]=confidence;
+                }catch(const std::exception& failure){if(!cancelled()){++result.failedItemsCount;result.failedBytes+=size;result.details[name]=failure.what();}}
+            };
+            const auto saveItem=[&](const std::string& name,const std::vector<uint8_t>& data) {
+                saveStream(name,data.size(),[&](uint64_t offset,size_t size){return std::vector<uint8_t>(data.begin()+offset,data.begin()+offset+size);},tree||operation.operationType=="ntfs_tree_recovery"||operation.operationType=="fat_deleted_recovery");
+            };
             recovery::CarvingSummary summary{};
             if(operation.operationType=="ntfs_checked_recovery"||operation.operationType=="ntfs_deleted_recovery") {
                 recovery::NtfsRecoveryOptions options;options.deleted=operation.operationType=="ntfs_deleted_recovery";
                 const auto files=recovery::recoverNtfsChecked(*imageReader_,operation.startSector,operation.numSectors,options,[&](const auto& file) {
-                    try {
-                        exporter.writeStream(file.path,file.size,file.read,operation.verifyAfterRecovery,true,cancellationToken);
-                        result.recoveredItems.push_back({file.path,file.size});++result.recoveredItemsCount;result.recoveredBytes+=file.size;result.outputWritten=true;
-                        result.details[file.path]=file.confidence;
-                    }catch(const std::exception& failure){if(!cancelled()){++result.failedItemsCount;result.failedBytes+=file.size;result.details[file.path]=failure.what();}}
+                    saveStream(file.path,file.size,file.read,true,file.confidence);
                 },report,cancellationToken);
                 summary.processedBytes=files.processedBytes;summary.cancelled=cancelled();summary.skippedCandidates=files.invalidFiles;
                 result.details["Invalid NTFS files"]=std::to_string(files.invalidFiles);
@@ -190,6 +191,8 @@ models::RecoveryResult GUIRecoveryService::executeOperation(const models::Recove
     } catch (const std::exception& failure) { result.errorMessage = failure.what(); result.success = false; }
     result.cancelled = result.cancelled || cancelled();
     if (result.cancelled) result.success = false;
+    if(session){try{session->finish(result.cancelled?"cancelled":(result.success?"completed":"partial"));}catch(const std::exception& failure){result.success=false;result.errorMessage=std::string("Session checkpoint failed: ")+failure.what();}
+        result.details["Session"]=operation.sessionPath;result.details["Earlier outputs verified"]=std::to_string(resumedItems);result.details["New outputs saved"]=std::to_string(result.recoveredItemsCount-resumedItems);result.details["Resume method"]="Full source fingerprint and earlier outputs verified; discovery is replayed to preserve file boundaries";}
     result.endTime = std::chrono::system_clock::now();
     result.details["Export"] = result.outputWritten ? "Only the listed items were saved to the destination" : "No output files were saved";
     result.details["Recovery method"] = operation.operationType == "fat_deleted_recovery"
