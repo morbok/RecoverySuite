@@ -3,7 +3,7 @@
 
 #include <memory>
 #include <string>
-#include "FilesystemAnalyzer.h"
+#include "../FilesystemAnalyzer.h"
 #include "NTFSContext.h"
 
 namespace recoverysuite {
@@ -20,6 +20,7 @@ public:
     bool analyze(const FilesystemReader& reader) const override;
     std::string getAnalysisDescription() const override;
     std::string getAnalysisDetails() const override;
+    // Repair state/error count are unknown; these getters throw std::logic_error.
     bool needsRepair() const override;
     uint32_t getErrorCount() const override;
 
@@ -29,9 +30,6 @@ private:
 
     // Internal analysis methods
     bool validateBootSector() const;
-    bool validateMFT() const;
-    bool checkForCorruption() const;
-    bool validateBootSector_impl(const uint8_t* bootSectorData, uint32_t bootSectorSize) const;
 };
 
 } // namespace ntfs

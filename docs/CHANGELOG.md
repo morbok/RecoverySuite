@@ -1,3 +1,13 @@
+# 2026-10-31 — Honest legacy NTFS boot inspection
+
+Corrected packed NTFS wire layouts and 64-bit boot fields with compile-time offset/size checks.
+Legacy metadata, volume and probe paths now use bounded byte-wise reads instead of raw casts.
+Report full serial/declared size/cluster geometry, validate reader bounds and avoid end-offset overflow.
+Removed the fixed version, fake consistency/repair/corruption results and fabricated free/used metrics;
+unexamined numeric/boolean properties throw explicit unavailable errors. Fixed the analyzer base-header
+include collision exposed when importing legacy and recovery APIs together. New regression coverage
+uses high 64-bit geometry/serials, short reads, malformed OEM IDs, unsupported metrics and bounds.
+
 # 2026-10-31 — NTFS resident root-file recovery
 
 Added GUI/CLI image ntfs-files for unnamed resident DATA from in-use base FILE records. Check

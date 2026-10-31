@@ -25,6 +25,7 @@ public:
     std::string getSerialNumber() const override;
     std::string getVolumeLabel() const override;
     uint64_t getTotalSize() const override;
+    // Unexamined allocation/mount metrics throw std::logic_error instead of fabricating values.
     uint64_t getFreeSpace() const override;
     uint64_t getUsedSpace() const override;
     uint32_t getBlockSize() const override;

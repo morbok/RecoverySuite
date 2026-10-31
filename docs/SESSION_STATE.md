@@ -217,3 +217,30 @@ pass ASan/UBSan (Qt leak detection disabled). Selected resident tests exit norma
 22 QtTest passes including setup/cleanup. Graphify: 3839 nodes / 6834 edges; 20 existing config-node
 source_file warnings. Remote CI remains unverified; no merge. Remaining NTFS scope includes
 nonresident file streams, directory traversal, allocation/index consistency and attribute lists.
+
+
+## 2026-10-31 — Legacy NTFS boot/inspection audit checkpoint
+
+Corrected NTFS boot/header models to their real wire offsets: 512-byte boot sector, 64-bit totals
+and MFT locations, record-size encodings at 64/68, 8-byte serial at 72 and signature at 510.
+Added compile-time layout checks; corrected resident attribute flag positions, NTFS 3.x FILE header
+size and index-entry key length. Runtime legacy metadata/probe/volume reads now use a bounded
+byte-wise helper rather than packed casts; check exact OEM ID, sector/cluster/record geometry,
+64-bit multiplication, declared source bounds and short reads. Report full serial, declared size
+and cluster counts. Volume offsets come from the reader; end-offset overflow returns unavailable.
+
+Removed fixed version/label, fabricated allocation/mount/partition flags, fake MFT validation,
+corruption counts and consistency/repair claims. Version/label stay Unknown; unavailable numeric/
+boolean metrics throw std::logic_error, as documented. The legacy analyzer returns false for
+unavailable full consistency analysis and explains which fields remain unknown. FilesystemReader
+access is read-only. The supported GUI/CLI MFT and resident-file workflows remain independent.
+Fixed NTFSAnalyzer.h resolving the recovery analyzer header instead of its filesystem base when
+both API families are included; use an explicit relative base-header include.
+
+Regression coverage checks layouts, >32-bit sizes/LCNs, complete serials, cluster geometry,
+short reads, malformed OEM IDs, unsupported metrics and offset overflow. All 28 CTest targets
+pass in Debug and Release; all four image/FAT/NTFS integration suites pass ASan/UBSan with Qt leak
+detection disabled. Legacy regression exits normally under GDB (3 passes including setup/cleanup).
+Graphify: 3861 nodes / 6866 edges; 20 existing config-node source_file warnings. Remote CI remains
+unverified; no merge. Still open: nonresident/recursive NTFS files, allocation/index consistency,
+deleted recovery, Windows safe export, persisted sessions, hardware QA and packaging.

@@ -30,6 +30,7 @@ Updated: 2026-10-31. Historical phase summaries are not the release checklist.
        [ ] Extend cancellation to other filesystem analysis loops.
 6. [ ] Audit remaining simulated recovery implementations, FAT/NTFS completeness, boundary arithmetic,
        short reads, hostile metadata, memory limits and error propagation. Register any useful orphaned tests.
+       [x] Correct legacy NTFS boot fields and remove fabricated consistency/allocation/repair metrics.
 7. [ ] Add end-to-end fixtures for deleted files, fragmentation, corruption and partial output failures;
        run sanitizers and fuzz parsers before real-device testing.
 8. [ ] Validate Windows builds/device access and Linux device enumeration; make permissions and errors explicit.

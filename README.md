@@ -146,6 +146,9 @@ not establish whole-filesystem consistency. Original permissions/timestamps are 
   anchors the selected directory with a file descriptor; incomplete writes are removed on failure.
 - The image workflow supports signature carving, FAT metadata snapshots and allocated FAT12/16/32 root
   files, with optional bounded recursive traversal. Deleted chains, NTFS nonresident files and NTFS directory traversal remain unavailable.
+- Legacy NTFS factory inspection reads actual 64-bit boot fields. Unexamined allocation, mount and
+  repair metrics throw `std::logic_error`; version/label remain unknown, and the legacy analyzer
+  reports full consistency analysis unavailable. Use the image workflows for supported MFT/file work.
 - Windows safe export is unavailable; Windows builds and recovery against real devices remain unvalidated.
 - Integration tests use synthetic images; the image workflow also passes AddressSanitizer/UBSan locally.
 

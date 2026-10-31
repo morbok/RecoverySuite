@@ -11,6 +11,13 @@
 #include "GUI/core/MainWindow.h"
 #include "Recovery/ntfs_mft.h"
 #include <map>
+#include <limits>
+#include <cstring>
+#include "Filesystem/NTFS/NTFSStructures.h"
+#include "Filesystem/NTFS/NTFSMetadata.h"
+#include "Filesystem/NTFS/NTFSAnalyzer.h"
+#include "Filesystem/NTFS/NTFSVolume.h"
+#include "Filesystem/NTFS/NTFSDriver.h"
 using namespace recoverysuite;
 class TestNtfsMft:public QObject {
     Q_OBJECT
@@ -203,6 +210,32 @@ private slots:
         const auto result=service.executeOperation(operation(source.devicePath,root.path(),0,count));QVERIFY2(!result.success,qPrintable(fault));QVERIFY(!result.outputWritten);
         QVERIFY(!QFile::exists(root.filePath("NTFS_BootSector")));QVERIFY(!QFile::exists(root.filePath("NTFS_MFTInitialized")));QCOMPARE(load(path),image);
 #endif
+    }
+    void legacyMetadataUsesRealBootFields(){
+        using namespace filesystem::ntfs;
+        class Reader:public filesystem::FilesystemReader {
+        public:
+            QByteArray boot;uint32_t ss=512;uint64_t total=0x100000080,offset=1024;bool shortRead=false;
+            uint32_t readSector(uint64_t i,uint8_t* out,uint32_t size)override{if(i||!out||size!=ss||boot.size()<size)return 0;std::memcpy(out,boot.constData(),size);return shortRead?size-1:size;}
+            uint32_t readSectors(uint64_t,uint32_t,uint8_t*,uint32_t)override{return 0;}
+            uint32_t readCluster(uint64_t,uint8_t*,uint32_t)override{return 0;}
+            uint32_t readClusters(uint64_t,uint32_t,uint8_t*,uint32_t)override{return 0;}
+            uint64_t getTotalSectors()const override{return total;}uint32_t getSectorSize()const override{return ss;}uint64_t getStartOffset()const override{return offset;}
+        };
+        QCOMPARE(sizeof(BootSector),size_t{512});QCOMPARE(offsetof(BootSector,totalSectorCount64),size_t{40});QCOMPARE(offsetof(BootSector,mftCluster),size_t{48});QCOMPARE(offsetof(BootSector,bootSignature),size_t{510});
+        Volume fixture;auto reader=std::make_shared<Reader>();reader->boot=fixture.boot;le(reader->boot,40,reader->total,8);le(reader->boot,48,0x100000008,8);le(reader->boot,72,0x0123456789abcdef,8);
+        NTFSMetadata metadata(reader);NTFSVolume volume(reader);NTFSAnalyzer analyzer(reader);NTFSDriver driver;
+        QCOMPARE(metadata.getTotalSize(),reader->total*512);QCOMPARE(metadata.getSerialNumber(),std::string("0123456789ABCDEF"));QCOMPARE(metadata.getVersion(),std::string("Unknown"));
+        QVERIFY(volume.isValid());QCOMPARE(volume.getSize(),reader->total*512);QCOMPARE(volume.getStartOffset(),uint64_t{1024});QCOMPARE(volume.getEndOffset(),1024+reader->total*512);
+        QCOMPARE(driver.probe(reinterpret_cast<const uint8_t*>(reader->boot.constData()),reader->boot.size()),1.0);QVERIFY(!analyzer.analyze(*reader));
+        QVERIFY(QString::fromStdString(analyzer.getAnalysisDetails()).contains("unknown",Qt::CaseInsensitive));QVERIFY_EXCEPTION_THROWN(analyzer.needsRepair(),std::logic_error);QVERIFY_EXCEPTION_THROWN(analyzer.getErrorCount(),std::logic_error);
+        QVERIFY_EXCEPTION_THROWN(metadata.getFreeSpace(),std::logic_error);QVERIFY_EXCEPTION_THROWN(metadata.getUsedSpace(),std::logic_error);QVERIFY_EXCEPTION_THROWN(metadata.getFreeBlockCount(),std::logic_error);QVERIFY_EXCEPTION_THROWN(metadata.isMounted(),std::logic_error);QVERIFY(metadata.isReadOnly());
+        QVERIFY_EXCEPTION_THROWN(volume.isBootable(),std::logic_error);QVERIFY_EXCEPTION_THROWN(volume.isActive(),std::logic_error);QVERIFY_EXCEPTION_THROWN(volume.isHidden(),std::logic_error);
+        reader->boot=fixture.boot;reader->total=Volume::sectors;reader->boot[13]=8;QCOMPARE(metadata.getBlockSize(),uint32_t{4096});QCOMPARE(metadata.getBlockCount(),uint64_t{16});
+        reader->offset=std::numeric_limits<uint64_t>::max()-100;QCOMPARE(volume.getEndOffset(),uint64_t{0});
+        reader->shortRead=true;QVERIFY(!volume.isValid());QCOMPARE(metadata.getTotalSize(),uint64_t{0});reader->shortRead=false;
+        reader->boot.replace(3,8,"NTFSjunk");QVERIFY(!volume.isValid());QCOMPARE(driver.probe(reinterpret_cast<const uint8_t*>(reader->boot.constData()),reader->boot.size()),0.0);
+        reader->ss=256;QCOMPARE(metadata.getTotalSize(),uint64_t{0});QVERIFY(!volume.isValid());
     }
     void hugeGeometryAndFaultReads(){
         class SparseReader:public disk::IDiskReader {

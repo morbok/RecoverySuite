@@ -25,6 +25,10 @@ There are 28 registered CTest executables. New integration suites cover images, 
 snapshots, FAT files and NTFS MFT snapshots. Build/test commands and limits are in README.md. Check actual CI on the
 current head before merge. Keep generated Graphify output and local configuration out of commits.
 
+Legacy NTFS factory inspection now parses real boot geometry with bounded byte-wise reads;
+unexamined allocation/mount/repair properties throw explicit unavailable errors. Its analyzer does
+not claim whole-volume consistency.
+
 Legacy RecoveryService recoverMetadata/recoverFiles/carveFiles return buffers, without export. The
 GUI executeOperation and CLI image commands provide actual filesystem output. CarvingEngine uses
 the shared scanner and absolute offsets. Never restore manufactured file/FAT/MFT contents.

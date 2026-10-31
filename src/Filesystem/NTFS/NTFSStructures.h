@@ -2,6 +2,7 @@
 #define RECOVERYSUITE_FILESYSTEM_NTFS_NTFS_STRUCTURES_H
 
 #include <cstdint>
+#include <cstddef>
 #include <string>
 #include <vector>
 #include "NTFSConstants.h"
@@ -14,28 +15,38 @@ namespace ntfs {
 
 // Boot Sector Structure
 struct BootSector {
-    uint8_t  jumpInstruction[3];      // 0x00 - Jump instruction
-    uint8_t  oemId[8];                // 0x03 - OEM identifier
-    uint16_t bytesPerSector;          // 0x0B - Bytes per sector
-    uint8_t  sectorsPerCluster;       // 0x0D - Sectors per cluster
-    uint16_t reservedSectorCount;     // 0x0E - Reserved sector count
-    uint8_t  mediaDescriptor;         // 0x10 - Media descriptor
-    uint16_t sectorsPerFat;           // 0x11 - Sectors per FAT (0 for NTFS)
-    uint16_t sectorsPerTrack;         // 0x13 - Sectors per track
-    uint16_t headCount;               // 0x15 - Number of heads
-    uint32_t hiddenSectorCount;       // 0x16 - Hidden sector count
-    uint32_t totalSectorCount32;      // 0x1A - Total sectors (32-bit)
-    uint32_t totalSectorCount64;      // 0x1E - Total sectors (64-bit, high)
-    uint32_t mftCluster;              // 0x24 - MFT start cluster
-    uint32_t mftMirrorCluster;        // 0x28 - MFT mirror start cluster
-    int32_t  clustersPerFileRecord;   // 0x2C - Clusters per file record (-ve = compress)
-    int32_t  clustersPerIndexBuffer;  // 0x30 - Clusters per index buffer (-ve = compress)
-    uint8_t  volumeSerialNumber[16];  // 0x34 - Volume serial number
-    uint32_t checksum;                // 0x44 - Boot sector checksum
-    // ... rest of boot sector (reserved, bootstrap code)
-    uint8_t  bootstrapCode[426];      // 0x48 - Bootstrap code
-    uint16_t bootSignature;           // 0x1FE - Boot signature (0x55AA)
+    uint8_t jumpInstruction[3];
+    uint8_t oemId[8];
+    uint16_t bytesPerSector;             // 0x0B
+    uint8_t sectorsPerCluster;           // 0x0D
+    uint16_t reservedSectorCount;
+    uint8_t reserved1[3];
+    uint16_t totalSectorCount16;         // Must be zero on NTFS
+    uint8_t mediaDescriptor;
+    uint16_t sectorsPerFat;              // Must be zero on NTFS
+    uint16_t sectorsPerTrack;
+    uint16_t headCount;
+    uint32_t hiddenSectorCount;
+    uint32_t totalSectorCount32;         // Must be zero on NTFS
+    uint32_t reserved2;
+    uint64_t totalSectorCount64;         // 0x28
+    uint64_t mftCluster;                 // 0x30
+    uint64_t mftMirrorCluster;           // 0x38
+    int8_t clustersPerFileRecord;        // 0x40; negative encodes a byte-size exponent
+    uint8_t reserved3[3];
+    int8_t clustersPerIndexBuffer;       // 0x44
+    uint8_t reserved4[3];
+    uint8_t volumeSerialNumber[8];       // 0x48
+    uint32_t checksum;                   // 0x50
+    uint8_t bootstrapCode[426];
+    uint16_t bootSignature;              // 0x1FE
 };
+static_assert(sizeof(BootSector)==512);
+static_assert(offsetof(BootSector,totalSectorCount64)==40);
+static_assert(offsetof(BootSector,mftCluster)==48);
+static_assert(offsetof(BootSector,clustersPerFileRecord)==64);
+static_assert(offsetof(BootSector,volumeSerialNumber)==72);
+static_assert(offsetof(BootSector,bootSignature)==510);
 
 // MFT File Record Header
 struct FileRecordHeader {
@@ -51,19 +62,22 @@ struct FileRecordHeader {
     uint32_t bytesAllocated;          // Bytes allocated for file record
     uint64_t baseFileRecord;          // Base file record reference
     uint16_t nextAttributeInstance;   // Next attribute instance number
+    uint16_t reserved;
+    uint32_t recordNumber;            // NTFS 3.x record number
 };
 
-// Attribute Header
+// Common attribute header plus resident-only fields; nonresident headers use the extension below.
 struct AttributeHeader {
     uint32_t type;                    // Attribute type
     uint32_t length;                  // Length of attribute
     uint8_t  nonResident;             // 0 = resident, 1 = non-resident
     uint8_t  nameLength;              // Length of attribute name (in chars)
     uint16_t nameOffset;              // Offset to attribute name
+    uint16_t flags;                   // Attribute flags (compressed, encrypted, sparse)
     uint16_t instance;                // Attribute instance
     uint32_t valueLength;             // Length of attribute value
     uint16_t valueOffset;             // Offset to attribute value
-    uint8_t  flags;                   // Attribute flags (compressed, encrypted, sparse)
+    uint8_t  indexedFlag;             // Resident value is indexed
     uint8_t  reserved;                // Reserved for alignment
 };
 
@@ -72,7 +86,7 @@ struct ResidentAttribute {
     // Value follows immediately after header
 };
 
-// Non-Resident Attribute Value
+// Nonresident header extension, starting at byte 16 of an attribute record.
 struct NonResidentAttribute {
     uint64_t startingVcn;             // Starting VCN
     uint64_t endingVcn;               // Ending VCN
@@ -84,9 +98,9 @@ struct NonResidentAttribute {
     uint64_t initializedSize;         // Initialized size
 };
 
-// Data Run Entry
+// Decoded run descriptor; mapping pairs themselves have variable-length encoding.
 struct DataRun {
-    uint8_t  lengthSize;              // High 4 nibbits = length size, low 4 = offset size
+    uint8_t  lengthSize;              // Mapping-pairs code: low nibble length width, high offset width
     int64_t  offset;                  // Cluster offset (signed)
     uint64_t length;                  // Cluster length
 };
@@ -95,10 +109,16 @@ struct DataRun {
 struct IndexEntry {
     uint64_t fileReference;           // File reference (MFT number + sequence)
     uint16_t length;                  // Length of index entry
-    uint8_t  flags;                   // Index entry flags
+    uint16_t keyLength;               // Length of indexed key
+    uint16_t flags;                   // Index entry flags
     uint16_t reserved;                // Reserved (zero)
     // Attribute header follows
 };
+
+static_assert(sizeof(FileRecordHeader)==48);
+static_assert(offsetof(AttributeHeader,flags)==12);
+static_assert(sizeof(AttributeHeader)==24);
+static_assert(sizeof(IndexEntry)==16);
 
 } // namespace ntfs
 } // namespace filesystem
