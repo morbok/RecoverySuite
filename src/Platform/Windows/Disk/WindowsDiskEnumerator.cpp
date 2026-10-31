@@ -1,13 +1,16 @@
 #include "WindowsDiskEnumerator.h"
 #include <algorithm>
 #include <cstddef>
+#include <set>
+#include <vector>
+// Windows base types must precede storage headers; initguid must precede ntddstor.
+// clang-format off
+#include <windows.h>
 #include <initguid.h>
 #include <ntddstor.h>
-#include <set>
 #include <setupapi.h>
-#include <vector>
-#include <windows.h>
 #include <winioctl.h>
+// clang-format on
 namespace recoverysuite::platform::windows {
 namespace {
 struct Handle {
