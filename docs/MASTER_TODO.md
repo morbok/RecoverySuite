@@ -7,7 +7,7 @@ Updated: 2026-10-31. Historical phase summaries are not the release checklist.
 - [x] Recover Claude's unfinished results interface and restore a buildable Linux checkout.
 - [x] Show completed, failed, cancelled and partial results with backend item names/sizes.
 - [x] Remove fabricated duration/recovered-byte statistics and distinguish requested output from saved output.
-- [x] Restore and run the 27 registered CTest targets with assertions enabled.
+- [x] Restore and run the 28 registered CTest targets with assertions enabled.
 - [x] Repair the input-validation and partition parsing bugs uncovered by active assertions.
 - [x] Add Debug/Release Linux CI and reproducible build instructions.
 
@@ -22,7 +22,8 @@ Updated: 2026-10-31. Historical phase summaries are not the release checklist.
        [x] Add bounded recursive FAT directory/file recovery and safe hierarchical POSIX output.
        [x] Add bounded NTFS initialized-MFT snapshots with mapping-pairs and FILE fixup checks.
        [x] Copy in-use NTFS root files with resident unnamed DATA and sequence-checked parent names.
-       [ ] Add OEM short names, deleted-chain inference, NTFS nonresident files/directory traversal.
+       [x] Copy bounded nonresident NTFS root-file DATA, including fragmented runs and zero-filled uninitialized tails.
+       [ ] Add OEM short names, deleted-chain inference, NTFS directory traversal and attribute-list extensions.
 4. [x] Export signature candidates safely on POSIX, preserving bytes and rejecting traversal, symlinks,
        overwrite and invalid destinations; verify saved bytes in integration tests.
 5. [x] Propagate cancellation/progress into image scan/export loops and test worker shutdown.

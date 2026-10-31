@@ -1,3 +1,14 @@
+# 2026-10-31 — NTFS nonresident root-file recovery
+
+Extended GUI/CLI image ntfs-files to bounded nonresident unnamed DATA from in-use root files.
+Share mapping-pairs validation with the MFT reader; support fragmented/backward runs, exact logical
+length and zero-filled uninitialized tails. Reject malformed/out-of-volume/self-overlapping runs,
+MFT/prior-file overlaps, incomplete extensions and failed payload reads before exporting that file.
+Keep resident-only API compatibility and existing safe output/cancellation behavior. Limits: 16 MiB
+per file, 4096 runs/file and 65536 tracked extents. No allocation/index validation, directory traversal,
+deleted recovery, attribute-list extensions, sparse/compressed/encrypted streams or ADS export.
+Added GUI/CLI byte-equality, malformed-run, short/oversized/failed-read and cancellation regressions.
+
 # 2026-10-31 — Honest legacy NTFS boot inspection
 
 Corrected packed NTFS wire layouts and 64-bit boot fields with compile-time offset/size checks.

@@ -54,44 +54,47 @@ std::vector<Attribute> listAttributes(Bytes record,const std::function<bool()>& 
     }
     invalid("missing attribute end marker");
 }
+Stream parseData(Bytes attribute,uint64_t clusters,uint64_t clusterBytes,const std::function<bool()>& cancelled,bool mft=false) {
+    Stream stream;const auto length=attribute.size();constexpr uint64_t header=64;
+    if(length<header||le(attribute,12,2)||le(attribute,16,8)||le(attribute,34,2))invalid("unsupported DATA flags or extension");
+    stream.allocated=le(attribute,40,8);stream.logical=le(attribute,48,8);stream.initialized=le(attribute,56,8);
+    if(stream.initialized>kMaxSnapshotBytes||(!mft&&stream.logical>kMaxSnapshotBytes)||stream.initialized>stream.logical||stream.logical>stream.allocated)invalid("invalid DATA sizes or stream above 16 MiB");
+    size_t cursor=le(attribute,32,2);
+    if(cursor<header||cursor>=length)invalid("invalid mapping-pairs offset");
+    uint64_t current=0,total=0;bool terminated=false;std::map<uint64_t,uint64_t> physical;
+    while(cursor<length) {
+        if(cancelled&&cancelled())invalid("cancelled");
+        const auto code=attribute[cursor++];if(!code){terminated=true;break;}
+        const size_t lengths=code&15,offsets=code>>4;
+        if(!lengths||lengths>8||!offsets||offsets>8||stream.runs.size()>=kMaxRuns)invalid("invalid, sparse or excessive mapping pairs");
+        const auto runLength=le(attribute,cursor,lengths);cursor+=lengths;
+        const auto delta=le(attribute,cursor,offsets);cursor+=offsets;
+        if(!runLength||runLength>clusters-total)invalid("invalid mapping-pairs run length");
+        if(delta&(uint64_t{1}<<(offsets*8-1))) {
+            const auto mask=offsets==8?std::numeric_limits<uint64_t>::max():((uint64_t{1}<<(offsets*8))-1);
+            const auto magnitude=(~delta+1)&mask;
+            if(magnitude>current)invalid("negative mapping-pairs LCN");
+            current-=magnitude;
+        }else {if(delta>clusters-current)invalid("mapping-pairs LCN overflow");current+=delta;}
+        if(!current||current>=clusters||runLength>clusters-current)invalid("mapping pairs exceed the declared volume");
+        const auto next=physical.lower_bound(current);
+        if((next!=physical.end()&&current+runLength>next->first)||
+           (next!=physical.begin()&&std::prev(next)->second>current))invalid("overlapping DATA runs");
+        physical.emplace(current,current+runLength);stream.runs.push_back({current,runLength});total+=runLength;
+    }
+    if(!terminated||stream.runs.empty()||le(attribute,24,8)!=total-1||stream.allocated!=total*clusterBytes)
+        invalid("incomplete or inconsistent DATA mapping pairs");
+    return stream;
+}
 Stream parseMftData(Bytes record,uint64_t clusters,uint64_t clusterBytes,uint64_t mftCluster,const std::function<bool()>& cancelled) {
     Stream stream;bool found=false;
     for(const auto& entry:listAttributes(record,cancelled)) {
-        const auto type=entry.type,nameLength=entry.nameLength;const auto attribute=entry.bytes;
-        const auto length=attribute.size();const bool form=entry.nonResident;constexpr uint64_t header=64;
-        if(type==0x20)invalid("MFT attribute-list extensions are unsupported");
-        if(type==0x80&&!nameLength) {
-            if(found||form!=1||le(attribute,12,2)||le(attribute,16,8)||le(attribute,34,2))invalid("unsupported MFT DATA flags, form or extension");
-            found=true;stream.allocated=le(attribute,40,8);stream.logical=le(attribute,48,8);stream.initialized=le(attribute,56,8);
-            if(!stream.initialized||stream.initialized>kMaxSnapshotBytes||stream.initialized>stream.logical||stream.logical>stream.allocated)invalid("invalid stream sizes or initialized MFT above 16 MiB");
-            size_t cursor=le(attribute,32,2);
-            if(cursor<header||cursor>=length)invalid("invalid mapping-pairs offset");
-            uint64_t current=0,total=0;bool terminated=false;std::map<uint64_t,uint64_t> physical;
-            while(cursor<length) {
-                if(cancelled&&cancelled())invalid("cancelled");
-                const auto code=attribute[cursor++];if(!code){terminated=true;break;}
-                const size_t lengths=code&15,offsets=code>>4;
-                if(!lengths||lengths>8||!offsets||offsets>8||stream.runs.size()>=kMaxRuns)invalid("invalid, sparse or excessive mapping pairs");
-                const auto runLength=le(attribute,cursor,lengths);cursor+=lengths;
-                const auto delta=le(attribute,cursor,offsets);cursor+=offsets;
-                if(!runLength||runLength>clusters-total)invalid("invalid mapping-pairs run length");
-                if(delta&(uint64_t{1}<<(offsets*8-1))) {
-                    const auto mask=offsets==8?std::numeric_limits<uint64_t>::max():((uint64_t{1}<<(offsets*8))-1);
-                    const auto magnitude=(~delta+1)&mask;
-                    if(magnitude>current)invalid("negative mapping-pairs LCN");
-                    current-=magnitude;
-                }else {if(delta>clusters-current)invalid("mapping-pairs LCN overflow");current+=delta;}
-                if(!current||current>=clusters||runLength>clusters-current)invalid("mapping pairs exceed the declared volume");
-                const auto next=physical.lower_bound(current);
-                if((next!=physical.end()&&current+runLength>next->first)||
-                   (next!=physical.begin()&&std::prev(next)->second>current))invalid("overlapping MFT runs");
-                physical.emplace(current,current+runLength);stream.runs.push_back({current,runLength});total+=runLength;
-            }
-            if(!terminated||stream.runs.empty()||le(attribute,24,8)!=total-1||stream.allocated!=total*clusterBytes||stream.runs.front().lcn!=mftCluster)
-                invalid("incomplete or inconsistent MFT mapping pairs");
-        }
+        if(entry.type==0x20)invalid("MFT attribute-list extensions are unsupported");
+        if(entry.type!=0x80||entry.nameLength)continue;
+        if(found||!entry.nonResident)invalid("duplicate or resident MFT DATA");
+        found=true;stream=parseData(entry.bytes,clusters,clusterBytes,cancelled,true);
     }
-    if(!found)invalid("missing MFT DATA attribute or end marker");
+    if(!found||!stream.initialized||stream.runs.front().lcn!=mftCluster)invalid("missing or invalid MFT DATA");
     return stream;
 }
 }
@@ -139,13 +142,19 @@ NtfsMftSnapshot readNtfsMft(disk::IDiskReader& reader,uint64_t start,uint64_t co
     }
     check();return result;
 }
-NtfsResidentSummary recoverNtfsResidentRootFiles(disk::IDiskReader& reader,uint64_t start,uint64_t count,
+static NtfsResidentSummary recoverRootFiles(disk::IDiskReader& reader,uint64_t start,uint64_t count,
     const std::function<void(const std::string&,const std::vector<uint8_t>&)>& item,
-    const std::function<void(uint64_t)>& progress,const std::function<bool()>& cancelled) {
+    const std::function<void(uint64_t)>& progress,const std::function<bool()>& cancelled,bool includeNonresident) {
     constexpr size_t kRootRecord=5,kFirstUserRecord=16,kMaxOutputs=10000;
     const auto check=[&]{if(cancelled&&cancelled())invalid("cancelled");};
     const auto mft=readNtfsMft(reader,start,count,progress,cancelled);NtfsResidentSummary result;result.processedBytes=mft.processedBytes;
-    const Bytes records=mft.initializedRecords;const auto slots=records.size()/mft.recordSize;
+    const Bytes boot=mft.bootSector;
+    const auto clusterBytes=le(boot,11,2)*le(boot,13,1),clusters=le(boot,40,8)/le(boot,13,1);
+    const Bytes records=mft.initializedRecords;
+    const auto reserved=parseMftData(decodeRecord(records.first(mft.recordSize)),clusters,clusterBytes,le(boot,48,8),cancelled);
+    std::map<uint64_t,uint64_t> claimed;
+    for(const auto& run:reserved.runs)claimed.emplace(run.lcn,run.lcn+run.clusters);
+    const auto slots=records.size()/mft.recordSize;
     if(slots<=kRootRecord)invalid("root directory record is not initialized");
     const auto root=decodeRecord(records.subspan(kRootRecord*mft.recordSize,mft.recordSize));
     const auto rootSequence=le(root,16,2);
@@ -157,12 +166,12 @@ NtfsResidentSummary recoverNtfsResidentRootFiles(disk::IDiskReader& reader,uint6
         if(!(flags&1)){++result.unusedRecords;continue;}
         if(flags&2){++result.directoryRecords;continue;}
         if(le(record,32,8)){++result.extensionRecords;continue;}
-        if(result.foundItems+result.invalidFiles+result.nonresidentFiles+result.unsupportedFiles>=kMaxOutputs)invalid("resident output item limit reached");
-        std::string selected;std::vector<uint8_t> data;
+        if(result.foundItems+result.invalidFiles+result.nonresidentFiles+result.unsupportedFiles>=kMaxOutputs)invalid("NTFS output item limit reached");
+        std::string selected;std::vector<uint8_t> data;bool recoveredNonresident=false;
         try {
             if(!le(record,16,2))invalid("zero user-record sequence");
             bool standard=false,hasData=false,nonresident=false,unsupported=false,staleRoot=false,filename=false,rootLink=false;
-            int preferred=-1;std::set<std::string> names;
+            Bytes external;int preferred=-1;std::set<std::string> names;
             for(const auto& attribute:listAttributes(record,cancelled)) {
                 const auto bytes=attribute.bytes;
                 if(attribute.type==0x20||attribute.type==0xc0)unsupported=true;
@@ -194,6 +203,7 @@ NtfsResidentSummary recoverNtfsResidentRootFiles(disk::IDiskReader& reader,uint6
                     if(hasData)invalid("multiple unnamed DATA attributes");
                     hasData=true;nonresident=attribute.nonResident;
                     if(le(bytes,12,2))unsupported=true;
+                    if(nonresident)external=bytes;
                     if(!nonresident) {
                         const auto value=bytes.subspan(le(bytes,20,2),le(bytes,16,4));data.assign(value.begin(),value.end());
                     }
@@ -206,13 +216,47 @@ NtfsResidentSummary recoverNtfsResidentRootFiles(disk::IDiskReader& reader,uint6
                 ++result.nonRootFiles;continue;
             }
             if(unsupported){++result.unsupportedFiles;continue;}
-            if(!standard||!hasData)invalid("missing resident-file metadata");
-            if(nonresident){++result.nonresidentFiles;continue;}
+            if(!standard||!hasData)invalid("missing file metadata");
+            if(nonresident) {
+                if(!includeNonresident){++result.nonresidentFiles;continue;}
+                const auto stream=parseData(external,clusters,clusterBytes,cancelled);
+                if(stream.runs.size()>65536-claimed.size())invalid("file extent tracking limit reached");
+                // Reject metadata/self/cross-file overlaps before reading any payload.
+                for(const auto& run:stream.runs) {
+                    const auto next=claimed.lower_bound(run.lcn);
+                    if((next!=claimed.end()&&run.lcn+run.clusters>next->first)||
+                       (next!=claimed.begin()&&std::prev(next)->second>run.lcn))invalid("file DATA overlaps MFT or an earlier file");
+                }
+                for(const auto& run:stream.runs)claimed.emplace(run.lcn,run.lcn+run.clusters);
+                // Never expose bytes beyond ValidDataLength; the logical tail is zero-filled.
+                data.assign(static_cast<size_t>(stream.logical),0);uint64_t copied=0;
+                for(const auto& run:stream.runs) {
+                    check();if(copied==stream.initialized)break;
+                    const auto length=std::min(stream.initialized-copied,run.clusters*clusterBytes);
+                    std::vector<uint8_t> chunk;
+                    if(!readSourceBytes(&reader,start,count,run.lcn*clusterBytes,length,chunk,cancelled))invalid("file DATA source read failed");
+                    std::copy(chunk.begin(),chunk.end(),data.begin()+copied);copied+=length;
+                    result.processedBytes+=length;if(progress)progress(result.processedBytes);
+                }
+                if(copied!=stream.initialized)invalid("incomplete file DATA");
+                recoveredNonresident=true;
+            }
             if(names.size()>1)result.otherRootNames+=names.size()-1;
         }catch(const std::runtime_error&){check();++result.invalidFiles;continue;}
-        check();item(selected,data);++result.foundItems;if(progress)progress(result.processedBytes);
+        check();item(selected,data);++result.foundItems;if(recoveredNonresident)++result.recoveredNonresidentFiles;if(progress)progress(result.processedBytes);
     }
     check();return result;
+}
+
+NtfsResidentSummary recoverNtfsResidentRootFiles(disk::IDiskReader& reader,uint64_t start,uint64_t count,
+    const std::function<void(const std::string&,const std::vector<uint8_t>&)>& item,
+    const std::function<void(uint64_t)>& progress,const std::function<bool()>& cancelled) {
+    return recoverRootFiles(reader,start,count,item,progress,cancelled,false);
+}
+NtfsResidentSummary recoverNtfsRootFiles(disk::IDiskReader& reader,uint64_t start,uint64_t count,
+    const std::function<void(const std::string&,const std::vector<uint8_t>&)>& item,
+    const std::function<void(uint64_t)>& progress,const std::function<bool()>& cancelled) {
+    return recoverRootFiles(reader,start,count,item,progress,cancelled,true);
 }
 
 }

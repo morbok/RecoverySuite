@@ -119,9 +119,10 @@ models::RecoveryResult GUIRecoveryService::executeOperation(const models::Recove
                 summary = recovery::carveSignatures(*imageReader_,operation.startSector,operation.numSectors,
                     saveItem,report,cancellationToken);
             } else if(operation.operationType=="ntfs_resident_recovery") {
-                const auto files=recovery::recoverNtfsResidentRootFiles(*imageReader_,operation.startSector,operation.numSectors,saveItem,report,cancellationToken);
+                const auto files=recovery::recoverNtfsRootFiles(*imageReader_,operation.startSector,operation.numSectors,saveItem,report,cancellationToken);
                 summary.processedBytes=files.processedBytes;summary.cancelled=cancelled();
                 summary.skippedCandidates=files.invalidFiles+files.nonresidentFiles+files.unsupportedFiles;
+                result.details["Nonresident NTFS root files reconstructed"]=std::to_string(files.recoveredNonresidentFiles);
                 result.details["Invalid NTFS root files"]=std::to_string(files.invalidFiles);
                 result.details["Nonresident NTFS root files not reconstructed"]=std::to_string(files.nonresidentFiles);
                 result.details["Unsupported NTFS root-file features"]=std::to_string(files.unsupportedFiles);
@@ -178,7 +179,7 @@ models::RecoveryResult GUIRecoveryService::executeOperation(const models::Recove
     result.endTime = std::chrono::system_clock::now();
     result.details["Export"] = result.outputWritten ? "Only the listed items were saved to the destination" : "No output files were saved";
     result.details["Recovery method"] = operation.operationType == "ntfs_resident_recovery"
-        ? "In-use NTFS root files with unnamed resident DATA and sequence-matching parent references. One preferred name per record. No index/bitmap cross-check, nonresident/deleted/recursive recovery or alternate-stream export."
+        ? "In-use NTFS root files with unnamed resident/nonresident DATA (16 MiB/file) and sequence-matching parent references. One preferred name per record. No index/bitmap cross-check, deleted/recursive recovery, attribute-list extensions, sparse/compressed/encrypted DATA or alternate-stream export."
         : operation.operationType == "ntfs_mft_snapshot"
         ? "NTFS boot and initialized MFT bytes. Mapping pairs, FILE headers and update-sequence fixups checked; raw on-disk bytes preserved. No file reconstruction, mirror fallback or attribute-list extensions."
         : operation.operationType == "metadata_recovery"

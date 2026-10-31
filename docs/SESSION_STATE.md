@@ -36,8 +36,8 @@ before merge; code review remains outstanding. Earlier checkpoint CI notes below
 ## Limits and next work
 
 GUI and CLI image workflows export signature candidates, FAT metadata, allocated FAT directory trees,
-initialized NTFS MFT snapshots and resident NTFS root files. Fragmented FAT chains and MFT streams
-are supported within documented bounds. Nonresident/recursive NTFS files, allocation/index consistency,
+initialized NTFS MFT snapshots and resident/nonresident NTFS root files. Fragmented FAT chains and MFT streams
+are supported within documented bounds. Recursive NTFS files, attribute-list extensions, allocation/index consistency,
 deleted reconstruction, raw-device workflows, resumable sessions and Windows export remain work.
 The signature carver does not validate full file formats. Limits: 16 MiB/candidate, 10,000 attempted
 outputs, 64 KiB scan chunks. Windows and real hardware have not been validated.
@@ -260,3 +260,22 @@ Verified both GitHub Linux jobs succeeded for that exact code revision:
 https://github.com/morbok/RecoverySuite/actions/runs/41153617015
 This checkpoint updates the current validation/scope summary above; it does not imply release
 completion, Windows/hardware validation or completed code review.
+
+## 2026-10-31 — NTFS nonresident root-file checkpoint
+
+Extended GUI NTFS root files and CLI image ntfs-files to unnamed nonresident DATA in in-use root
+base records. Reuse mapping-pairs decoding with MFT snapshots; validate complete VCN coverage,
+physical bounds, size relationships and run overlaps. Support fragmented/backward runs, trim allocation
+slack and zero-fill the uninitialized logical tail. Reserve MFT and earlier-file runs; later conflicts
+fail while earlier completed outputs remain. Payload read failures do not export the affected file.
+Keep the resident-only public helper as a compatibility wrapper. Limits: 16 MiB/file, 4096 runs/file,
+65536 tracked extents, plus existing MFT and output limits. Source identity, safe output and cancellation
+are shared with existing workflows. No allocation/index consistency, directory traversal, attribute-list
+extensions, deleted reconstruction, sparse/compressed/encrypted data or ADS export.
+
+Validation: 28/28 Debug CTest executables (3.87 s), 28/28 Release (1.67 s), and 4/4 ASan/UBSan
+integration suites (14.45 s; Qt leak detection disabled). New GDB-selected tests exit normally,
+22 QtTest passes including setup/cleanup. Cover GUI/CLI bytes at nonzero offsets and 512/4096 sectors,
+fragmented negative-delta runs, exact logical lengths, zero/partial/full initialization, no-overwrite,
+cancellation during payload reads, malformed mappings, self/MFT/prior-file overlaps, and short,
+oversized or failed payload reads. New revision still needs its own remote CI and code review.

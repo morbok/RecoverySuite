@@ -120,20 +120,27 @@ compressed/encrypted MFT data and MFT-mirror fallback are unsupported. Invalid m
 failed/short read prevents output; later output failures retain completed files. This is a bounded
 metadata snapshot, not NTFS user-file reconstruction, metadata repair or whole-volume validation.
 
-## NTFS resident root files
+## NTFS root files
 
-Choose **NTFS resident root files (small files)** or run `image ntfs-files`. This copies the unnamed
-resident DATA stream from in-use base FILE records, with the initialized-MFT snapshot limits above.
+Choose **NTFS root files (resident / nonresident)** or run `image ntfs-files`. This copies the unnamed
+resident or nonresident DATA stream from in-use base FILE records, with the initialized-MFT snapshot limits above.
 A root FILE record must exist; each chosen FILE_NAME parent reference must match its record number
 and sequence. UTF-16 names are decoded without lossy replacements. One preferred safe root name
 is exported per record, favoring Windows names over DOS aliases; other names are counted but are
 not recreated as hard links. Empty resident files are preserved. File bytes include restored USA
 words, rather than on-disk protection tags. Output names are never rewritten to resolve collisions.
 
-Non-root links, directories, extension records and unused user slots are skipped. Root files with
-nonresident DATA or unsupported features produce a failed/partial result while preserving completed
-outputs. Compressed/encrypted/sparse/reparse files, attribute-list extensions, deleted/nonresident
-reconstruction, alternate-stream export and recursive NTFS traversal are unsupported. Allocation
+Nonresident DATA follows complete base-record mapping pairs, including fragmented runs and negative
+LCN deltas. Each logical file is limited to 16 MiB and 4096 runs; the operation tracks at most 65536
+physical extents. Only initialized bytes are read; the logical tail is zero-filled. Allocation slack
+is never exported. Run sizes, volume bounds and intra-file overlaps are checked. MFT extents are
+reserved, and a later file overlapping an earlier file's claimed extents is rejected; an earlier
+completed output remains available. Failed payload reads do not export that file.
+
+Non-root links, directories, extension records and unused user slots are skipped. Unsupported or
+invalid root files produce a failed/partial result while preserving completed outputs.
+Compressed/encrypted/sparse/reparse files, attribute-list extensions, deleted reconstruction,
+alternate-stream export and recursive NTFS traversal are unsupported. Allocation
 bitmaps and directory indexes are not cross-checked; in-use record flags and parent references do
 not establish whole-filesystem consistency. Original permissions/timestamps are not restored.
 
@@ -145,7 +152,7 @@ not establish whole-filesystem consistency. Original permissions/timestamps are 
 - POSIX output export rejects traversal, symlink components, unsafe names and existing files. It
   anchors the selected directory with a file descriptor; incomplete writes are removed on failure.
 - The image workflow supports signature carving, FAT metadata snapshots and allocated FAT12/16/32 root
-  files, with optional bounded recursive traversal. Deleted chains, NTFS nonresident files and NTFS directory traversal remain unavailable.
+  files, with optional bounded recursive traversal. NTFS root files support resident and bounded nonresident DATA. Deleted chains and NTFS directory traversal remain unavailable.
 - Legacy NTFS factory inspection reads actual 64-bit boot fields. Unexamined allocation, mount and
   repair metrics throw `std::logic_error`; version/label remain unknown, and the legacy analyzer
   reports full consistency analysis unavailable. Use the image workflows for supported MFT/file work.
