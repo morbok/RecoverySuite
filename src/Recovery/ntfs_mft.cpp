@@ -2,6 +2,9 @@
 #include "source_bytes.h"
 #include "unicode_file_name.h"
 #include <set>
+#include <deque>
+#include <tuple>
+#include <optional>
 #include <algorithm>
 #include <limits>
 #include <map>
@@ -58,9 +61,9 @@ Stream parseData(Bytes attribute,uint64_t clusters,uint64_t clusterBytes,const s
     Stream stream;const auto length=attribute.size();constexpr uint64_t header=64;
     if(length<header||le(attribute,12,2)||le(attribute,16,8)||le(attribute,34,2))invalid("unsupported DATA flags or extension");
     stream.allocated=le(attribute,40,8);stream.logical=le(attribute,48,8);stream.initialized=le(attribute,56,8);
-    if(stream.initialized>kMaxSnapshotBytes||(!mft&&stream.logical>kMaxSnapshotBytes)||stream.initialized>stream.logical||stream.logical>stream.allocated)invalid("invalid DATA sizes or stream above 16 MiB");
+    if((!mft&&(stream.initialized>kMaxSnapshotBytes||stream.logical>kMaxSnapshotBytes))||stream.initialized>stream.logical||stream.logical>stream.allocated)invalid("invalid DATA sizes or stream above 16 MiB");
     size_t cursor=le(attribute,32,2);
-    if(cursor<header||cursor>=length)invalid("invalid mapping-pairs offset");
+    if(cursor<header||cursor>=length||(le(attribute,9,1)&&le(attribute,10,2)+le(attribute,9,1)*2>cursor))invalid("invalid mapping-pairs offset");
     uint64_t current=0,total=0;bool terminated=false;std::map<uint64_t,uint64_t> physical;
     while(cursor<length) {
         if(cancelled&&cancelled())invalid("cancelled");
@@ -97,9 +100,226 @@ Stream parseMftData(Bytes record,uint64_t clusters,uint64_t clusterBytes,uint64_
     if(!found||!stream.initialized||stream.runs.front().lcn!=mftCluster)invalid("missing or invalid MFT DATA");
     return stream;
 }
+constexpr uint64_t kMaxFileBytes=uint64_t{2}*1024*1024*1024;
+struct CheckedData {Stream stream;std::vector<uint8_t> resident;bool external=false;uint64_t size()const{return external?stream.logical:resident.size();}};
+class NtfsContext {
+public:
+    disk::IDiskReader& reader;uint64_t start,count,clusterBytes,clusters,processed{};
+    NtfsMftSnapshot mft;std::function<void(uint64_t)> progress;std::function<bool()> cancelled;
+    std::map<uint64_t,std::vector<uint8_t>> decoded;
+    std::map<uint64_t,std::vector<Attribute>> attributesCache;
+    std::map<uint64_t,uint64_t> metadataClaims;
+    std::vector<uint8_t> volumeBitmap,recordBitmap;
+    std::map<uint64_t,std::set<std::pair<uint64_t,std::string>>> indexes;
+    NtfsContext(disk::IDiskReader& r,uint64_t s,uint64_t n,const std::function<void(uint64_t)>& p,const std::function<bool()>& c)
+        :reader(r),start(s),count(n),mft(readNtfsMft(r,s,n,p,c,128*1024*1024)),progress(p),cancelled(c) {
+        clusterBytes=le(mft.bootSector,11,2)*le(mft.bootSector,13,1);clusters=le(mft.bootSector,40,8)/le(mft.bootSector,13,1);processed=mft.processedBytes;
+        const auto reserved=parseMftData(record(0),clusters,clusterBytes,le(mft.bootSector,48,8),cancelled);
+        claim(reserved);
+    }
+    void check()const{if(cancelled&&cancelled())invalid("cancelled");}
+    uint64_t slots()const{return mft.initializedRecords.size()/mft.recordSize;}
+    Bytes record(uint64_t index) {
+        check();if(index>=slots())invalid("record reference outside initialized MFT");
+        if(auto it=decoded.find(index);it!=decoded.end())return it->second;
+        if(decoded.size()*mft.recordSize>=128*1024*1024)invalid("decoded-record memory limit");
+        const auto raw=Bytes(mft.initializedRecords).subspan(index*mft.recordSize,mft.recordSize);
+        return decoded.emplace(index,decodeRecord(raw)).first->second;
+    }
+    std::vector<uint8_t> source(uint64_t offset,uint64_t length) {
+        check();std::vector<uint8_t> result;
+        if(!length)return result;
+        if(offset>clusters*clusterBytes||length>clusters*clusterBytes-offset||!readSourceBytes(&reader,start,count,offset,length,result,cancelled))invalid("checked source read failed");
+        processed+=length;if(progress)progress(processed);return result;
+    }
+    static std::string attributeName(const Attribute& a) {
+        std::string result;for(size_t i=0;i<a.nameLength*2;++i)result.push_back(char(a.bytes[le(a.bytes,10,2)+i]));return result;
+    }
+    CheckedData data(const std::vector<Attribute>& attrs,uint64_t type,const std::string& name={}) {
+        std::vector<Attribute> pieces;
+        for(const auto& a:attrs)if(a.type==type&&attributeName(a)==name)pieces.push_back(a);
+        if(pieces.empty())invalid("required attribute is missing");
+        CheckedData result;
+        if(!pieces.front().nonResident) {
+            if(pieces.size()!=1||le(pieces.front().bytes,12,2))invalid("duplicate/flagged resident attribute");
+            const auto a=pieces.front().bytes;const auto value=a.subspan(le(a,20,2),le(a,16,4));result.resident.assign(value.begin(),value.end());return result;
+        }
+        result.external=true;
+        std::sort(pieces.begin(),pieces.end(),[](const auto& a,const auto& b){return le(a.bytes,16,8)<le(b.bytes,16,8);});
+        uint64_t next=0;std::map<uint64_t,uint64_t> physical;
+        for(const auto& piece:pieces) {
+            check();if(!piece.nonResident||le(piece.bytes,16,8)!=next)invalid("missing/overlapping DATA extension VCNs");
+            const auto low=le(piece.bytes,16,8),high=le(piece.bytes,24,8);
+            if(high<low||high-low>=clusters)invalid("invalid extension VCN range");
+            std::vector<uint8_t> copy(piece.bytes.begin(),piece.bytes.end());
+            const auto put=[&](size_t offset,uint64_t value){for(int i=0;i<8;++i)copy[offset+i]=uint8_t(value>>(8*i));};
+            put(16,0);put(24,high-low);put(40,(high-low+1)*clusterBytes);put(48,(high-low+1)*clusterBytes);put(56,(high-low+1)*clusterBytes);
+            const auto part=parseData(copy,clusters,clusterBytes,cancelled,true);
+            if(result.stream.runs.size()+part.runs.size()>kMaxRuns)invalid("extended stream run limit");
+            for(const auto& run:part.runs) {
+                const auto it=physical.lower_bound(run.lcn);
+                if((it!=physical.end()&&it->first<run.lcn+run.clusters)||(it!=physical.begin()&&std::prev(it)->second>run.lcn))invalid("overlapping extension physical runs");
+                physical.emplace(run.lcn,run.lcn+run.clusters);result.stream.runs.push_back(run);
+            }
+            next=high+1;
+        }
+        const auto first=pieces.front().bytes;
+        result.stream.allocated=le(first,40,8);result.stream.logical=le(first,48,8);result.stream.initialized=le(first,56,8);
+        if(result.stream.allocated!=next*clusterBytes||result.stream.logical>result.stream.allocated||result.stream.initialized>result.stream.logical||result.stream.logical>kMaxFileBytes)invalid("invalid extended stream sizes");
+        return result;
+    }
+    std::vector<uint8_t> read(const CheckedData& data,uint64_t offset,size_t length) {
+        check();if(length>65536||offset>data.size()||length>data.size()-offset)invalid("invalid streamed read request");
+        if(!data.external)return {data.resident.begin()+offset,data.resident.begin()+offset+length};
+        std::vector<uint8_t> result(length,0);const auto initialized=data.stream.initialized;
+        if(offset>=initialized)return result;
+        const auto end=std::min<uint64_t>(offset+length,initialized);uint64_t vcnOffset=0,filled=0;
+        for(const auto& run:data.stream.runs) {
+            const auto bytes=run.clusters*clusterBytes;
+            if(offset<vcnOffset+bytes&&end>vcnOffset) {
+                const auto begin=std::max(offset,vcnOffset),finish=std::min(end,vcnOffset+bytes);
+                const auto chunk=source(run.lcn*clusterBytes+begin-vcnOffset,finish-begin);
+                std::copy(chunk.begin(),chunk.end(),result.begin()+begin-offset);filled+=chunk.size();
+            }
+            vcnOffset+=bytes;if(vcnOffset>=end)break;
+        }
+        if(filled!=end-offset)invalid("incomplete streamed data");
+        return result;
+    }
+    std::vector<uint8_t> materialize(const CheckedData& d,uint64_t limit=16*1024*1024) {
+        if(d.size()>limit||(d.external&&d.stream.initialized!=d.size()))invalid("metadata stream too large or not initialized");
+        std::vector<uint8_t> result;result.reserve(d.size());
+        for(uint64_t offset=0;offset<d.size();) {const auto chunk=read(d,offset,std::min<uint64_t>(65536,d.size()-offset));result.insert(result.end(),chunk.begin(),chunk.end());offset+=chunk.size();}
+        return result;
+    }
+    const std::vector<Attribute>& attributes(uint64_t index) {
+        if(auto it=attributesCache.find(index);it!=attributesCache.end())return it->second;
+        const auto base=record(index);auto attrs=listAttributes(base,cancelled);const auto baseReference=index|(le(base,16,2)<<48);
+        std::vector<Attribute> lists;for(const auto& a:attrs)if(a.type==0x20)lists.push_back(a);
+        if(lists.size()>1)invalid("multiple ATTRIBUTE_LIST streams");
+        if(!lists.empty()) {
+            if(lists[0].nameLength)invalid("named ATTRIBUTE_LIST");
+            const auto content=materialize(data(lists,0x20),1024*1024);std::set<std::tuple<uint64_t,uint64_t,uint64_t>> seen;std::set<uint64_t> extensions;
+            size_t entries=0;
+            for(size_t pos=0;pos<content.size();) {
+                check();if(content.size()-pos<26||++entries>1024)invalid("invalid/excessive ATTRIBUTE_LIST entries");
+                const auto bytes=Bytes(content).subspan(pos);const auto type=le(bytes,0,4),size=le(bytes,4,2),names=le(bytes,6,1),nameOffset=le(bytes,7,1),low=le(bytes,8,8),ref=le(bytes,16,8),instance=le(bytes,24,2);
+                if(size<26||size%8||size>bytes.size()||(names&&(nameOffset<26||nameOffset+names*2>size))||!seen.emplace(ref,instance,type).second)invalid("malformed/duplicate ATTRIBUTE_LIST entry");
+                const auto target=ref&0x0000ffffffffffff;const auto extension=record(target);
+                if(le(extension,16,2)!=(ref>>48)||!le(extension,16,2)||(le(extension,22,2)&1)!=(le(base,22,2)&1))invalid("stale ATTRIBUTE_LIST reference");
+                if(target!=index) {
+                    if(le(extension,32,8)!=baseReference)invalid("invalid extension base reference");
+                    extensions.insert(target);
+                    if(extensions.size()>64)invalid("extension record limit");
+                }
+                std::string name;if(names)name.assign(reinterpret_cast<const char*>(bytes.data()+nameOffset),names*2);
+                size_t matches=0;
+                for(const auto& a:listAttributes(extension,cancelled)) {
+                    if(a.type==0x20&&target!=index)invalid("nested ATTRIBUTE_LIST unsupported");
+                    if(a.type==type&&le(a.bytes,14,2)==instance&&attributeName(a)==name&&(a.nonResident?le(a.bytes,16,8):0)==low) {
+                        ++matches;if(target!=index)attrs.push_back(a);
+                    }
+                }
+                if(matches!=1)invalid("ATTRIBUTE_LIST entry does not match its attribute");
+                pos+=size;
+            }
+        }
+        return attributesCache.emplace(index,std::move(attrs)).first->second;
+    }
+    void claim(const Stream& stream) {
+        if(metadataClaims.size()+stream.runs.size()>65536)invalid("metadata extent limit");
+        for(const auto& run:stream.runs) {
+            uint64_t begin=run.lcn,end=run.lcn+run.clusters;auto it=metadataClaims.lower_bound(begin);
+            if(it!=metadataClaims.begin()&&std::prev(it)->second>=begin){--it;begin=it->first;}
+            while(it!=metadataClaims.end()&&it->first<=end){end=std::max(end,it->second);it=metadataClaims.erase(it);}
+            metadataClaims.emplace(begin,end);
+        }
+    }
+    static bool bit(const std::vector<uint8_t>& bytes,uint64_t index) {if(index/8>=bytes.size())invalid("allocation bitmap is truncated");return bytes[index/8]&(1u<<(index%8));}
+    void allocation() {
+        recordBitmap=materialize(data(attributes(0),0xb0));
+        const auto bitmapRecord=record(6);if(le(bitmapRecord,22,2)!=1||le(bitmapRecord,32,8))invalid("invalid volume bitmap base record");
+        const auto bitmapData=data(attributes(6),0x80);volumeBitmap=materialize(bitmapData);if(bitmapData.external)claim(bitmapData.stream);
+        if(recordBitmap.size()<(slots()+7)/8||volumeBitmap.size()<(clusters+7)/8)invalid("short allocation bitmap");
+        for(uint64_t i=0;i<slots();++i) {
+            check();const auto raw=Bytes(mft.initializedRecords).subspan(i*mft.recordSize,mft.recordSize);
+            const bool blank=std::all_of(raw.begin(),raw.end(),[](uint8_t c){return c==0;});
+            if(bit(recordBitmap,i)!=(!blank&&(le(raw,22,2)&1)))invalid("MFT bitmap and record flags disagree");
+        }
+        allocated(parseMftData(record(0),clusters,clusterBytes,le(mft.bootSector,48,8),cancelled),true);
+        if(bitmapData.external)allocated(bitmapData.stream,true);
+        for(uint64_t i=0;i<slots();++i) {
+            const auto raw=Bytes(mft.initializedRecords).subspan(i*mft.recordSize,mft.recordSize);if(le(raw,22,2)!=3)continue;
+            for(const auto& a:attributes(i))if(a.type==0xa0&&a.nonResident) {const auto d=data(attributes(i),0xa0,attributeName(a));allocated(d.stream,true);claim(d.stream);break;}
+        }
+    }
+    void allocated(const Stream& stream,bool used) {
+        for(const auto& run:stream.runs)for(uint64_t c=run.lcn;c<run.lcn+run.clusters;++c){if((c&4095)==0)check();if(bit(volumeBitmap,c)!=used)invalid(used?"file references a free cluster":"deleted file cluster has been reallocated");}
+    }
+    std::string fileName(Bytes value) {
+        if(value.size()<66)invalid("short FILE_NAME key");
+        const auto length=le(value,64,1),space=le(value,65,1);
+        if(!length||value.size()!=66+length*2||space>3)invalid("invalid FILE_NAME key");
+        std::vector<uint16_t> units;for(size_t j=0;j<length;++j)units.push_back(le(value,66+2*j,2));
+        const auto name=decodeSafeFileName(units);if(name.empty())invalid("unsafe FILE_NAME key");return name;
+    }
+    const std::set<std::pair<uint64_t,std::string>>& index(uint64_t directory) {
+        if(auto it=indexes.find(directory);it!=indexes.end())return it->second;
+        const std::string i30{"$\0I\0" "3\0" "0\0",8};const auto& attrs=attributes(directory);
+        const auto root=materialize(data(attrs,0x90,i30));
+        if(root.size()<32||le(root,0,4)!=0x30||le(root,4,4)!=1)invalid("invalid directory INDEX_ROOT");
+        const auto blockSize=le(root,8,4);if(blockSize<512||blockSize>65536||(blockSize&(blockSize-1)))invalid("invalid index block size");
+        std::optional<CheckedData> allocationData;std::vector<uint8_t> bitmap;std::set<uint64_t> visited;
+        std::set<std::pair<uint64_t,std::string>> entries;
+        const auto parent=directory|(le(record(directory),16,2)<<48);
+        const auto walk=[&](auto&& self,Bytes bytes,size_t header,size_t depth)->void {
+            check();if(depth>32||bytes.size()<header+16)invalid("invalid index depth/header");
+            const auto first=le(bytes,header,4),used=le(bytes,header+4,4),allocated=le(bytes,header+8,4),flags=le(bytes,header+12,1);
+            if(first<16||first%8||used<first+16||used>allocated||allocated>bytes.size()-header||flags>1)invalid("invalid INDEX_HEADER bounds");
+            bool last=false;
+            for(size_t pos=header+first;pos<header+used;) {
+                if(header+used-pos<16)invalid("short INDEX_ENTRY");
+                const auto length=le(bytes,pos+8,2),key=le(bytes,pos+10,2),f=le(bytes,pos+12,2);
+                if(length<uint64_t{16}+((f&1)?8:0)||length%8||length>header+used-pos||f>3||key>length-16-((f&1)?8:0))invalid("invalid INDEX_ENTRY bounds");
+                if(!(f&2)) {
+                    const auto value=bytes.subspan(pos+16,key);if(le(value,0,8)!=parent)invalid("index key has wrong parent");
+                    const auto ref=le(bytes,pos,8);if((ref&0x0000ffffffffffff)>=slots()||!(ref>>48))invalid("index record reference outside MFT");
+                    if(!entries.emplace(ref,fileName(value)).second)invalid("duplicate directory index entry");
+                    if(entries.size()>100000)invalid("index entry limit");
+                }else {if(key)invalid("end index entry has a key");last=true;}
+                if(f&1) {
+                    if(!flags)invalid("leaf index has child pointer");
+                    if(!allocationData){allocationData=data(attrs,0xa0,i30);bitmap=materialize(data(attrs,0xb0,i30));}
+                    const auto child=le(bytes,pos+length-8,8),unit=blockSize>=clusterBytes?clusterBytes:512;
+                    if(child>std::numeric_limits<uint64_t>::max()/unit)invalid("index VCN overflow");
+                    const auto offset=child*unit;
+                    if(offset%blockSize||offset>allocationData->size()||blockSize>allocationData->size()-offset||!bit(bitmap,offset/blockSize)||!visited.insert(child).second||visited.size()>4096)invalid("invalid/cyclic index child");
+                    auto block=read(*allocationData,offset,blockSize);if(!std::equal(block.begin(),block.begin()+4,"INDX")||le(block,16,8)!=child)invalid("invalid INDX signature/VCN");
+                    const auto usa=le(block,4,2),words=le(block,6,2);
+                    if(usa<40||usa%2||words!=blockSize/512+1||usa+words*2>512-2||usa+words*2>24+le(block,24,4))invalid("invalid INDX update sequence array");
+                    const auto tag=le(block,usa,2);for(size_t i=1;i<words;++i){if(le(block,i*512-2,2)!=tag)invalid("torn INDX block");block[i*512-2]=block[usa+i*2];block[i*512-1]=block[usa+i*2+1];}
+                    self(self,block,24,depth+1);
+                }
+                pos+=length;if(last){if(pos!=header+used)invalid("entries follow index end");break;}
+            }
+            if(!last)invalid("missing index end entry");
+        };
+        walk(walk,root,16,0);
+        if(allocationData) {
+            const auto blocks=allocationData->size()/blockSize;
+            if(allocationData->size()%blockSize||bitmap.size()<(blocks+7)/8)invalid("truncated index allocation/bitmap");
+            for(uint64_t i=0;i<bitmap.size()*8;++i)if(bit(bitmap,i)) {
+                if(i>=blocks||!visited.contains(i*blockSize/(blockSize>=clusterBytes?clusterBytes:512)))invalid("unreachable allocated index block");
+            }
+        }
+        return indexes.emplace(directory,std::move(entries)).first->second;
+    }
+};
+
 }
 NtfsMftSnapshot readNtfsMft(disk::IDiskReader& reader,uint64_t start,uint64_t count,
-    const std::function<void(uint64_t)>& progress,const std::function<bool()>& cancelled) {
+    const std::function<void(uint64_t)>& progress,const std::function<bool()>& cancelled,uint64_t maximumBytes) {
+    if(!maximumBytes||maximumBytes>128*1024*1024)invalid("MFT resource limit outside 1..128 MiB");
     NtfsMftSnapshot result;
     const auto check=[&]{if(cancelled&&cancelled())invalid("cancelled");};
     uint64_t volumeBytes=std::numeric_limits<uint64_t>::max();
@@ -125,13 +345,16 @@ NtfsMftSnapshot readNtfsMft(disk::IDiskReader& reader,uint64_t start,uint64_t co
     const auto bootstrap=read(mft*clusterBytes,result.recordSize);const auto decoded=decodeRecord(bootstrap);
     if(le(decoded,22,2)!=1||le(decoded,32,8)||!le(decoded,16,2))invalid("invalid MFT base record");
     const auto stream=parseMftData(decoded,clusters,clusterBytes,mft,cancelled);
-    if(stream.runs.front().clusters*clusterBytes<result.recordSize||stream.initialized%result.recordSize||stream.logical%result.recordSize||stream.initialized<result.recordSize)
+    if(stream.initialized>maximumBytes||stream.runs.front().clusters*clusterBytes<result.recordSize||stream.initialized%result.recordSize||stream.logical%result.recordSize||stream.initialized<result.recordSize)
         invalid("fragmented bootstrap record or incomplete FILE record lengths");
     result.initializedRecords.reserve(static_cast<size_t>(stream.initialized));
     for(const auto& run:stream.runs) {
         check();const auto remaining=stream.initialized-result.initializedRecords.size();if(!remaining)break;
-        const auto bytes=read(run.lcn*clusterBytes,std::min(remaining,run.clusters*clusterBytes));
-        result.initializedRecords.insert(result.initializedRecords.end(),bytes.begin(),bytes.end());
+        const auto length=std::min(remaining,run.clusters*clusterBytes);
+        for(uint64_t offset=0;offset<length;) {
+            const auto chunk=std::min<uint64_t>(length-offset,65536);const auto bytes=read(run.lcn*clusterBytes+offset,chunk);
+            result.initializedRecords.insert(result.initializedRecords.end(),bytes.begin(),bytes.end());offset+=chunk;
+        }
     }
     if(result.initializedRecords.size()!=stream.initialized||!std::equal(bootstrap.begin(),bootstrap.end(),result.initializedRecords.begin()))invalid("MFT bootstrap changed or stream is incomplete");
     for(size_t pos=0;pos<result.initializedRecords.size();pos+=result.recordSize) {
@@ -292,6 +515,79 @@ NtfsResidentSummary recoverNtfsTreeFiles(disk::IDiskReader& reader,uint64_t star
     const std::function<void(const std::string&,const std::vector<uint8_t>&)>& item,
     const std::function<void(uint64_t)>& progress,const std::function<bool()>& cancelled) {
     return recoverRootFiles(reader,start,count,item,progress,cancelled,true,true);
+}
+
+NtfsRecoverySummary recoverNtfsChecked(disk::IDiskReader& reader,uint64_t start,uint64_t count,
+    const NtfsRecoveryOptions& options,const std::function<void(const NtfsFileSource&)>& item,
+    const std::function<void(uint64_t)>& progress,const std::function<bool()>& cancelled) {
+    NtfsContext context(reader,start,count,progress,cancelled);NtfsRecoverySummary result;
+    if(options.deleted&&!options.verifyAllocation)invalid("deleted recovery requires allocation verification");
+    if(options.verifyAllocation)context.allocation();
+    const auto root=context.record(5);if(le(root,22,2)!=3||le(root,32,8)||!le(root,16,2))invalid("invalid root directory");
+    std::map<uint64_t,std::string> paths{{5,{}}};
+    const auto path=[&](auto&& self,uint64_t reference,std::set<uint64_t>& visiting)->std::string {
+        context.check();const auto number=reference&0x0000ffffffffffff;const auto record=context.record(number);
+        if(le(record,16,2)!=(reference>>48)||!le(record,16,2)||le(record,22,2)!=3||le(record,32,8))invalid("stale or invalid parent directory");
+        if(auto it=paths.find(number);it!=paths.end())return it->second;
+        if(!visiting.insert(number).second||visiting.size()>32||paths.size()>=1024)invalid("directory cycle/count/depth limit");
+        std::string selected;int rank=-1;
+        for(const auto& a:context.attributes(number)) {
+            if(a.type==0xc0)invalid("reparse parent directory");
+            if(a.type==0x10){const auto value=a.bytes.subspan(le(a.bytes,20,2),le(a.bytes,16,4));if(a.nonResident||value.size()<36||(le(value,32,4)&0x4e00))invalid("unsupported parent directory");}
+            if(a.type!=0x30)continue;
+            if(a.nonResident||a.nameLength||le(a.bytes,12,2))invalid("invalid parent FILE_NAME");
+            const auto value=a.bytes.subspan(le(a.bytes,20,2),le(a.bytes,16,4));const auto name=context.fileName(value);const auto parent=le(value,0,8);
+            const int candidate=le(value,65,1)==2?0:(le(value,65,1)==0?1:2);if(candidate<=rank)continue;
+            const auto prefix=self(self,parent,visiting);
+            if(options.verifyAllocation&&!context.index(parent&0x0000ffffffffffff).contains({reference,name}))invalid("directory is missing from parent index");
+            selected=prefix.empty()?name:prefix+'/'+name;rank=candidate;
+        }
+        visiting.erase(number);if(selected.empty()||selected.size()>4095||std::count(selected.begin(),selected.end(),'/')>=32)invalid("unsafe or excessive directory path");
+        paths.emplace(number,selected);return selected;
+    };
+    for(uint64_t number=16;number<context.slots();++number) {
+        context.check();const auto raw=Bytes(context.mft.initializedRecords).subspan(number*context.mft.recordSize,context.mft.recordSize);
+        if(std::all_of(raw.begin(),raw.end(),[](uint8_t c){return !c;}))continue;
+        const auto record=context.record(number);const auto flags=le(record,22,2);
+        if(le(record,32,8)){++result.extensionRecords;continue;}
+        if((flags&2)||bool(flags&1)==options.deleted){++result.skippedRecords;continue;}
+        if(result.foundItems+result.invalidFiles>=10000)invalid("output item limit");
+        if(options.deleted)++result.deletedCandidates;
+        try {
+            if(!le(record,16,2))invalid("zero record sequence");
+            const auto& attrs=context.attributes(number);bool standard=false;std::string selected;int rank=-1;
+            for(const auto& a:attrs) {
+                if(a.type==0xc0)invalid("reparse file unsupported");
+                if(a.type==0x10) {
+                    if(standard||a.nonResident||a.nameLength||le(a.bytes,12,2))invalid("invalid STANDARD_INFORMATION");
+                    const auto value=a.bytes.subspan(le(a.bytes,20,2),le(a.bytes,16,4));if(value.size()<36||(le(value,32,4)&0x10004e10))invalid("unsupported file attributes");standard=true;
+                }
+                if(a.type!=0x30)continue;
+            if(a.nonResident||a.nameLength||le(a.bytes,12,2))invalid("invalid FILE_NAME");
+                const auto value=a.bytes.subspan(le(a.bytes,20,2),le(a.bytes,16,4));const auto name=context.fileName(value);const auto parent=le(value,0,8);
+                if(!options.recursive&&(parent&0x0000ffffffffffff)!=5)continue;
+                std::set<uint64_t> visiting;const auto prefix=path(path,parent,visiting);
+                const auto reference=number|(le(record,16,2)<<48);
+                const auto candidate=le(value,65,1)==2?0:(le(value,65,1)==0?1:2);if(candidate<=rank)continue;
+                if(options.verifyAllocation&&!options.deleted&&!context.index(parent&0x0000ffffffffffff).contains({reference,name}))invalid("file is missing from parent directory index");
+                selected=prefix.empty()?name:prefix+'/'+name;rank=candidate;
+            }
+            if(!standard||selected.empty()||selected.size()>4095)invalid("missing metadata or unsafe file path");
+            const auto data=context.data(attrs,0x80);
+            if(data.external) {
+                if(options.verifyAllocation)context.allocated(data.stream,!options.deleted);
+                for(const auto& run:data.stream.runs) {
+                    const auto it=context.metadataClaims.lower_bound(run.lcn);
+                    if((it!=context.metadataClaims.end()&&it->first<run.lcn+run.clusters)||(it!=context.metadataClaims.begin()&&std::prev(it)->second>run.lcn))invalid("file stream overlaps metadata or previous file");
+                }
+                context.claim(data.stream);
+            }
+            NtfsFileSource file{selected,options.deleted?"Deleted metadata candidate; original content may have been overwritten":"Allocation and parent index checked; content validity is not established",data.size(),
+                [&](uint64_t offset,size_t length){return context.read(data,offset,length);}};
+            item(file);++result.foundItems;
+        }catch(const std::runtime_error&){context.check();++result.invalidFiles;}
+    }
+    result.processedBytes=context.processed;return result;
 }
 
 }

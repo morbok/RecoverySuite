@@ -82,9 +82,9 @@ int CLIHandler::run(int argc, char* argv[]) {
 
 int CLIHandler::handleImage(const std::vector<std::string>& args) {
     const auto usageError = [&](const std::string& message) { printError(message); return 2; };
-    if (args.size() < 2 || (args[0] != "info" && args[0] != "carve" && args[0] != "metadata" && args[0] != "analyze" && args[0] != "files" && args[0] != "tree" && args[0] != "mft" && args[0] != "ntfs-files" && args[0] != "ntfs-tree"))
-        return usageError("Use image info/analyze <path> or image carve/metadata/files/tree/mft/ntfs-files/ntfs-tree <path> --output <existing-directory>");
-    const bool carve = args[0] == "carve" || args[0] == "metadata" || args[0] == "files" || args[0] == "tree" || args[0] == "mft" || args[0] == "ntfs-files" || args[0] == "ntfs-tree";
+    if (args.size() < 2 || (args[0] != "info" && args[0] != "carve" && args[0] != "metadata" && args[0] != "analyze" && args[0] != "files" && args[0] != "tree" && args[0] != "mft" && args[0] != "ntfs-files" && args[0] != "ntfs-tree" && args[0] != "ntfs-checked"))
+        return usageError("Use image info/analyze <path> or image carve/metadata/files/tree/mft/ntfs-files/ntfs-tree/ntfs-checked <path> --output <existing-directory>");
+    const bool carve = args[0] == "carve" || args[0] == "metadata" || args[0] == "files" || args[0] == "tree" || args[0] == "mft" || args[0] == "ntfs-files" || args[0] == "ntfs-tree" || args[0] == "ntfs-checked";
     const bool analyze = args[0] == "analyze";
     uint64_t start = 0, count = 0, sectorSize = 512;
     bool countGiven = false, verify = true;
@@ -126,7 +126,7 @@ int CLIHandler::handleImage(const std::vector<std::string>& args) {
             return 0;
         }
         application::service::models::RecoveryOperation operation{};
-        operation.operationType = args[0] == "ntfs-tree" ? "ntfs_tree_recovery" : args[0] == "ntfs-files" ? "ntfs_resident_recovery" : args[0] == "mft" ? "ntfs_mft_snapshot" : args[0] == "metadata" ? "metadata_recovery" : (args[0] == "files" ? "file_recovery" : (args[0] == "tree" ? "file_tree_recovery" : "carving")); operation.targetDevicePath = source.devicePath;
+        operation.operationType = args[0] == "ntfs-checked" ? "ntfs_checked_recovery" : args[0] == "ntfs-tree" ? "ntfs_tree_recovery" : args[0] == "ntfs-files" ? "ntfs_resident_recovery" : args[0] == "mft" ? "ntfs_mft_snapshot" : args[0] == "metadata" ? "metadata_recovery" : (args[0] == "files" ? "file_recovery" : (args[0] == "tree" ? "file_tree_recovery" : "carving")); operation.targetDevicePath = source.devicePath;
         operation.startSector = start; operation.numSectors = count; operation.outputPath = output;
         operation.verifyAfterRecovery = verify;
         unsigned lastPercent = std::numeric_limits<unsigned>::max();
@@ -485,6 +485,7 @@ Usage: RecoverySuite_CLI <command> [arguments]
   image files <image> --output <existing-folder>
   image tree <image> --output <existing-folder>
   image mft <image> --output <existing-folder>
+  image ntfs-checked <image> --output <existing-folder>
   image ntfs-tree <image> --output <existing-folder>
   image ntfs-files <image> --output <existing-folder>
       [--start <sector>] [--count <sectors>] [--sector-size <bytes>] [--no-verify]

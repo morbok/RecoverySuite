@@ -287,3 +287,14 @@ with directory/in-use/base-record and sequence checks; bound depth to 32, direct
 and paths to 4095 bytes. Reject cyclic/stale/missing/unsafe ancestors and preserve completed outputs.
 NTFS integration tests cover nested Unicode paths through service/CLI and malformed ancestors.
 Allocation/index verification, extensions and deleted files are the next milestones.
+
+## NTFS extensions, consistency and streaming milestone
+
+Added GUI/CLI checked NTFS recovery with MFT/volume bitmap checks, parent directory index membership,
+resident index roots and bounded INDX traversal with fixups/VCNs/bitmap/cycle checks. Resolve bounded
+resident/nonresident user-file ATTRIBUTE_LIST references with exact sequence/base/type/name/instance
+checks and contiguous multi-record VCN coverage. MFT bootstrap lists/nested lists remain unsupported.
+Safe exporter pulls and verifies 64 KiB chunks; checked files <=2 GiB, initialized MFT <=128 MiB.
+Metadata streams <=16 MiB, attribute lists <=1 MiB, <=64 extension records/file and <=4096 runs/file.
+Tests include split DATA extensions, malformed references, allocation/index mismatches, INDX corruption,
+17 MiB streamed output/cancellation and 20 MiB MFT snapshots with explicit resource limits.

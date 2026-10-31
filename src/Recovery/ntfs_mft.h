@@ -13,7 +13,8 @@ struct NtfsMftSnapshot {
 // Attribute-list extensions, compressed/encrypted/sparse MFTs and mirror fallback are unsupported.
 // Throws on invalid/unsupported metadata, failed/short reads, resource limits or cancellation.
 NtfsMftSnapshot readNtfsMft(disk::IDiskReader& reader,uint64_t start,uint64_t count,
-    const std::function<void(uint64_t)>& progress={},const std::function<bool()>& cancelled={});
+    const std::function<void(uint64_t)>& progress={},const std::function<bool()>& cancelled={},
+    uint64_t maximumBytes=16*1024*1024);
 struct NtfsResidentSummary {
     uint64_t processedBytes{},foundItems{},invalidFiles{},nonresidentFiles{},unsupportedFiles{};
     uint64_t unusedRecords{},directoryRecords{},extensionRecords{},nonRootFiles{},otherRootNames{},recoveredNonresidentFiles{};
@@ -35,6 +36,19 @@ NtfsResidentSummary recoverNtfsRootFiles(disk::IDiskReader& reader,uint64_t star
 // Resolve sequence-checked in-use parent directories, <=32 levels / 1023 directories.
 NtfsResidentSummary recoverNtfsTreeFiles(disk::IDiskReader& reader,uint64_t start,uint64_t count,
     const std::function<void(const std::string&,const std::vector<uint8_t>&)>& item,
+    const std::function<void(uint64_t)>& progress={},const std::function<bool()>& cancelled={});
+
+struct NtfsRecoveryOptions {bool recursive=true,verifyAllocation=true,deleted=false;};
+struct NtfsFileSource {
+    std::string path,confidence;
+    uint64_t size{};
+    std::function<std::vector<uint8_t>(uint64_t,size_t)> read;
+};
+struct NtfsRecoverySummary {uint64_t processedBytes{},foundItems{},invalidFiles{},skippedRecords{},extensionRecords{},deletedCandidates{};};
+// Checked recovery: allocation bitmaps, parent indexes and attribute-list references are validated.
+// Files stream in 64 KiB pulls, <=2 GiB/file. Initialized MFT <=128 MiB, metadata streams <=16 MiB.
+NtfsRecoverySummary recoverNtfsChecked(disk::IDiskReader& reader,uint64_t start,uint64_t count,
+    const NtfsRecoveryOptions& options,const std::function<void(const NtfsFileSource&)>& item,
     const std::function<void(uint64_t)>& progress={},const std::function<bool()>& cancelled={});
 
 }

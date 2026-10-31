@@ -152,6 +152,25 @@ Limits: 32 directory levels, 1023 directories and 4095 path bytes. Cyclic, missi
 ancestors are rejected. Empty directories are not exported. This mode does not yet validate directory
 indexes or allocation bitmaps.
 
+## NTFS checked recovery and larger files
+
+GUI **NTFS files with allocation and directory checks**, or CLI `image ntfs-checked`, validates
+MFT allocation flags, volume cluster bits and parent directory index membership before exporting
+in-use files. Resident INDEX_ROOT and allocated INDX children are checked for bounds, VCNs, bitmap
+membership, update-sequence fixups, cycles and unreachable allocated blocks. This verifies selected
+metadata relationships; it does not certify file contents or repair the volume.
+
+User-file ATTRIBUTE_LIST records may be resident or nonresident (up to 1 MiB). References must match
+record sequence, base reference, attribute type/name/instance and contiguous VCN ranges. Up to 64
+extension records and 4096 physical runs per file are supported; nested lists and MFT bootstrap
+attribute-list extensions remain unsupported. Sparse, compressed and encrypted streams remain unsupported.
+
+The checked mode streams files up to 2 GiB through 64 KiB buffers, including source readback during
+verification. Initialized MFT capacity is 128 MiB, allocation/index metadata streams are limited to
+16 MiB, and output remains limited to 10000 files. The existing snapshot/root/tree compatibility
+modes retain their earlier limits and do not imply allocation/index validation. Failed/cancelled
+streamed output is removed without replacing any existing file.
+
 ## Current state
 
 - GUI and CLI compile on Linux; all 28 registered CTest executables pass locally in Debug and Release.

@@ -24,6 +24,7 @@ RecoveryConfigurationWidget::RecoveryConfigurationWidget(QWidget* parent) : QWid
     method_->addItem(tr("NTFS boot and initialized MFT snapshot"),"ntfs_mft_snapshot");
     method_->addItem(tr("NTFS root files (resident / nonresident)"),"ntfs_resident_recovery");
     method_->addItem(tr("NTFS files with subfolders"),"ntfs_tree_recovery");
+    method_->addItem(tr("NTFS files with allocation and directory checks"),"ntfs_checked_recovery");
     form->addRow(tr("Recovery method"),method_);
     auto* metadataHelp = new QLabel(tr("FAT snapshot saves the boot sector and FAT copies, plus the fixed root directory on FAT12/16. Root-file mode follows allocated FAT12/16/32 chains using verified long names or 8.3 aliases; deleted entries and subdirectories are skipped. Choose files with subfolders for recursive recovery (up to 32 levels and 1023 subdirectories). Empty folders are not exported. Each region/file is limited to 16 MiB. FAT snapshot mode does not repair metadata or reconstruct FAT32 root chains. NTFS MFT snapshot reads up to 16 MiB of initialized records, without file reconstruction, mirror fallback or attribute-list extensions. NTFS root mode copies resident/nonresident files up to 16 MiB. NTFS subfolder mode resolves sequence-checked parent paths, up to 32 levels. Deleted files are skipped."),this);
     metadataHelp->setWordWrap(true); layout->addWidget(metadataHelp);

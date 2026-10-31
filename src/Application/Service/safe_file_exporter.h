@@ -16,6 +16,10 @@ public:
     ~SafeFileExporter();
     SafeFileExporter(const SafeFileExporter&) = delete;
     SafeFileExporter& operator=(const SafeFileExporter&) = delete;
+    using ReadAt = std::function<std::vector<uint8_t>(uint64_t,size_t)>;
+    // Pulls <=64 KiB at a time; exact-length chunks required. Cleanup and no-overwrite match write().
+    void writeStream(const std::string& path,uint64_t size,const ReadAt& read,bool verify,bool tree,
+                     const std::function<bool()>& cancelled = {});
     // Relative tree paths are validated component by component; directories use mode 0700.
     // Existing real directories may be reused; symlinks and existing files are rejected.
     void writeTree(const std::string& path, const std::vector<uint8_t>& data, bool verify,

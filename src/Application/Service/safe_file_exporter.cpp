@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <stdexcept>
 #include <system_error>
+#include <limits>
 #ifndef _WIN32
 #include <fcntl.h>
 #include <unistd.h>
@@ -47,7 +48,7 @@ SafeFileExporter::SafeFileExporter(const std::string& directory) : impl_(std::ma
 }
 SafeFileExporter::~SafeFileExporter() = default;
 namespace {
-void writeAt(int directory, const std::string& name, const std::vector<uint8_t>& data, bool verify,
+void writeAt(int directory, const std::string& name, uint64_t size,const SafeFileExporter::ReadAt& read, bool verify,
              const std::function<bool()>& cancelled) {
     if (name.empty() || name.size() > 255 || name == "." || name == ".." ||
         name.find_first_of("/\\:") != std::string::npos ||
@@ -66,31 +67,38 @@ void writeAt(int directory, const std::string& name, const std::vector<uint8_t>&
             (void)::unlinkat(directory, name.c_str(), 0);
     };
     try {
-        for (size_t offset = 0; offset < data.size();) {
-            checkCancel(cancelled);
-            const auto count = ::write(output.get(), data.data() + offset, std::min<size_t>(65536, data.size() - offset));
-            if (count < 0 && errno == EINTR) continue;
-            if (count <= 0) throw std::runtime_error("Output write failed");
-            offset += static_cast<size_t>(count);
-        }
-        if (::fsync(output.get())) throw std::runtime_error("Output flush failed");
-        if (verify) {
-            std::vector<uint8_t> buffer(65536);
-            for (size_t offset = 0; offset < data.size();) {
-                checkCancel(cancelled);
-                const auto count = ::pread(output.get(), buffer.data(), std::min(buffer.size(), data.size() - offset), static_cast<off_t>(offset));
-                if (count < 0 && errno == EINTR) continue;
-                if (count <= 0 || !std::equal(buffer.begin(), buffer.begin() + count, data.begin() + static_cast<std::ptrdiff_t>(offset)))
-                    throw std::runtime_error("Output verification failed");
-                offset += static_cast<size_t>(count);
+        if(size>uint64_t(std::numeric_limits<off_t>::max()))throw std::runtime_error("Output exceeds platform offset limit");
+        for(uint64_t offset=0;offset<size;) {
+            checkCancel(cancelled);const auto length=static_cast<size_t>(std::min<uint64_t>(65536,size-offset));
+            const auto chunk=read(offset,length);if(chunk.size()!=length)throw std::runtime_error("Incomplete output source chunk");
+            for(size_t written=0;written<length;) {
+                checkCancel(cancelled);const auto n=::write(output.get(),chunk.data()+written,length-written);
+                if(n<0&&errno==EINTR)continue;
+                if(n<=0)throw std::runtime_error("Output write failed");
+                written+=static_cast<size_t>(n);
             }
+            offset+=length;
+        }
+        if(::fsync(output.get()))throw std::runtime_error("Output flush failed");
+        if(verify)for(uint64_t offset=0;offset<size;) {
+            checkCancel(cancelled);const auto length=static_cast<size_t>(std::min<uint64_t>(65536,size-offset));
+            const auto expected=read(offset,length);if(expected.size()!=length)throw std::runtime_error("Incomplete verification source chunk");
+            std::vector<uint8_t> actual(length);size_t received=0;
+            while(received<length) {
+                checkCancel(cancelled);const auto n=::pread(output.get(),actual.data()+received,length-received,static_cast<off_t>(offset+received));
+                if(n<0&&errno==EINTR)continue;
+                if(n<=0)throw std::runtime_error("Output verification read failed");
+                received+=static_cast<size_t>(n);
+            }
+            if(actual!=expected)throw std::runtime_error("Output verification failed");
+            offset+=length;
         }
         checkCancel(cancelled);
         struct stat opened{}, named{};
         if (::fstat(output.get(), &opened) ||
             ::fstatat(directory, name.c_str(), &named, AT_SYMLINK_NOFOLLOW) ||
             opened.st_dev != named.st_dev || opened.st_ino != named.st_ino ||
-            opened.st_size < 0 || static_cast<uint64_t>(opened.st_size) != data.size())
+            opened.st_size < 0 || static_cast<uint64_t>(opened.st_size) != size)
             throw std::runtime_error("Output file changed before completion");
         if (::fsync(directory)) throw std::runtime_error("Output directory flush failed");
         completed = true;
@@ -99,10 +107,15 @@ void writeAt(int directory, const std::string& name, const std::vector<uint8_t>&
 } // namespace
 void SafeFileExporter::write(const std::string& name, const std::vector<uint8_t>& data, bool verify,
                              const std::function<bool()>& cancelled) {
-    writeAt(impl_->directory.get(),name,data,verify,cancelled);
+    writeStream(name,data.size(),[&](uint64_t offset,size_t length){return std::vector<uint8_t>(data.begin()+offset,data.begin()+offset+length);},verify,false,cancelled);
 }
 void SafeFileExporter::writeTree(const std::string& path, const std::vector<uint8_t>& data, bool verify,
                                  const std::function<bool()>& cancelled) {
+    writeStream(path,data.size(),[&](uint64_t offset,size_t length){return std::vector<uint8_t>(data.begin()+offset,data.begin()+offset+length);},verify,true,cancelled);
+}
+void SafeFileExporter::writeStream(const std::string& path,uint64_t size,const ReadAt& read,bool verify,bool tree,
+                                 const std::function<bool()>& cancelled) {
+    if(!tree){writeAt(impl_->directory.get(),path,size,read,verify,cancelled);return;}
     if(path.empty()||path.size()>4095)throw std::invalid_argument("Invalid recovered relative path");
     std::vector<std::string> components;
     for(size_t start=0;start<=path.size();) {
@@ -130,7 +143,7 @@ void SafeFileExporter::writeTree(const std::string& path, const std::vector<uint
         parent.reset(::fcntl(child.get(),F_DUPFD_CLOEXEC,0));
         if(parent.get()<0)throw std::runtime_error("Cannot anchor recovered child directory");
     }
-    writeAt(parent.get(),components.back(),data,verify,cancelled);
+    writeAt(parent.get(),components.back(),size,read,verify,cancelled);
 }
 #else
 struct SafeFileExporter::Impl {};
@@ -142,5 +155,9 @@ void SafeFileExporter::write(const std::string&, const std::vector<uint8_t>&, bo
 void SafeFileExporter::writeTree(const std::string&, const std::vector<uint8_t>&, bool, const std::function<bool()>&) {
     throw std::runtime_error("Safe output export is unavailable");
 }
+void SafeFileExporter::writeStream(const std::string&,uint64_t,const ReadAt&,bool,bool,const std::function<bool()>&) {
+    throw std::runtime_error("Safe output export is unavailable");
+}
+
 #endif
 }

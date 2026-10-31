@@ -47,7 +47,7 @@ std::string GUIRecoveryService::validateImageOperation(const models::RecoveryOpe
     if (!imageReader_ || !imageReader_->isOpen()) return "Open a disk image first";
     try { imageReader_->validateIdentity(); }
     catch (const std::exception& failure) { return failure.what(); }
-    if (operation.operationType != "carving" && operation.operationType != "metadata_recovery" && operation.operationType != "file_recovery" && operation.operationType != "file_tree_recovery" && operation.operationType != "ntfs_mft_snapshot" && operation.operationType != "ntfs_resident_recovery" && operation.operationType != "ntfs_tree_recovery")
+    if (operation.operationType != "carving" && operation.operationType != "metadata_recovery" && operation.operationType != "file_recovery" && operation.operationType != "file_tree_recovery" && operation.operationType != "ntfs_mft_snapshot" && operation.operationType != "ntfs_resident_recovery" && operation.operationType != "ntfs_tree_recovery" && operation.operationType != "ntfs_checked_recovery")
         return "Choose signature carving, a metadata snapshot or a supported FAT/NTFS file-recovery method";
     std::error_code error;
     const auto source = std::filesystem::canonical(operation.targetDevicePath, error);
@@ -115,7 +115,18 @@ models::RecoveryResult GUIRecoveryService::executeOperation(const models::Recove
                     }
                 };
             recovery::CarvingSummary summary{};
-            if (carving) {
+            if(operation.operationType=="ntfs_checked_recovery") {
+                const auto files=recovery::recoverNtfsChecked(*imageReader_,operation.startSector,operation.numSectors,{},[&](const auto& file) {
+                    try {
+                        exporter.writeStream(file.path,file.size,file.read,operation.verifyAfterRecovery,true,cancellationToken);
+                        result.recoveredItems.push_back({file.path,file.size});++result.recoveredItemsCount;result.recoveredBytes+=file.size;result.outputWritten=true;
+                        result.details[file.path]=file.confidence;
+                    }catch(const std::exception& failure){if(!cancelled()){++result.failedItemsCount;result.failedBytes+=file.size;result.details[file.path]=failure.what();}}
+                },report,cancellationToken);
+                summary.processedBytes=files.processedBytes;summary.cancelled=cancelled();summary.skippedCandidates=files.invalidFiles;
+                result.details["Invalid NTFS files"]=std::to_string(files.invalidFiles);
+                result.details["NTFS consistency checks"]="MFT and cluster allocation bitmaps plus parent directory index membership checked";
+            } else if (carving) {
                 summary = recovery::carveSignatures(*imageReader_,operation.startSector,operation.numSectors,
                     saveItem,report,cancellationToken);
             } else if(operation.operationType=="ntfs_resident_recovery"||operation.operationType=="ntfs_tree_recovery") {
@@ -178,7 +189,9 @@ models::RecoveryResult GUIRecoveryService::executeOperation(const models::Recove
     if (result.cancelled) result.success = false;
     result.endTime = std::chrono::system_clock::now();
     result.details["Export"] = result.outputWritten ? "Only the listed items were saved to the destination" : "No output files were saved";
-    result.details["Recovery method"] = operation.operationType == "ntfs_tree_recovery"
+    result.details["Recovery method"] = operation.operationType == "ntfs_checked_recovery"
+        ? "NTFS files with checked allocation and directory index membership, attribute-list extensions and streaming output up to 2 GiB/file. File content may still be damaged."
+        : operation.operationType == "ntfs_tree_recovery"
         ? "In-use NTFS files with sequence-checked parent paths, limited to 32 directory levels. No index/bitmap validation or deleted files."
         : operation.operationType == "ntfs_resident_recovery"
         ? "In-use NTFS root files with unnamed resident/nonresident DATA (16 MiB/file) and sequence-matching parent references. One preferred name per record. No index/bitmap cross-check, deleted/recursive recovery, attribute-list extensions, sparse/compressed/encrypted DATA or alternate-stream export."
