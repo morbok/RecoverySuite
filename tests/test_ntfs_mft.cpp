@@ -254,10 +254,10 @@ private slots:
         }else QVERIFY(!QFile::exists(nested));
 #endif
     }
-    void checkedNtfs_data(){QTest::addColumn<QString>("kind");for(const char* k:{"resident","nonresident","extension","split","split-gap","stale-extension","bad-base","bad-instance","free-cluster","record-bitmap","index-sequence","index-missing","index-length","bitmap-short"})QTest::newRow(k)<<QString(k);}
+    void checkedNtfs_data(){QTest::addColumn<QString>("kind");for(const char* k:{"resident","nonresident","extension","nonresident-list","split","split-gap","stale-extension","bad-base","bad-instance","free-cluster","record-bitmap","index-sequence","index-missing","index-length","bitmap-short"})QTest::newRow(k)<<QString(k);}
     void checkedNtfs(){
 #ifndef _WIN32
-        QFETCH(QString,kind);QTemporaryDir root;ResidentVolume v;const bool external=kind=="nonresident"||kind=="free-cluster"||kind.startsWith("split"),extension=kind.startsWith("split")||kind=="extension"||kind=="stale-extension"||kind=="bad-base"||kind=="bad-instance";
+        QFETCH(QString,kind);QTemporaryDir root;ResidentVolume v;const bool external=kind=="nonresident"||kind=="free-cluster"||kind.startsWith("split"),extension=kind=="nonresident-list"||kind.startsWith("split")||kind=="extension"||kind=="stale-extension"||kind=="bad-base"||kind=="bad-instance";
         auto image=checkedFixture(v,external,extension);
         if(kind.startsWith("split")){
             auto& base=v.records[16];auto& extensionRecord=v.records[22];const auto e=v.geometry.first;auto first=extensionRecord.mid(e,72);le(first,24,0,8);first.replace(64,8,QByteArray(8,char{0}));first[64]=0x11;first[65]=1;first[66]=100;le(first,14,0);
@@ -266,6 +266,9 @@ private slots:
             for(int i=0;i<2;++i){le(list,i*32,0x80,4);le(list,i*32+4,32);le(list,i*32+8,i,8);le(list,i*32+16,i?22|(uint64_t{9}<<48):16|(uint64_t{3}<<48),8);le(list,i*32+24,i?7:0);}
             appendAttribute(base,0x20,list);const auto p=get(base,24)-8;base.replace(p,first.size(),first);le(base,p+first.size(),0xffffffff,4);le(base,24,p+first.size()+8,4);
             image=v.image();image.replace(100*512,512,QByteArray(512,'A'));image.replace(90*512,512,QByteArray(512,'B'));
+        }
+        if(kind=="nonresident-list"){
+            auto& base=v.records[16];const auto a=v.attribute(base,0x20);const auto value=base.mid(a+24,32);QByteArray attribute(72,char{0});le(attribute,0,0x20,4);le(attribute,4,72,4);attribute[8]=1;le(attribute,32,64);le(attribute,40,512,8);le(attribute,48,32,8);le(attribute,56,32,8);attribute[64]=0x11;attribute[65]=1;attribute[66]=100;base.replace(a,72,attribute);le(base,a+72,0xffffffff,4);le(base,24,a+80,4);image=v.image();image.replace(100*512,32,value);
         }
         if(kind=="stale-extension")le(v.records[22],16,8);
         if(kind=="bad-base")le(v.records[22],32,17|(uint64_t{3}<<48),8);
@@ -276,11 +279,12 @@ private slots:
         if(kind=="index-missing"){const auto a=v.attribute(v.records[5],0x90);le(v.records[5],a,0x40,4);}
         if(kind=="index-length"){const auto a=v.attribute(v.records[5],0x90);le(v.records[5],a+32+32+8,0);}
         if(kind=="bitmap-short"){const auto a=v.attribute(v.records[6],0x80);le(v.records[6],a+16,1,4);}
-        if(kind!="nonresident"&&kind!="resident"&&kind!="extension"&&kind!="split"){image=v.image();if(external){image.replace(100*512,512,QByteArray(512,'A'));image.replace(90*512,512,QByteArray(512,'B'));}}
+        if(kind!="nonresident"&&kind!="resident"&&kind!="extension"&&kind!="split"&&kind!="nonresident-list"){image=v.image();if(external){image.replace(100*512,512,QByteArray(512,'A'));image.replace(90*512,512,QByteArray(512,'B'));}}
         const auto path=root.filePath("source.img");save(path,image);application::service::GUIRecoveryService service(nullptr);const auto source=service.openImage(path.toStdString());auto op=operation(source.devicePath,root.path(),0,Volume::sectors);op.operationType="ntfs_checked_recovery";
-        const auto result=service.executeOperation(op);const bool valid=kind=="resident"||kind=="nonresident"||kind=="extension"||kind=="split";QVERIFY2(result.success==valid,result.errorMessage.c_str());QCOMPARE(load(path),image);
+        const auto result=service.executeOperation(op);const bool valid=kind=="resident"||kind=="nonresident"||kind=="extension"||kind=="split"||kind=="nonresident-list";QVERIFY2(result.success==valid,result.errorMessage.c_str());QCOMPARE(load(path),image);
         if(valid){QCOMPARE(result.recoveredItemsCount,uint64_t{2});QCOMPARE(load(root.filePath(v.name)),external?QByteArray(512,'A')+QByteArray(23,'B')+QByteArray(452,char{0}):v.payload);
             const auto out=root.filePath("cli");QVERIFY(QDir().mkdir(out));QProcess cli;cli.start(QCoreApplication::applicationDirPath()+"/RecoverySuite_CLI",{"image","ntfs-checked",path,"--output",out});QVERIFY(cli.waitForFinished(5000));QCOMPARE(cli.exitCode(),0);
+            if(kind=="resident"){const auto guiOut=root.filePath("gui");QVERIFY(QDir().mkdir(guiOut));gui::core::MainWindow window(&service);window.show();window.findChild<QLineEdit*>("imagePath")->setText(path);window.findChild<QPushButton*>("openImage")->click();window.findChild<QComboBox*>("recoveryMethod")->setCurrentIndex(7);window.findChild<QLineEdit*>("recoveryOutput")->setText(guiOut);window.findChild<QPushButton*>("startImageRecovery")->click();QTRY_COMPARE_WITH_TIMEOUT(window.findChild<QLabel*>("resultStatus")->text(),QString("Completed"),5000);QTRY_VERIFY(window.findChild<QPushButton*>("recoverySettings")->isEnabled());window.close();QCOMPARE(load(guiOut+"/"+v.name),v.payload);}
         }else QVERIFY(!QFile::exists(root.filePath(v.name)));
 #endif
     }
@@ -327,6 +331,31 @@ private slots:
         reader.bytes=QByteArray(total*512,char{0});reader.bytes.replace(0,512,v.boot);reader.bytes.replace(8*512,v.recordBytes,v.protect(v.base));
         QVERIFY_EXCEPTION_THROWN(recovery::readNtfsMft(reader,0,total),std::runtime_error);
         const auto result=recovery::readNtfsMft(reader,0,total,{}, {},128*1024*1024);QCOMPARE(result.initializedRecords.size(),size_t(bytes));QCOMPARE(result.inUseRecords,uint64_t{1});
+    }
+    void deletedNtfs_data(){QTest::addColumn<QString>("kind");for(const char* k:{"resident","nonresident","reallocated","stale-parent","deleted-parent","extension"})QTest::newRow(k)<<QString(k);}
+    void deletedNtfs(){
+#ifndef _WIN32
+        QFETCH(QString,kind);QTemporaryDir root;ResidentVolume v;checkedFixture(v);QByteArray expected("deleted");QString output="DELETED.TXT";
+        if(kind=="nonresident"||kind=="reallocated"){
+            nonresident(v);v.records[19]=v.records[16];v.records[16]=v.file(v.name,v.payload);le(v.records[19],22,0);output=v.name;expected=QByteArray(512,'A')+QByteArray(23,'B')+QByteArray(452,char{0});
+            const auto a=v.attribute(v.records[6],0x80);for(int c:{90,100})v.records[6][a+24+c/8]=char(static_cast<unsigned char>(v.records[6][a+24+c/8])&~(1<<(c%8)));
+            if(kind=="reallocated")v.records[6][a+24+100/8]=char(static_cast<unsigned char>(v.records[6][a+24+100/8])|(1<<(100%8)));
+        }
+        if(kind=="stale-parent")v.records[19]=v.file("DELETED.TXT","deleted",5|(uint64_t{8}<<48));
+        if(kind=="deleted-parent"){
+            v.records[20]=v.file("OldFolder",{},5|(uint64_t{7}<<48));le(v.records[20],22,2);v.records[19]=v.file("DELETED.TXT","deleted",20|(uint64_t{3}<<48));output="OldFolder/DELETED.TXT";
+        }
+        if(kind=="extension"){
+            auto& base=v.records[19];const auto a=v.attribute(base,0x80);auto ext=v.blank(0,9);const auto attribute=base.mid(a,get(base,a+4));ext.replace(v.geometry.first,attribute.size(),attribute);le(ext,v.geometry.first+14,7);le(ext,32,19|(uint64_t{3}<<48),8);le(ext,v.geometry.first+attribute.size(),0xffffffff,4);le(ext,24,v.geometry.first+attribute.size()+8,4);v.records[22]=ext;le(base,a,0xffffffff,4);le(base,24,a+8,4);
+            QByteArray list(32,char{0});le(list,0,0x80,4);le(list,4,32);le(list,16,22|(uint64_t{9}<<48),8);le(list,24,7);appendAttribute(base,0x20,list);
+        }
+        le(v.records[19],22,0);auto image=v.image();if(kind=="nonresident"||kind=="reallocated"){image.replace(100*512,512,QByteArray(512,'A'));image.replace(90*512,512,QByteArray(512,'B'));}
+        const auto path=root.filePath("source.img");save(path,image);application::service::GUIRecoveryService service(nullptr);const auto source=service.openImage(path.toStdString());auto op=operation(source.devicePath,root.path(),0,Volume::sectors);op.operationType="ntfs_deleted_recovery";
+        const auto result=service.executeOperation(op);const bool valid=kind!="reallocated"&&kind!="stale-parent";QVERIFY2(result.success==valid,result.errorMessage.c_str());QCOMPARE(result.recoveredItemsCount,uint64_t(valid?1:0));QCOMPARE(load(path),image);
+        if(valid){QCOMPARE(load(root.filePath(output)),expected);QVERIFY(result.details.at(output.toStdString()).find("candidate")!=std::string::npos);const auto out=root.filePath("cli");QVERIFY(QDir().mkdir(out));QProcess cli;cli.start(QCoreApplication::applicationDirPath()+"/RecoverySuite_CLI",{"image","ntfs-deleted",path,"--output",out});QVERIFY(cli.waitForFinished(5000));QCOMPARE(cli.exitCode(),0);QCOMPARE(load(out+"/"+output),expected);
+            if(kind=="resident"){const auto guiOut=root.filePath("gui");QVERIFY(QDir().mkdir(guiOut));gui::core::MainWindow window(&service);window.show();window.findChild<QLineEdit*>("imagePath")->setText(path);window.findChild<QPushButton*>("openImage")->click();window.findChild<QComboBox*>("recoveryMethod")->setCurrentIndex(8);window.findChild<QLineEdit*>("recoveryOutput")->setText(guiOut);window.findChild<QPushButton*>("startImageRecovery")->click();QTRY_COMPARE_WITH_TIMEOUT(window.findChild<QLabel*>("resultStatus")->text(),QString("Completed"),5000);QTRY_VERIFY(window.findChild<QPushButton*>("recoverySettings")->isEnabled());window.close();QCOMPARE(load(guiOut+"/"+output),expected);}
+        }else QVERIFY(!QFile::exists(root.filePath(output)));
+#endif
     }
     void streamedExporterFailures(){
 #ifndef _WIN32

@@ -46,6 +46,7 @@ struct NtfsFileSource {
 };
 struct NtfsRecoverySummary {uint64_t processedBytes{},foundItems{},invalidFiles{},skippedRecords{},extensionRecords{},deletedCandidates{};};
 // Checked recovery: allocation bitmaps, parent indexes and attribute-list references are validated.
+// The file read callback is valid only during the synchronous item callback.
 // Files stream in 64 KiB pulls, <=2 GiB/file. Initialized MFT <=128 MiB, metadata streams <=16 MiB.
 NtfsRecoverySummary recoverNtfsChecked(disk::IDiskReader& reader,uint64_t start,uint64_t count,
     const NtfsRecoveryOptions& options,const std::function<void(const NtfsFileSource&)>& item,

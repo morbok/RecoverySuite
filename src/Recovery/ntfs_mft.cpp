@@ -110,7 +110,9 @@ public:
     std::map<uint64_t,std::vector<Attribute>> attributesCache;
     std::map<uint64_t,uint64_t> metadataClaims;
     std::vector<uint8_t> volumeBitmap,recordBitmap;
+    std::vector<std::pair<Stream,bool>> listStreams;
     std::map<uint64_t,std::set<std::pair<uint64_t,std::string>>> indexes;
+    uint64_t clusterChecks=0,indexEntries=0;
     NtfsContext(disk::IDiskReader& r,uint64_t s,uint64_t n,const std::function<void(uint64_t)>& p,const std::function<bool()>& c)
         :reader(r),start(s),count(n),mft(readNtfsMft(r,s,n,p,c,128*1024*1024)),progress(p),cancelled(c) {
         clusterBytes=le(mft.bootSector,11,2)*le(mft.bootSector,13,1);clusters=le(mft.bootSector,40,8)/le(mft.bootSector,13,1);processed=mft.processedBytes;
@@ -199,7 +201,9 @@ public:
         if(lists.size()>1)invalid("multiple ATTRIBUTE_LIST streams");
         if(!lists.empty()) {
             if(lists[0].nameLength)invalid("named ATTRIBUTE_LIST");
-            const auto content=materialize(data(lists,0x20),1024*1024);std::set<std::tuple<uint64_t,uint64_t,uint64_t>> seen;std::set<uint64_t> extensions;
+            const auto listData=data(lists,0x20);
+            if(listData.external){claim(listData.stream);const bool used=le(base,22,2)&1;listStreams.emplace_back(listData.stream,used);if(!volumeBitmap.empty())allocated(listData.stream,used);}
+            const auto content=materialize(listData,1024*1024);std::set<std::tuple<uint64_t,uint64_t,uint64_t>> seen;std::set<uint64_t> extensions;
             size_t entries=0;
             for(size_t pos=0;pos<content.size();) {
                 check();if(content.size()-pos<26||++entries>1024)invalid("invalid/excessive ATTRIBUTE_LIST entries");
@@ -236,8 +240,8 @@ public:
         }
     }
     static bool bit(const std::vector<uint8_t>& bytes,uint64_t index) {if(index/8>=bytes.size())invalid("allocation bitmap is truncated");return bytes[index/8]&(1u<<(index%8));}
-    void allocation() {
-        recordBitmap=materialize(data(attributes(0),0xb0));
+    void allocation(bool protectLive=false) {
+        const auto mftBitmap=data(attributes(0),0xb0);recordBitmap=materialize(mftBitmap);if(mftBitmap.external)claim(mftBitmap.stream);
         const auto bitmapRecord=record(6);if(le(bitmapRecord,22,2)!=1||le(bitmapRecord,32,8))invalid("invalid volume bitmap base record");
         const auto bitmapData=data(attributes(6),0x80);volumeBitmap=materialize(bitmapData);if(bitmapData.external)claim(bitmapData.stream);
         if(recordBitmap.size()<(slots()+7)/8||volumeBitmap.size()<(clusters+7)/8)invalid("short allocation bitmap");
@@ -247,14 +251,19 @@ public:
             if(bit(recordBitmap,i)!=(!blank&&(le(raw,22,2)&1)))invalid("MFT bitmap and record flags disagree");
         }
         allocated(parseMftData(record(0),clusters,clusterBytes,le(mft.bootSector,48,8),cancelled),true);
+        if(mftBitmap.external)allocated(mftBitmap.stream,true);
         if(bitmapData.external)allocated(bitmapData.stream,true);
+        for(const auto& [stream,used]:listStreams)allocated(stream,used);
         for(uint64_t i=0;i<slots();++i) {
-            const auto raw=Bytes(mft.initializedRecords).subspan(i*mft.recordSize,mft.recordSize);if(le(raw,22,2)!=3)continue;
-            for(const auto& a:attributes(i))if(a.type==0xa0&&a.nonResident) {const auto d=data(attributes(i),0xa0,attributeName(a));allocated(d.stream,true);claim(d.stream);break;}
+            const auto raw=Bytes(mft.initializedRecords).subspan(i*mft.recordSize,mft.recordSize);
+            if(!(le(raw,22,2)&1)||le(raw,32,8))continue;
+            std::set<std::pair<uint64_t,std::string>> streams;
+            for(const auto& a:attributes(i))if(a.nonResident&&(i<16||a.type!=0x80||a.nameLength||protectLive))streams.emplace(a.type,attributeName(a));
+            for(const auto& [type,name]:streams){const auto d=data(attributes(i),type,name);allocated(d.stream,true);claim(d.stream);}
         }
     }
     void allocated(const Stream& stream,bool used) {
-        for(const auto& run:stream.runs)for(uint64_t c=run.lcn;c<run.lcn+run.clusters;++c){if((c&4095)==0)check();if(bit(volumeBitmap,c)!=used)invalid(used?"file references a free cluster":"deleted file cluster has been reallocated");}
+        for(const auto& run:stream.runs)for(uint64_t c=run.lcn;c<run.lcn+run.clusters;++c){if(++clusterChecks>64*1024*1024)invalid("allocation-check work limit");if((c&4095)==0)check();if(bit(volumeBitmap,c)!=used)invalid(used?"file references a free cluster":"deleted file cluster has been reallocated");}
     }
     std::string fileName(Bytes value) {
         if(value.size()<66)invalid("short FILE_NAME key");
@@ -266,6 +275,7 @@ public:
     const std::set<std::pair<uint64_t,std::string>>& index(uint64_t directory) {
         if(auto it=indexes.find(directory);it!=indexes.end())return it->second;
         const std::string i30{"$\0I\0" "3\0" "0\0",8};const auto& attrs=attributes(directory);
+        for(const auto& a:attrs)if(a.type==0x90&&attributeName(a)==i30&&a.nonResident)invalid("nonresident INDEX_ROOT");
         const auto root=materialize(data(attrs,0x90,i30));
         if(root.size()<32||le(root,0,4)!=0x30||le(root,4,4)!=1)invalid("invalid directory INDEX_ROOT");
         const auto blockSize=le(root,8,4);if(blockSize<512||blockSize>65536||(blockSize&(blockSize-1)))invalid("invalid index block size");
@@ -285,11 +295,11 @@ public:
                     const auto value=bytes.subspan(pos+16,key);if(le(value,0,8)!=parent)invalid("index key has wrong parent");
                     const auto ref=le(bytes,pos,8);if((ref&0x0000ffffffffffff)>=slots()||!(ref>>48))invalid("index record reference outside MFT");
                     if(!entries.emplace(ref,fileName(value)).second)invalid("duplicate directory index entry");
-                    if(entries.size()>100000)invalid("index entry limit");
+                    if(++indexEntries>100000)invalid("index entry limit");
                 }else {if(key)invalid("end index entry has a key");last=true;}
                 if(f&1) {
                     if(!flags)invalid("leaf index has child pointer");
-                    if(!allocationData){allocationData=data(attrs,0xa0,i30);bitmap=materialize(data(attrs,0xb0,i30));}
+                    if(!allocationData){allocationData=data(attrs,0xa0,i30);if(!allocationData->external)invalid("resident INDEX_ALLOCATION");bitmap=materialize(data(attrs,0xb0,i30));}
                     const auto child=le(bytes,pos+length-8,8),unit=blockSize>=clusterBytes?clusterBytes:512;
                     if(child>std::numeric_limits<uint64_t>::max()/unit)invalid("index VCN overflow");
                     const auto offset=child*unit;
@@ -522,27 +532,27 @@ NtfsRecoverySummary recoverNtfsChecked(disk::IDiskReader& reader,uint64_t start,
     const std::function<void(uint64_t)>& progress,const std::function<bool()>& cancelled) {
     NtfsContext context(reader,start,count,progress,cancelled);NtfsRecoverySummary result;
     if(options.deleted&&!options.verifyAllocation)invalid("deleted recovery requires allocation verification");
-    if(options.verifyAllocation)context.allocation();
+    if(options.verifyAllocation)context.allocation(options.deleted);
     const auto root=context.record(5);if(le(root,22,2)!=3||le(root,32,8)||!le(root,16,2))invalid("invalid root directory");
     std::map<uint64_t,std::string> paths{{5,{}}};
     const auto path=[&](auto&& self,uint64_t reference,std::set<uint64_t>& visiting)->std::string {
         context.check();const auto number=reference&0x0000ffffffffffff;const auto record=context.record(number);
-        if(le(record,16,2)!=(reference>>48)||!le(record,16,2)||le(record,22,2)!=3||le(record,32,8))invalid("stale or invalid parent directory");
+        if(le(record,16,2)!=(reference>>48)||!le(record,16,2)||(le(record,22,2)!=3&&!(options.deleted&&le(record,22,2)==2))||le(record,32,8))invalid("stale or invalid parent directory");
         if(auto it=paths.find(number);it!=paths.end())return it->second;
         if(!visiting.insert(number).second||visiting.size()>32||paths.size()>=1024)invalid("directory cycle/count/depth limit");
-        std::string selected;int rank=-1;
+        std::string selected;int rank=-1;bool standard=false;
         for(const auto& a:context.attributes(number)) {
             if(a.type==0xc0)invalid("reparse parent directory");
-            if(a.type==0x10){const auto value=a.bytes.subspan(le(a.bytes,20,2),le(a.bytes,16,4));if(a.nonResident||value.size()<36||(le(value,32,4)&0x4e00))invalid("unsupported parent directory");}
+            if(a.type==0x10){if(standard||a.nonResident||a.nameLength||le(a.bytes,12,2))invalid("invalid parent STANDARD_INFORMATION");standard=true;const auto value=a.bytes.subspan(le(a.bytes,20,2),le(a.bytes,16,4));if(value.size()<36||(le(value,32,4)&0x4e00))invalid("unsupported parent directory");}
             if(a.type!=0x30)continue;
             if(a.nonResident||a.nameLength||le(a.bytes,12,2))invalid("invalid parent FILE_NAME");
             const auto value=a.bytes.subspan(le(a.bytes,20,2),le(a.bytes,16,4));const auto name=context.fileName(value);const auto parent=le(value,0,8);
             const int candidate=le(value,65,1)==2?0:(le(value,65,1)==0?1:2);if(candidate<=rank)continue;
             const auto prefix=self(self,parent,visiting);
-            if(options.verifyAllocation&&!context.index(parent&0x0000ffffffffffff).contains({reference,name}))invalid("directory is missing from parent index");
+            if(options.verifyAllocation&&!options.deleted&&!context.index(parent&0x0000ffffffffffff).contains({reference,name}))invalid("directory is missing from parent index");
             selected=prefix.empty()?name:prefix+'/'+name;rank=candidate;
         }
-        visiting.erase(number);if(selected.empty()||selected.size()>4095||std::count(selected.begin(),selected.end(),'/')>=32)invalid("unsafe or excessive directory path");
+        visiting.erase(number);if(!standard||selected.empty()||selected.size()>4095||std::count(selected.begin(),selected.end(),'/')>=32)invalid("unsafe or excessive directory path");
         paths.emplace(number,selected);return selected;
     };
     for(uint64_t number=16;number<context.slots();++number) {

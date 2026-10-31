@@ -47,7 +47,7 @@ std::string GUIRecoveryService::validateImageOperation(const models::RecoveryOpe
     if (!imageReader_ || !imageReader_->isOpen()) return "Open a disk image first";
     try { imageReader_->validateIdentity(); }
     catch (const std::exception& failure) { return failure.what(); }
-    if (operation.operationType != "carving" && operation.operationType != "metadata_recovery" && operation.operationType != "file_recovery" && operation.operationType != "file_tree_recovery" && operation.operationType != "ntfs_mft_snapshot" && operation.operationType != "ntfs_resident_recovery" && operation.operationType != "ntfs_tree_recovery" && operation.operationType != "ntfs_checked_recovery")
+    if (operation.operationType != "carving" && operation.operationType != "metadata_recovery" && operation.operationType != "file_recovery" && operation.operationType != "file_tree_recovery" && operation.operationType != "ntfs_mft_snapshot" && operation.operationType != "ntfs_resident_recovery" && operation.operationType != "ntfs_tree_recovery" && operation.operationType != "ntfs_checked_recovery" && operation.operationType != "ntfs_deleted_recovery" && operation.operationType != "fat_deleted_recovery")
         return "Choose signature carving, a metadata snapshot or a supported FAT/NTFS file-recovery method";
     std::error_code error;
     const auto source = std::filesystem::canonical(operation.targetDevicePath, error);
@@ -103,7 +103,7 @@ models::RecoveryResult GUIRecoveryService::executeOperation(const models::Recove
                     if (result.recoveredItemsCount + result.failedItemsCount >= 10000)
                         throw std::runtime_error("Maximum output item count reached");
                     try {
-                        if(tree||operation.operationType=="ntfs_tree_recovery")exporter.writeTree(name,data,operation.verifyAfterRecovery,cancellationToken);
+                        if(tree||operation.operationType=="ntfs_tree_recovery"||operation.operationType=="fat_deleted_recovery")exporter.writeTree(name,data,operation.verifyAfterRecovery,cancellationToken);
                         else exporter.write(name, data, operation.verifyAfterRecovery, cancellationToken);
                         result.recoveredItems.push_back({name, static_cast<uint64_t>(data.size())});
                         ++result.recoveredItemsCount; result.recoveredBytes += data.size(); result.outputWritten = true;
@@ -115,8 +115,9 @@ models::RecoveryResult GUIRecoveryService::executeOperation(const models::Recove
                     }
                 };
             recovery::CarvingSummary summary{};
-            if(operation.operationType=="ntfs_checked_recovery") {
-                const auto files=recovery::recoverNtfsChecked(*imageReader_,operation.startSector,operation.numSectors,{},[&](const auto& file) {
+            if(operation.operationType=="ntfs_checked_recovery"||operation.operationType=="ntfs_deleted_recovery") {
+                recovery::NtfsRecoveryOptions options;options.deleted=operation.operationType=="ntfs_deleted_recovery";
+                const auto files=recovery::recoverNtfsChecked(*imageReader_,operation.startSector,operation.numSectors,options,[&](const auto& file) {
                     try {
                         exporter.writeStream(file.path,file.size,file.read,operation.verifyAfterRecovery,true,cancellationToken);
                         result.recoveredItems.push_back({file.path,file.size});++result.recoveredItemsCount;result.recoveredBytes+=file.size;result.outputWritten=true;
@@ -125,7 +126,8 @@ models::RecoveryResult GUIRecoveryService::executeOperation(const models::Recove
                 },report,cancellationToken);
                 summary.processedBytes=files.processedBytes;summary.cancelled=cancelled();summary.skippedCandidates=files.invalidFiles;
                 result.details["Invalid NTFS files"]=std::to_string(files.invalidFiles);
-                result.details["NTFS consistency checks"]="MFT and cluster allocation bitmaps plus parent directory index membership checked";
+                result.details["NTFS consistency checks"]=options.deleted?"Unused MFT records and free cluster bits checked; retained names/data are recovery candidates":"MFT and cluster allocation bitmaps plus parent directory index membership checked";
+                if(options.deleted)result.details["Deleted NTFS candidates inspected"]=std::to_string(files.deletedCandidates);
             } else if (carving) {
                 summary = recovery::carveSignatures(*imageReader_,operation.startSector,operation.numSectors,
                     saveItem,report,cancellationToken);
@@ -151,12 +153,13 @@ models::RecoveryResult GUIRecoveryService::executeOperation(const models::Recove
                 saveItem("NTFS_BootSector",mft.bootSector);
                 if(!cancelled())saveItem("NTFS_MFTInitialized",mft.initializedRecords);
                 summary.processedBytes=mft.processedBytes;summary.cancelled=cancelled();
-            } else if (operation.operationType == "file_recovery" || tree) {
-                const auto files=recovery::recoverFatRootFiles(*imageReader_,operation.startSector,operation.numSectors,saveItem,report,cancellationToken,tree);
+            } else if (operation.operationType == "file_recovery" || tree || operation.operationType=="fat_deleted_recovery") {
+                const auto files=recovery::recoverFatRootFiles(*imageReader_,operation.startSector,operation.numSectors,saveItem,report,cancellationToken,tree||operation.operationType=="fat_deleted_recovery",operation.operationType=="fat_deleted_recovery");
                 summary.processedBytes=files.processedBytes;summary.cancelled=files.cancelled;summary.skippedCandidates=files.invalidFiles+files.invalidDirectories;
                 result.details[tree?"Invalid or unsupported files":"Invalid or unsupported root files"]=std::to_string(files.invalidFiles);
                 result.details["Long names rejected (8.3 fallback)"]=std::to_string(files.longNameFallbacks);
-                result.details["Deleted entries not reconstructed"]=std::to_string(files.deletedEntries);
+                result.details[operation.operationType=="fat_deleted_recovery"?"Deleted entries inspected":"Deleted entries not reconstructed"]=std::to_string(files.deletedEntries);
+                if(operation.operationType=="fat_deleted_recovery")result.details["Recovery confidence"]="Low: assumes contiguous free clusters. First short-name character and long names are lost; original bytes may have been overwritten.";
                 if(tree) {
                     result.details["Directories traversed"]=std::to_string(files.traversedDirectories);
                     result.details["Invalid or unsupported directories"]=std::to_string(files.invalidDirectories);
@@ -189,7 +192,11 @@ models::RecoveryResult GUIRecoveryService::executeOperation(const models::Recove
     if (result.cancelled) result.success = false;
     result.endTime = std::chrono::system_clock::now();
     result.details["Export"] = result.outputWritten ? "Only the listed items were saved to the destination" : "No output files were saved";
-    result.details["Recovery method"] = operation.operationType == "ntfs_checked_recovery"
+    result.details["Recovery method"] = operation.operationType == "fat_deleted_recovery"
+        ? "Deleted FAT file candidates from retained short entries and contiguous free clusters. Content and original names are unproven."
+        : operation.operationType == "ntfs_deleted_recovery"
+        ? "Deleted NTFS file candidates from unused base records, retained attributes and free data clusters. Content may have been overwritten."
+        : operation.operationType == "ntfs_checked_recovery"
         ? "NTFS files with checked allocation and directory index membership, attribute-list extensions and streaming output up to 2 GiB/file. File content may still be damaged."
         : operation.operationType == "ntfs_tree_recovery"
         ? "In-use NTFS files with sequence-checked parent paths, limited to 32 directory levels. No index/bitmap validation or deleted files."

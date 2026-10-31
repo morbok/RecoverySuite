@@ -23,7 +23,11 @@ Updated: 2026-10-31. Historical phase summaries are not the release checklist.
        [x] Add bounded NTFS initialized-MFT snapshots with mapping-pairs and FILE fixup checks.
        [x] Copy in-use NTFS root files with resident unnamed DATA and sequence-checked parent names.
        [x] Copy bounded nonresident NTFS root-file DATA, including fragmented runs and zero-filled uninitialized tails.
-       [ ] Add OEM short names, deleted-chain inference, NTFS directory traversal and attribute-list extensions.
+       [x] Add bounded NTFS directory traversal and user-file attribute-list extensions.
+       [x] Check MFT/cluster allocation and parent directory index membership in checked mode.
+       [x] Stream checked NTFS files <=2 GiB and initialized MFT <=128 MiB with bounded buffers.
+       [x] Add explicit FAT contiguous-free and NTFS retained-record deleted candidates with confidence reporting.
+       [ ] Add OEM short names, MFT bootstrap/nested attribute-list extensions and broader damaged/deleted-chain inference.
 4. [x] Export signature candidates safely on POSIX, preserving bytes and rejecting traversal, symlinks,
        overwrite and invalid destinations; verify saved bytes in integration tests.
 5. [x] Propagate cancellation/progress into image scan/export loops and test worker shutdown.

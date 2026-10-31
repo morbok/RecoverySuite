@@ -1,3 +1,16 @@
+# 2026-10-31 — NTFS tree/checking and deleted candidates
+
+Added NTFS directory paths with sequence/depth/cycle checks, checked allocation/index recovery,
+resident/nonresident user-file attribute-list extensions and bounded 64 KiB streaming for files
+up to 2 GiB. Added 128 MiB initialized-MFT option; existing compatibility modes retain earlier limits.
+Validate resident indexes and INDX children, allocation bitmaps, extension references and VCN coverage.
+
+Added GUI/CLI NTFS deleted candidates from retained unused records with free nonresident clusters,
+and FAT12/16/32 candidates inferred from contiguous free clusters in deleted short entries. Reserve
+live/metadata extents, reject reused clusters, preserve output/no-overwrite/cancellation guarantees,
+and display uncertainty. Lost FAT names, arbitrary deleted fragmentation, MFT bootstrap/nested lists,
+sparse/compressed/encrypted streams and full filesystem repair remain unsupported.
+
 # 2026-10-31 — NTFS nonresident root-file recovery
 
 Extended GUI/CLI image ntfs-files to bounded nonresident unnamed DATA from in-use root files.

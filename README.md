@@ -171,6 +171,28 @@ verification. Initialized MFT capacity is 128 MiB, allocation/index metadata str
 modes retain their earlier limits and do not imply allocation/index validation. Failed/cancelled
 streamed output is removed without replacing any existing file.
 
+## Deleted file candidates
+
+Use GUI **NTFS deleted file candidates** / CLI `image ntfs-deleted` for unused base records with
+retained names and DATA. MFT bitmap flags must agree; all nonresident file clusters must currently
+be free. Live data and known metadata extents are reserved. Retained attribute-list extensions and
+deleted parent directories can be used only with matching sequence/base references. Stale parents,
+reallocated clusters and unsupported data features are rejected. Limits match checked recovery.
+
+Use GUI **FAT deleted file candidates (contiguous assumption)** / CLI `image fat-deleted` for deleted
+short entries in reachable live directories. This assumes the file occupied contiguous clusters from
+its retained first cluster, and requires every candidate cluster to be free and unclaimed. Live chains,
+conservative live contiguous extents and directory clusters are reserved first. FAT files remain limited
+to 16 MiB; cluster analysis is capped at 16 million steps. Generated names start with `deleted-` and
+replace the lost first short-name character with `_`. Deleted LFN names, OEM aliases, deleted directory
+traversal and arbitrary fragmented deleted chains are not reconstructed.
+
+These outputs are **candidates**: a currently free cluster may contain overwritten or unrelated bytes.
+NTFS metadata checks and output readback do not establish original content. FAT confidence is explicitly
+low because its cleared chain must be inferred. Names are never rewritten to replace an existing output.
+Partial failures/cancellation preserve completed files and remove the current incomplete output.
+NTFS allocation analysis is capped at 64 million cluster-bit checks and 100000 index entries in total.
+
 ## Current state
 
 - GUI and CLI compile on Linux; all 28 registered CTest executables pass locally in Debug and Release.
@@ -179,7 +201,7 @@ streamed output is removed without replacing any existing file.
 - POSIX output export rejects traversal, symlink components, unsafe names and existing files. It
   anchors the selected directory with a file descriptor; incomplete writes are removed on failure.
 - The image workflow supports signature carving, FAT metadata snapshots and allocated FAT12/16/32 root
-  files, with optional bounded recursive traversal. NTFS root files support resident and bounded nonresident DATA. Deleted chains and NTFS directory traversal remain unavailable.
+  files, with optional bounded recursive traversal. NTFS root files support resident and bounded nonresident DATA. NTFS tree and checked modes support subfolders; separate deleted modes export explicitly labelled candidates.
 - Legacy NTFS factory inspection reads actual 64-bit boot fields. Unexamined allocation, mount and
   repair metrics throw `std::logic_error`; version/label remain unknown, and the legacy analyzer
   reports full consistency analysis unavailable. Use the image workflows for supported MFT/file work.

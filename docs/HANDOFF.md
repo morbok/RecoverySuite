@@ -16,6 +16,8 @@ Supported read-only image workflows:
   root parent links, safe Unicode names, one name/record; no allocation-bitmap/index cross-check.
 - Nonresident files: <=16 MiB/file, <=4096 runs, complete base-record mapping pairs; zero-fill
   uninitialized tails and reject MFT/prior-file overlaps. Sparse/compressed/encrypted data is unsupported.
+- NTFS tree/checked modes add bounded parent paths, user-file extensions and allocation/index checks.
+- Separate NTFS/FAT deleted modes export retained-record/free-cluster candidates with explicit uncertainty.
 - CLI image info/analyze for geometry and FAT/NTFS boot-sector fields; unknown metrics stay unknown.
 
 All image export uses a directory-anchored POSIX writer with exclusive creation, path/name checks,
@@ -36,8 +38,15 @@ GUI executeOperation and CLI image commands provide actual filesystem output. Ca
 the shared scanner and absolute offsets. Never restore manufactured file/FAT/MFT contents.
 
 Remaining scope includes deleted-file chain inference, OEM short-name support,
-NTFS directory traversal/attribute-list extensions, Windows safe export, session resume, hardware QA and packaging. Signature
+broader damaged/deleted-chain inference, MFT bootstrap/nested attribute lists, Windows safe export, session resume, hardware QA and packaging. Signature
 candidates and readback equality do not establish full format or filesystem validity.
 
 Graphify is installed as a CLI/Codex skill. Query the ignored graphify-out/graph.json first, verify
 relevant sources, and run graphify update . after code changes.
+
+New modes: image ntfs-tree (sequence-checked paths), ntfs-checked (allocation/index checks, user-file
+ATTRIBUTE_LIST extensions, 64 KiB streaming <=2 GiB/file and initialized MFT <=128 MiB), ntfs-deleted
+(retained unused records/free cluster candidates), fat-deleted (contiguous-free hypothesis, <=16 MiB).
+Deleted confidence must remain explicit. Lost FAT first characters/LFNs and arbitrary deleted
+fragmentation are not established; source and output equality do not prove original contents.
+Read callback lifetimes in recoverNtfsChecked are synchronous, within item().

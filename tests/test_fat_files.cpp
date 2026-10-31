@@ -86,6 +86,42 @@ private slots:
         QCOMPARE(QByteArray(reinterpret_cast<const char*>(buffered.recoveredFiles.at("FRAG.TXT").data()),buffered.recoveredFiles.at("FRAG.TXT").size()),volume.expected());
 #endif
     }
+    void deletedCandidates_data(){QTest::addColumn<QString>("kind");for(const char* k:{"fat12","fat16","fat32","nested","allocated","allocated-tail","live-cleared","oversized-live","unsafe-live","overlap-candidates"})QTest::newRow(k)<<QString(k);}
+    void deletedCandidates(){
+#ifndef _WIN32
+        QFETCH(QString,kind);QTemporaryDir root;Volume v(kind=="fat16",kind=="fat16"?4096:512);const int ss=v.ss;
+        v.directory(2,"DELETED TXT",20,ss+17);v.data[v.rootStart*ss+2*32]=char(0xe5);v.data[v.rootStart*ss+3*32]=0;
+        v.data.replace((v.dataStart+18)*ss,ss,QByteArray(ss,'D'));v.data.replace((v.dataStart+19)*ss,ss,QByteArray(ss,'E'));
+        if(kind=="allocated")v.entry(20,0xfff);
+        if(kind=="allocated-tail")v.entry(21,0xfff);
+        if(kind=="live-cleared")v.directory(0,"LIVE    BIN",20,2*ss);
+        if(kind=="oversized-live")v.directory(0,"LIVE    BIN",20,17*1024*1024);
+        if(kind=="unsafe-live")v.directory(0,"BAD/FILETXT",20,2*ss);
+        if(kind=="overlap-candidates"){v.directory(3,"SECOND  TXT",20,ss+17);v.data[v.rootStart*ss+3*32]=char(0xe5);v.data[v.rootStart*ss+4*32]=0;}
+        QString name="deleted-0-2-_ELETED.TXT";
+        if(kind=="nested"){
+            v.directory(2,"VOLUME     ",0,0);v.data[v.rootStart*ss+2*32+11]=8;v.directory(3,"SUBDIR     ",30,0);v.data[v.rootStart*ss+3*32+11]=0x10;v.entry(30,0xfff);
+            const int pos=(v.dataStart+28)*ss;v.data.replace(pos,11,"DELETED TXT");v.data[pos]=char(0xe5);v.data[pos+11]=0x20;le(v.data,pos+26,20);le(v.data,pos+28,ss+17,4);name="SUBDIR/deleted-1-0-_ELETED.TXT";
+        }
+        QByteArray bytes=v.data;int sectors=v.sectors;
+        if(kind=="fat32"){
+            Fat32Volume f;const int pos=f.dataStart*512;f.data.replace(pos,32,QByteArray(32,char{0}));f.data.replace(pos,11,"DELETED TXT");f.data[pos]=char(0xe5);f.data[pos+11]=0x20;le(f.data,pos+26,1000);le(f.data,pos+28,512+17,4);f.data[pos+32]=0;
+            f.data.replace((f.dataStart+998)*512,512,QByteArray(512,'D'));f.data.replace((f.dataStart+999)*512,512,QByteArray(512,'E'));bytes=f.data;sectors=f.sectors;name="deleted-0-0-_ELETED.TXT";
+        }
+        const auto path=root.filePath("source.img");const auto original=QByteArray(3*ss,char(0x33))+bytes;save(path,original);application::service::GUIRecoveryService service(nullptr);const auto source=service.openImage(path.toStdString(),ss);auto op=operation(source.devicePath,root.path(),3,sectors);op.operationType="fat_deleted_recovery";
+        const auto result=service.executeOperation(op);const bool rejected=kind=="allocated"||kind=="allocated-tail"||kind=="live-cleared"||kind=="oversized-live"||kind=="unsafe-live";QCOMPARE(result.recoveredItemsCount,uint64_t(rejected?0:1));QCOMPARE(result.success,!rejected&&kind!="overlap-candidates");QCOMPARE(load(path),original);
+        if(!rejected){const auto expected=QByteArray(ss,'D')+QByteArray(17,'E');QCOMPARE(load(root.filePath(name)),expected);QVERIFY(result.details.at("Recovery confidence").find("Low")!=std::string::npos);
+            const auto out=root.filePath("cli");QVERIFY(QDir().mkdir(out));QProcess cli;cli.start(QCoreApplication::applicationDirPath()+"/RecoverySuite_CLI",{"image","fat-deleted",path,"--start","3","--sector-size",QString::number(ss),"--output",out});QVERIFY(cli.waitForFinished(5000));QCOMPARE(cli.exitCode(),kind=="overlap-candidates"?1:0);QCOMPARE(load(out+"/"+name),expected);
+            const auto repeated=service.executeOperation(op);QVERIFY(!repeated.success);QCOMPARE(load(root.filePath(name)),expected);
+            if(kind=="fat12"){
+                const auto guiOut=root.filePath("gui");QVERIFY(QDir().mkdir(guiOut));gui::core::MainWindow window(&service);window.show();window.findChild<QLineEdit*>("imagePath")->setText(path);window.findChild<QPushButton*>("openImage")->click();window.findChild<QComboBox*>("recoveryMethod")->setCurrentIndex(9);window.findChild<QLineEdit*>("recoveryStart")->setText("3");window.findChild<QLineEdit*>("recoveryCount")->setText(QString::number(sectors));window.findChild<QLineEdit*>("recoveryOutput")->setText(guiOut);window.findChild<QPushButton*>("startImageRecovery")->click();QTRY_COMPARE_WITH_TIMEOUT(window.findChild<QLabel*>("resultStatus")->text(),QString("Completed"),5000);QTRY_VERIFY(window.findChild<QPushButton*>("recoverySettings")->isEnabled());window.close();QCOMPARE(load(guiOut+"/"+name),expected);
+                const auto cancelOut=root.filePath("cancel");QVERIFY(QDir().mkdir(cancelOut));op.outputPath=cancelOut.toStdString();bool stop=false;
+                const auto stopped=service.executeOperation(op,[&](const auto& p){if(p.processedBytes>uint64_t((v.dataStart)*ss))stop=true;},[&]{return stop;});QVERIFY(stopped.cancelled);QVERIFY(!QFile::exists(cancelOut+"/"+name));
+            }
+
+        }else QVERIFY(!QFile::exists(root.filePath(name)));
+#endif
+    }
     void invalidChainsNamesAndMirrors_data(){QTest::addColumn<QString>("fault");for(const char* value:{"cycle","short","long","free","bad","outside","name","size","crosslink","directory-first","directory-tail","mirrors","range"})QTest::newRow(value)<<QString(value);}
     void invalidChainsNamesAndMirrors(){
 #ifndef _WIN32

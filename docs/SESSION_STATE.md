@@ -37,8 +37,10 @@ before merge; code review remains outstanding. Earlier checkpoint CI notes below
 
 GUI and CLI image workflows export signature candidates, FAT metadata, allocated FAT directory trees,
 initialized NTFS MFT snapshots and resident/nonresident NTFS root files. Fragmented FAT chains and MFT streams
-are supported within documented bounds. Recursive NTFS files, attribute-list extensions, allocation/index consistency,
-deleted reconstruction, raw-device workflows, resumable sessions and Windows export remain work.
+are supported within documented bounds. Checked NTFS mode now adds directory paths, bounded user-file attribute-list extensions, allocation/index
+cross-checks and streamed files up to 2 GiB; separate FAT/NTFS modes export deleted candidates with
+explicit uncertainty. MFT bootstrap/nested lists, broader damaged/deleted-chain inference, raw-device
+workflows, resumable sessions and Windows export remain work.
 The signature carver does not validate full file formats. Limits: 16 MiB/candidate, 10,000 attempted
 outputs, 64 KiB scan chunks. Windows and real hardware have not been validated.
 
@@ -298,3 +300,23 @@ Safe exporter pulls and verifies 64 KiB chunks; checked files <=2 GiB, initializ
 Metadata streams <=16 MiB, attribute lists <=1 MiB, <=64 extension records/file and <=4096 runs/file.
 Tests include split DATA extensions, malformed references, allocation/index mismatches, INDX corruption,
 17 MiB streamed output/cancellation and 20 MiB MFT snapshots with explicit resource limits.
+
+## Deleted candidates milestone
+
+Added GUI/CLI ntfs-deleted and fat-deleted. NTFS requires unused MFT records and currently free data
+clusters, retained valid attributes and sequence-matching parents/extensions; deleted parent directories
+may resolve retained paths. Protect live/system metadata, named streams and earlier output extents.
+FAT scans live directory trees for deleted short entries and infers only contiguous free, unclaimed
+clusters, reserving all reachable live chains and conservative live spans before candidates. Output
+names explicitly replace the lost first short-name character; deleted LFNs/directories are unsupported.
+Confidence text warns that free clusters and retained metadata do not establish original contents.
+New image commands install cooperative SIGINT/SIGTERM handlers. Final validation follows below.
+
+Final local validation for the three milestones: Debug 28/28 (6.20 s), Release 28/28 (2.07 s),
+ASan/UBSan image/FAT metadata/FAT files/NTFS integration 4/4 (27.63 s; Qt leak detection disabled).
+Selected NTFS tree/checking/streaming/deleted tests exit normally under GDB: 34 QtTest passes
+including setup/cleanup. GUI clicks and CLI subprocesses cover checked/deleted modes. Source bytes,
+no-overwrite, partial-output cleanup and cancellation are verified on synthetic fixtures.
+Graphify: 3971 nodes / 7240 edges; 20 existing config-node source_file warnings. Stage-two GitHub
+Linux Debug and Release passed for 36909e2 (run 41225845937). Final head needs its own CI check.
+No Windows or real-hardware validation, release completion or merge is claimed.

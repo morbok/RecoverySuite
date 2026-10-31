@@ -24,7 +24,7 @@ std::string shortPart(const std::vector<uint8_t>& root,size_t pos,size_t width) 
 }
 FatRootSummary recoverFatRootFiles(disk::IDiskReader& reader,uint64_t start,uint64_t count,
     const std::function<void(const std::string&,const std::vector<uint8_t>&)>& item,
-    const std::function<void(uint64_t)>& progress,const std::function<bool()>& cancelled,bool recursive) {
+    const std::function<void(uint64_t)>& progress,const std::function<bool()>& cancelled,bool recursive,bool deletedMode) {
     FatRootSummary summary;
     const auto check=[&]{if(cancelled&&cancelled())throw Cancelled{};};
     const auto read=[&](uint64_t offset,uint64_t length) {
@@ -115,7 +115,7 @@ FatRootSummary recoverFatRootFiles(disk::IDiskReader& reader,uint64_t start,uint
         struct Directory {std::vector<uint8_t> bytes;std::string path;size_t depth;};
         struct File {std::string name;uint64_t size,first;};
         std::vector<Directory> directories;directories.push_back({std::move(root),{},0});
-        std::vector<File> files;
+        std::vector<File> files,deletedFiles,liveFiles;
         std::set<std::string> directoryPaths;
         uint64_t directoryBytes=directories.front().bytes.size();
         for(size_t d=0;d<directories.size();++d) {
@@ -127,7 +127,22 @@ FatRootSummary recoverFatRootFiles(disk::IDiskReader& reader,uint64_t start,uint
             for(size_t index=0;index<limit;++index) {
                 check();const size_t pos=index*32;
                 if(bytes[pos]==0)break;
-                if(bytes[pos]==0xe5){longName.reset();++summary.deletedEntries;continue;}
+                if(bytes[pos]==0xe5){
+                    longName.reset();++summary.deletedEntries;
+                    if(!deletedMode||(bytes[pos+11]&0x18)||(bytes[pos+11]&0x0f)==0x0f)continue;
+                    try {
+                        if(deletedFiles.size()+summary.invalidFiles>=10000)throw std::runtime_error("Deleted candidate limit");
+                        if(bytes[pos+11]&0xc0)throw InvalidFile("Invalid deleted attributes");
+                        std::vector<uint8_t> alias(bytes.begin()+pos,bytes.begin()+pos+32);alias[0]='_';
+                        auto name=shortPart(alias,0,8);const auto extension=shortPart(alias,8,3);if(!extension.empty())name+='.'+extension;
+                        name="deleted-"+std::to_string(d)+"-"+std::to_string(index)+"-"+name;
+                        if(!current.path.empty())name=current.path+'/'+name;
+                        const auto size=sourceLe32(bytes,pos+28),high=sourceLe16(bytes,pos+20),first=sourceLe16(bytes,pos+26)|(fat32?high<<16:0);
+                        if(name.size()>4095||size>16*1024*1024||(fat32?(high&0xf000)!=0:high!=0)||(!size&&first))throw InvalidFile("Invalid deleted file size or cluster");
+                        deletedFiles.push_back({std::move(name),size,first});
+                    }catch(const InvalidFile&){++summary.invalidFiles;}
+                    continue;
+                }
                 const auto attributes=bytes[pos+11];
                 if((attributes&0x0f)==0x0f){longName.consume(bytes,pos);continue;}
                 if(attributes&8){longName.reset();continue;}
@@ -150,6 +165,10 @@ FatRootSummary recoverFatRootFiles(disk::IDiskReader& reader,uint64_t start,uint
                     }
                 }
                 else if(files.size()+summary.invalidFiles>=10000)throw std::runtime_error("FAT output item limit reached");
+                if(deletedMode&&!directory) {
+                    const auto first=sourceLe16(bytes,pos+26)|(fat32?(sourceLe16(bytes,pos+20)&0x0fff)<<16:0);
+                    liveFiles.push_back({{},sourceLe32(bytes,pos+28),first});
+                }
                 bool fallback=false;auto name=longName.take(bytes,pos,fallback);
                 if(fallback)++summary.longNameFallbacks;
                 try {
@@ -188,6 +207,31 @@ FatRootSummary recoverFatRootFiles(disk::IDiskReader& reader,uint64_t start,uint
                     }
                 }catch(const InvalidFile&){if(directory)++summary.invalidDirectories;else ++summary.invalidFiles;}
             }
+        }
+        if(deletedMode) {
+            std::vector<bool> liveClaims(static_cast<size_t>(clusters+2),false);uint64_t claimWork=0;
+            const auto work=[&]{check();if(++claimWork>16*1024*1024)throw std::runtime_error("Deleted cluster-analysis work limit");};
+            // Reserve every reachable live chain, including inconsistent entries whose FAT was cleared.
+            for(const auto& file:liveFiles) {
+                const auto contiguous=(file.size+clusterSectors*sectorSize-1)/(clusterSectors*sectorSize);
+                if(file.first>=2&&file.first<clusters+2&&contiguous<=clusters+2-file.first)
+                    for(uint64_t i=0;i<contiguous;++i){work();usedClusters[file.first+i]=true;}
+                auto cluster=file.first;
+                while(cluster>=2&&cluster<clusters+2&&cluster<reservedCluster&&!liveClaims[cluster]) {
+                    work();liveClaims[cluster]=true;usedClusters[cluster]=true;cluster=next(cluster);
+                }
+            }
+            for(const auto& file:deletedFiles) {
+                try {
+                    const auto clusterBytes=clusterSectors*sectorSize,needed=(file.size+clusterBytes-1)/clusterBytes;
+                    if(needed&&(file.first<2||file.first>=clusters+2||needed>clusters+2-file.first))throw InvalidFile("Deleted extent outside volume");
+                    for(uint64_t i=0;i<needed;++i){work();const auto c=file.first+i;if(c>=reservedCluster||next(c)!=0||usedClusters[c]||(recursive&&directoryClaims[c]))throw InvalidFile("Deleted cluster is allocated or claimed");}
+                    std::vector<uint8_t> data;
+                    if(file.size)data=read((dataStart+(file.first-2)*clusterSectors)*sectorSize,file.size);
+                    check();item(file.name,data);for(uint64_t i=0;i<needed;++i)usedClusters[file.first+i]=true;++summary.foundItems;
+                }catch(const InvalidFile&){++summary.invalidFiles;}
+            }
+            return summary;
         }
         // Discover/reserve all directory chains before reading any file payload.
         for(const auto& file:files) {
