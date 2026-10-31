@@ -540,23 +540,31 @@ SafeFileExporter::SafeFileExporter(const std::string &directory)
   const auto root = path.root_path().wstring();
   if (root.size() != 3 || root[1] != L':' || root[2] != L'\\')
     throw std::invalid_argument("Output must be on a local drive");
+  constexpr ACCESS_MASK directoryRead =
+      FILE_LIST_DIRECTORY | FILE_TRAVERSE | FILE_READ_ATTRIBUTES;
+  constexpr ACCESS_MASK directoryWrite = FILE_ADD_FILE | FILE_ADD_SUBDIRECTORY;
+  std::vector<std::string> directories;
+  for (const auto &part : path.relative_path())
+    if (!part.empty() && part != ".")
+      directories.push_back(disk::utf8Path(part));
   WinHandle drive(CreateFileW(
       root.c_str(),
-      FILE_LIST_DIRECTORY | FILE_TRAVERSE | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+      directoryRead | SYNCHRONIZE | (directories.empty() ? directoryWrite : 0),
       FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
       FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
   if (drive.value == INVALID_HANDLE_VALUE)
     throw std::runtime_error("Cannot open output drive");
   inspectHandle(drive.value, true);
   impl_->parents.push_back(std::move(drive));
-  for (const auto &part : path.relative_path()) {
-    if (part.empty() || part == ".")
-      continue;
-    const auto name = disk::utf8Path(part);
+  for (size_t index = 0; index < directories.size(); ++index) {
+    const auto &name = directories[index];
     component(name);
-    impl_->parents.push_back(relative(
-        impl_->parents.back().value, wide(name),
-        FILE_LIST_DIRECTORY | FILE_TRAVERSE | FILE_READ_ATTRIBUTES, 1, true));
+    // Only the selected destination needs add/rename rights; ancestors stay
+    // read-only.
+    const auto access =
+        directoryRead | (index + 1 == directories.size() ? directoryWrite : 0);
+    impl_->parents.push_back(
+        relative(impl_->parents.back().value, wide(name), access, 1, true));
   }
 }
 SafeFileExporter::~SafeFileExporter() = default;
@@ -635,7 +643,9 @@ void SafeFileExporter::replaceState(const std::string &name,
     std::copy(target.begin(), target.end(), rename->FileName);
     if (!SetFileInformationByHandle(file.value, FileRenameInfo, rename,
                                     DWORD(buffer.size())))
-      throw std::runtime_error("Cannot atomically commit session checkpoint");
+      throw std::runtime_error(
+          "Cannot atomically commit session checkpoint (Windows error " +
+          std::to_string(GetLastError()) + ")");
     if (!FlushFileBuffers(file.value))
       throw std::runtime_error("Cannot flush session checkpoint");
   } catch (...) {

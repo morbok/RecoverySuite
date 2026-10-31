@@ -240,8 +240,8 @@ Outputs are exclusive, streamed, read back and SHA-256 reported; cancellation re
 output. Open the resulting image with GUI/CLI recovery and its optional recovery session.
 
 Enumeration reports actual OS metadata only. SMART/NVMe health, NAND estimates and vendor commands
-are unavailable. Windows native export and acquisition are development features pending CI and
-real-device QA; do not infer real-hardware validation from synthetic image tests.
+are unavailable. Windows native export and acquisition are development features. Check the exact-head CI results
+and complete real-device QA; synthetic image/device tests do not establish hardware validation.
 
 ### Build on Windows x64
 

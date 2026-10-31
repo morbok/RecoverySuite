@@ -375,3 +375,10 @@ Linux CI at 2b716c2 passed all tests and generated TGZ/DEB packages with install
 its loop capture produced a verified 32 MiB image, then its unprivileged comparison failed on the
 root-owned 0600 output. The fixture comparison now uses sudo. Windows SDK duplication was narrowed
 to the user-mode winioctl header. A fresh head must pass all jobs before merge.
+
+At 87fa53c GitHub Linux Debug/Release and fuzz passed (run 41234730249), including TGZ/DEB
+installed/extracted CLI+GUI smoke and the 32 MiB read-only loop fixture. Windows compiled all
+targets and passed 27/30 test executables; three Windows fixture/checkpoint tests need fixes.
+Boot-analysis fixtures now use separate images instead of rewriting a source held read-only.
+Windows QtTest reports are captured to files and printed in CI, and destination handles request
+add/rename rights only at the selected output directory. No safety checks or tests are disabled.

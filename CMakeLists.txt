@@ -14,7 +14,7 @@ set(RECOVERY_SUITE_VERSION_PATCH 0)
 # Compiler-specific warnings and settings
 if(MSVC)
     # MSVC warnings
-    add_compile_options(/W4 /permissive- /utf-8)
+    add_compile_options(/W4 /permissive- /utf-8 /MP2)
     add_compile_definitions(NOMINMAX WIN32_LEAN_AND_MEAN _WIN32_WINNT=0x0A00)
     # Disable specific warnings that are too noisy
     add_compile_options(/wd4251 /wd4275 /wd4800)

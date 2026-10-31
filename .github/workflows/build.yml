@@ -51,17 +51,26 @@ jobs:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - uses: jurplel/install-qt-action@v4
         with:
           version: '6.8.3'
           arch: win64_msvc2022_64
           cache: true
+          setup-python: false
       - name: Configure
         run: cmake -S . -B build -A x64
       - name: Build
         run: cmake --build build --config Release --parallel 2
       - name: Test
-        run: ctest --test-dir build -C Release --output-on-failure --timeout 60
+        shell: pwsh
+        run: |
+          ctest --test-dir build -C Release --output-on-failure --timeout 60
+          $testExit = $LASTEXITCODE
+          Get-ChildItem build/tests -Filter '*.qt.txt' | ForEach-Object { Write-Output $_.Name; Get-Content -LiteralPath $_.FullName }
+          if ($testExit -ne 0) { exit $testExit }
 
       - name: Read-only synthetic Windows VHD QA
         shell: pwsh
