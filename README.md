@@ -144,6 +144,14 @@ alternate-stream export and recursive NTFS traversal are unsupported. Allocation
 bitmaps and directory indexes are not cross-checked; in-use record flags and parent references do
 not establish whole-filesystem consistency. Original permissions/timestamps are not restored.
 
+## NTFS subfolders
+
+Use GUI **NTFS files with subfolders** or CLI `image ntfs-tree`. This resolves in-use directory
+parents with sequence checks and emits safe relative paths through the hierarchical exporter.
+Limits: 32 directory levels, 1023 directories and 4095 path bytes. Cyclic, missing, stale and unsafe
+ancestors are rejected. Empty directories are not exported. This mode does not yet validate directory
+indexes or allocation bitmaps.
+
 ## Current state
 
 - GUI and CLI compile on Linux; all 28 registered CTest executables pass locally in Debug and Release.

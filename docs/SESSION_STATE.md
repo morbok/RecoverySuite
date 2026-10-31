@@ -279,3 +279,11 @@ integration suites (14.45 s; Qt leak detection disabled). New GDB-selected tests
 fragmented negative-delta runs, exact logical lengths, zero/partial/full initialization, no-overwrite,
 cancellation during payload reads, malformed mappings, self/MFT/prior-file overlaps, and short,
 oversized or failed payload reads. New revision still needs its own remote CI and code review.
+
+## NTFS directory-tree milestone
+
+Added GUI NTFS files with subfolders and CLI image ntfs-tree. Resolve safe Unicode parent paths
+with directory/in-use/base-record and sequence checks; bound depth to 32, directory count to 1023
+and paths to 4095 bytes. Reject cyclic/stale/missing/unsafe ancestors and preserve completed outputs.
+NTFS integration tests cover nested Unicode paths through service/CLI and malformed ancestors.
+Allocation/index verification, extensions and deleted files are the next milestones.

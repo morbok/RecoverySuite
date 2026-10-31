@@ -144,7 +144,7 @@ NtfsMftSnapshot readNtfsMft(disk::IDiskReader& reader,uint64_t start,uint64_t co
 }
 static NtfsResidentSummary recoverRootFiles(disk::IDiskReader& reader,uint64_t start,uint64_t count,
     const std::function<void(const std::string&,const std::vector<uint8_t>&)>& item,
-    const std::function<void(uint64_t)>& progress,const std::function<bool()>& cancelled,bool includeNonresident) {
+    const std::function<void(uint64_t)>& progress,const std::function<bool()>& cancelled,bool includeNonresident,bool recursive=false) {
     constexpr size_t kRootRecord=5,kFirstUserRecord=16,kMaxOutputs=10000;
     const auto check=[&]{if(cancelled&&cancelled())invalid("cancelled");};
     const auto mft=readNtfsMft(reader,start,count,progress,cancelled);NtfsResidentSummary result;result.processedBytes=mft.processedBytes;
@@ -159,6 +159,33 @@ static NtfsResidentSummary recoverRootFiles(disk::IDiskReader& reader,uint64_t s
     const auto root=decodeRecord(records.subspan(kRootRecord*mft.recordSize,mft.recordSize));
     const auto rootSequence=le(root,16,2);
     if(le(root,22,2)!=3||le(root,32,8)||!rootSequence)invalid("invalid root directory base record");
+    std::map<uint64_t,std::string> directoryPaths{{5,{}}};
+    const auto directoryPath=[&](auto&& self,uint64_t reference,std::set<uint64_t>& visiting)->std::string {
+        check();const auto index=reference&0x0000ffffffffffff,sequence=reference>>48;
+        if(index>=slots||!sequence)invalid("directory reference outside initialized MFT");
+        const auto directory=decodeRecord(records.subspan(index*mft.recordSize,mft.recordSize));
+        if(le(directory,22,2)!=3||le(directory,32,8)||le(directory,16,2)!=sequence)invalid("stale or invalid parent directory");
+        if(auto it=directoryPaths.find(index);it!=directoryPaths.end())return it->second;
+        if(visiting.size()>=32||!visiting.insert(index).second||directoryPaths.size()>=1024)invalid("directory cycle, depth or count limit");
+        int rank=-1;std::string selected;
+        for(const auto& attribute:listAttributes(directory,cancelled)) {
+            if(attribute.type==0x20||attribute.type==0xc0)invalid("unsupported directory extension or reparse point");
+            if(attribute.type!=0x30)continue;
+            if(attribute.nonResident||attribute.nameLength||le(attribute.bytes,12,2))invalid("invalid directory FILE_NAME");
+            const auto value=attribute.bytes.subspan(le(attribute.bytes,20,2),le(attribute.bytes,16,4));
+            if(value.size()<66)invalid("short directory name");
+            const auto length=le(value,64,1),space=le(value,65,1);
+            if(!length||value.size()!=66+length*2||space>3)invalid("invalid directory name bounds");
+            std::vector<uint16_t> units;for(size_t j=0;j<length;++j)units.push_back(le(value,66+2*j,2));
+            auto name=decodeSafeFileName(units);if(name.empty())continue;
+            const int candidate=space==2?0:(space==0?1:2);if(candidate<=rank)continue;
+            const auto parent=self(self,le(value,0,8),visiting);
+            selected=parent.empty()?name:parent+'/'+name;rank=candidate;
+        }
+        visiting.erase(index);
+        if(selected.empty()||selected.size()>4095||std::count(selected.begin(),selected.end(),'/')>=32)invalid("missing or excessive directory path");
+        directoryPaths.emplace(index,selected);return selected;
+    };
     for(size_t index=kFirstUserRecord;index<slots;++index) {
         check();const auto raw=records.subspan(index*mft.recordSize,mft.recordSize);
         if(std::all_of(raw.begin(),raw.end(),[](uint8_t c){return c==0;}))continue;
@@ -190,12 +217,14 @@ static NtfsResidentSummary recoverRootFiles(disk::IDiskReader& reader,uint64_t s
                     if(value.size()<66)invalid("short FILE_NAME");
                     const auto parent=le(value,0,8),length=le(value,64,1),space=le(value,65,1);
                     if(!length||value.size()!=66+length*2||space>3)invalid("invalid FILE_NAME length or namespace");
-                    if((parent&0x0000ffffffffffff)!=kRootRecord)continue;
+                    if(!recursive&&(parent&0x0000ffffffffffff)!=kRootRecord)continue;
                     rootLink=true;
-                    if((parent>>48)!=rootSequence){staleRoot=true;continue;}
+                    if((parent&0x0000ffffffffffff)==kRootRecord&&(parent>>48)!=rootSequence){staleRoot=true;continue;}
                     std::vector<uint16_t> units;units.reserve(length);
                     for(size_t j=0;j<length;++j)units.push_back(static_cast<uint16_t>(le(value,66+j*2,2)));
                     auto name=decodeSafeFileName(units);if(name.empty())continue;
+                    if(recursive){std::set<uint64_t> visiting;const auto path=directoryPath(directoryPath,parent,visiting);if(!path.empty())name=path+'/'+name;}
+                    if(name.size()>4095)invalid("file path exceeds 4095 bytes");
                     names.insert(name);const int rank=space==2?0:(space==0?1:2);
                     if(rank>preferred){preferred=rank;selected=std::move(name);}
                 }
@@ -257,6 +286,12 @@ NtfsResidentSummary recoverNtfsRootFiles(disk::IDiskReader& reader,uint64_t star
     const std::function<void(const std::string&,const std::vector<uint8_t>&)>& item,
     const std::function<void(uint64_t)>& progress,const std::function<bool()>& cancelled) {
     return recoverRootFiles(reader,start,count,item,progress,cancelled,true);
+}
+
+NtfsResidentSummary recoverNtfsTreeFiles(disk::IDiskReader& reader,uint64_t start,uint64_t count,
+    const std::function<void(const std::string&,const std::vector<uint8_t>&)>& item,
+    const std::function<void(uint64_t)>& progress,const std::function<bool()>& cancelled) {
+    return recoverRootFiles(reader,start,count,item,progress,cancelled,true,true);
 }
 
 }

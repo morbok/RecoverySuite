@@ -47,7 +47,7 @@ std::string GUIRecoveryService::validateImageOperation(const models::RecoveryOpe
     if (!imageReader_ || !imageReader_->isOpen()) return "Open a disk image first";
     try { imageReader_->validateIdentity(); }
     catch (const std::exception& failure) { return failure.what(); }
-    if (operation.operationType != "carving" && operation.operationType != "metadata_recovery" && operation.operationType != "file_recovery" && operation.operationType != "file_tree_recovery" && operation.operationType != "ntfs_mft_snapshot" && operation.operationType != "ntfs_resident_recovery")
+    if (operation.operationType != "carving" && operation.operationType != "metadata_recovery" && operation.operationType != "file_recovery" && operation.operationType != "file_tree_recovery" && operation.operationType != "ntfs_mft_snapshot" && operation.operationType != "ntfs_resident_recovery" && operation.operationType != "ntfs_tree_recovery")
         return "Choose signature carving, a metadata snapshot or a supported FAT/NTFS file-recovery method";
     std::error_code error;
     const auto source = std::filesystem::canonical(operation.targetDevicePath, error);
@@ -90,7 +90,7 @@ models::RecoveryResult GUIRecoveryService::executeOperation(const models::Recove
                 if (!progressCallback) return;
                 models::RecoveryProgress progress{};
                 progress.operationType = operation.operationType; progress.status = "running";
-                progress.currentStep = carving ? "Scanning image and saving signature candidates" : "Reading and saving FAT data";
+                progress.currentStep = carving ? "Scanning image and saving signature candidates" : "Reading and saving filesystem data";
                 progress.processedBytes = processed; progress.totalBytes = carving ? totalBytes : 0;
                 progress.percentage = carving ? static_cast<uint32_t>((static_cast<long double>(processed) / totalBytes) * 100) : 0;
                 progress.recoveredItemsCount = result.recoveredItemsCount; progress.failedItemsCount = result.failedItemsCount;
@@ -103,7 +103,7 @@ models::RecoveryResult GUIRecoveryService::executeOperation(const models::Recove
                     if (result.recoveredItemsCount + result.failedItemsCount >= 10000)
                         throw std::runtime_error("Maximum output item count reached");
                     try {
-                        if(tree)exporter.writeTree(name,data,operation.verifyAfterRecovery,cancellationToken);
+                        if(tree||operation.operationType=="ntfs_tree_recovery")exporter.writeTree(name,data,operation.verifyAfterRecovery,cancellationToken);
                         else exporter.write(name, data, operation.verifyAfterRecovery, cancellationToken);
                         result.recoveredItems.push_back({name, static_cast<uint64_t>(data.size())});
                         ++result.recoveredItemsCount; result.recoveredBytes += data.size(); result.outputWritten = true;
@@ -118,8 +118,8 @@ models::RecoveryResult GUIRecoveryService::executeOperation(const models::Recove
             if (carving) {
                 summary = recovery::carveSignatures(*imageReader_,operation.startSector,operation.numSectors,
                     saveItem,report,cancellationToken);
-            } else if(operation.operationType=="ntfs_resident_recovery") {
-                const auto files=recovery::recoverNtfsRootFiles(*imageReader_,operation.startSector,operation.numSectors,saveItem,report,cancellationToken);
+            } else if(operation.operationType=="ntfs_resident_recovery"||operation.operationType=="ntfs_tree_recovery") {
+                const auto files=(operation.operationType=="ntfs_tree_recovery"?recovery::recoverNtfsTreeFiles:recovery::recoverNtfsRootFiles)(*imageReader_,operation.startSector,operation.numSectors,saveItem,report,cancellationToken);
                 summary.processedBytes=files.processedBytes;summary.cancelled=cancelled();
                 summary.skippedCandidates=files.invalidFiles+files.nonresidentFiles+files.unsupportedFiles;
                 result.details["Nonresident NTFS root files reconstructed"]=std::to_string(files.recoveredNonresidentFiles);
@@ -178,7 +178,9 @@ models::RecoveryResult GUIRecoveryService::executeOperation(const models::Recove
     if (result.cancelled) result.success = false;
     result.endTime = std::chrono::system_clock::now();
     result.details["Export"] = result.outputWritten ? "Only the listed items were saved to the destination" : "No output files were saved";
-    result.details["Recovery method"] = operation.operationType == "ntfs_resident_recovery"
+    result.details["Recovery method"] = operation.operationType == "ntfs_tree_recovery"
+        ? "In-use NTFS files with sequence-checked parent paths, limited to 32 directory levels. No index/bitmap validation or deleted files."
+        : operation.operationType == "ntfs_resident_recovery"
         ? "In-use NTFS root files with unnamed resident/nonresident DATA (16 MiB/file) and sequence-matching parent references. One preferred name per record. No index/bitmap cross-check, deleted/recursive recovery, attribute-list extensions, sparse/compressed/encrypted DATA or alternate-stream export."
         : operation.operationType == "ntfs_mft_snapshot"
         ? "NTFS boot and initialized MFT bytes. Mapping pairs, FILE headers and update-sequence fixups checked; raw on-disk bytes preserved. No file reconstruction, mirror fallback or attribute-list extensions."

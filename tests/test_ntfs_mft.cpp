@@ -209,6 +209,26 @@ private slots:
         QCOMPARE(load(path),image);
 #endif
     }
+    void ntfsTreePaths_data(){QTest::addColumn<QString>("fault");for(const char* f:{"valid","cycle","stale","unsafe","missing"})QTest::newRow(f)<<QString(f);}
+    void ntfsTreePaths(){
+#ifndef _WIN32
+        QFETCH(QString,fault);QTemporaryDir root;ResidentVolume v;
+        const auto directory=[&](const QString& name,uint64_t parent){auto r=v.file(name,{},parent);le(r,22,3);return r;};
+        v.records[20]=directory("TOP",5|(uint64_t{7}<<48));v.records[18]=directory(QString::fromUtf8("İç"),20|(uint64_t{3}<<48));
+        v.records[21]=v.file("NESTED.TXT","nested",18|(uint64_t{3}<<48));
+        if(fault=="cycle")v.records[20]=directory("TOP",18|(uint64_t{3}<<48));
+        if(fault=="stale")v.records[21]=v.file("NESTED.TXT","nested",18|(uint64_t{4}<<48));
+        if(fault=="unsafe")v.records[18]=directory("../escape",20|(uint64_t{3}<<48));
+        if(fault=="missing")v.records[18]=QByteArray(v.geometry.recordBytes,char{0});
+        const auto path=root.filePath("source.img");const auto original=v.image();save(path,original);
+        application::service::GUIRecoveryService service(nullptr);const auto source=service.openImage(path.toStdString());auto op=operation(source.devicePath,root.path(),0,Volume::sectors);op.operationType="ntfs_tree_recovery";
+        const auto result=service.executeOperation(op);QCOMPARE(result.success,fault=="valid");QCOMPARE(result.recoveredItemsCount,uint64_t(fault=="valid"?3:2));QCOMPARE(load(path),original);
+        const auto nested=root.filePath(QString::fromUtf8("TOP/İç/NESTED.TXT"));
+        if(fault=="valid"){
+            QCOMPARE(load(nested),QByteArray("nested"));const auto out=root.filePath("cli");QVERIFY(QDir().mkdir(out));QProcess cli;cli.start(QCoreApplication::applicationDirPath()+"/RecoverySuite_CLI",{"image","ntfs-tree",path,"--output",out});QVERIFY(cli.waitForFinished(5000));QCOMPARE(cli.exitCode(),0);QCOMPARE(load(out+QString::fromUtf8("/TOP/İç/NESTED.TXT")),QByteArray("nested"));
+        }else QVERIFY(!QFile::exists(nested));
+#endif
+    }
     void residentFaults_data(){QTest::addColumn<QString>("fault");for(const char* f:{"stale-parent","unsafe-name","bad-unicode","name-length","namespace","data-offset","data-length","missing-data","missing-standard","duplicate-data","attribute-end","nonresident","compressed","encrypted","reparse","attribute-list","directory-flag"})QTest::newRow(f)<<QString(f);}
     void residentFaults(){
 #ifndef _WIN32

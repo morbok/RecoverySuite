@@ -32,4 +32,9 @@ NtfsResidentSummary recoverNtfsRootFiles(disk::IDiskReader& reader,uint64_t star
     const std::function<void(const std::string&,const std::vector<uint8_t>&)>& item,
     const std::function<void(uint64_t)>& progress={},const std::function<bool()>& cancelled={});
 
+// Resolve sequence-checked in-use parent directories, <=32 levels / 1023 directories.
+NtfsResidentSummary recoverNtfsTreeFiles(disk::IDiskReader& reader,uint64_t start,uint64_t count,
+    const std::function<void(const std::string&,const std::vector<uint8_t>&)>& item,
+    const std::function<void(uint64_t)>& progress={},const std::function<bool()>& cancelled={});
+
 }
