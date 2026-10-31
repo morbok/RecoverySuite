@@ -45,6 +45,7 @@ are reported; completed files remain available after cancellation or partial fai
 ./build/bin/RecoverySuite_CLI image files fat-volume.img --output /existing/files-folder
 ./build/bin/RecoverySuite_CLI image tree fat-volume.img --output /existing/tree-folder
 ./build/bin/RecoverySuite_CLI image mft ntfs-volume.img --output /existing/mft-folder
+./build/bin/RecoverySuite_CLI image ntfs-files ntfs-volume.img --output /existing/small-files-folder
 ```
 
 Use `--sector-size 4096` for a 4 KiB-sector image, `--count N` to bound the scan, and
@@ -119,6 +120,23 @@ compressed/encrypted MFT data and MFT-mirror fallback are unsupported. Invalid m
 failed/short read prevents output; later output failures retain completed files. This is a bounded
 metadata snapshot, not NTFS user-file reconstruction, metadata repair or whole-volume validation.
 
+## NTFS resident root files
+
+Choose **NTFS resident root files (small files)** or run `image ntfs-files`. This copies the unnamed
+resident DATA stream from in-use base FILE records, with the initialized-MFT snapshot limits above.
+A root FILE record must exist; each chosen FILE_NAME parent reference must match its record number
+and sequence. UTF-16 names are decoded without lossy replacements. One preferred safe root name
+is exported per record, favoring Windows names over DOS aliases; other names are counted but are
+not recreated as hard links. Empty resident files are preserved. File bytes include restored USA
+words, rather than on-disk protection tags. Output names are never rewritten to resolve collisions.
+
+Non-root links, directories, extension records and unused user slots are skipped. Root files with
+nonresident DATA or unsupported features produce a failed/partial result while preserving completed
+outputs. Compressed/encrypted/sparse/reparse files, attribute-list extensions, deleted/nonresident
+reconstruction, alternate-stream export and recursive NTFS traversal are unsupported. Allocation
+bitmaps and directory indexes are not cross-checked; in-use record flags and parent references do
+not establish whole-filesystem consistency. Original permissions/timestamps are not restored.
+
 ## Current state
 
 - GUI and CLI compile on Linux; all 28 registered CTest executables pass locally in Debug and Release.
@@ -127,7 +145,7 @@ metadata snapshot, not NTFS user-file reconstruction, metadata repair or whole-v
 - POSIX output export rejects traversal, symlink components, unsafe names and existing files. It
   anchors the selected directory with a file descriptor; incomplete writes are removed on failure.
 - The image workflow supports signature carving, FAT metadata snapshots and allocated FAT12/16/32 root
-  files, with optional bounded recursive traversal. Deleted FAT chains and NTFS MFT recovery remain unavailable.
+  files, with optional bounded recursive traversal. Deleted chains, NTFS nonresident files and NTFS directory traversal remain unavailable.
 - Windows safe export is unavailable; Windows builds and recovery against real devices remain unvalidated.
 - Integration tests use synthetic images; the image workflow also passes AddressSanitizer/UBSan locally.
 

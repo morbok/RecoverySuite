@@ -2,6 +2,7 @@
 #include "Disk/IDiskReader.hpp"
 #include <functional>
 #include <vector>
+#include <string>
 namespace recoverysuite::recovery {
 struct NtfsMftSnapshot {
     std::vector<uint8_t> bootSector, initializedRecords;
@@ -13,4 +14,15 @@ struct NtfsMftSnapshot {
 // Throws on invalid/unsupported metadata, failed/short reads, resource limits or cancellation.
 NtfsMftSnapshot readNtfsMft(disk::IDiskReader& reader,uint64_t start,uint64_t count,
     const std::function<void(uint64_t)>& progress={},const std::function<bool()>& cancelled={});
+struct NtfsResidentSummary {
+    uint64_t processedBytes{},foundItems{},invalidFiles{},nonresidentFiles{},unsupportedFiles{};
+    uint64_t unusedRecords{},directoryRecords{},extensionRecords{},nonRootFiles{},otherRootNames{};
+};
+// Copy unnamed resident DATA from in-use base records with a sequence-matching root parent.
+// Exports one safe preferred root name per record. Does not traverse indexes/subdirectories,
+// reconstruct deleted/nonresident/ADS data, or cross-check allocation bitmaps.
+NtfsResidentSummary recoverNtfsResidentRootFiles(disk::IDiskReader& reader,uint64_t start,uint64_t count,
+    const std::function<void(const std::string&,const std::vector<uint8_t>&)>& item,
+    const std::function<void(uint64_t)>& progress={},const std::function<bool()>& cancelled={});
+
 }

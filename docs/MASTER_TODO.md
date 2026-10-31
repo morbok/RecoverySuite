@@ -21,7 +21,8 @@ Updated: 2026-10-31. Historical phase summaries are not the release checklist.
        [x] Decode validated Unicode long names with safe ASCII alias fallback.
        [x] Add bounded recursive FAT directory/file recovery and safe hierarchical POSIX output.
        [x] Add bounded NTFS initialized-MFT snapshots with mapping-pairs and FILE fixup checks.
-       [ ] Add OEM short names, deleted-chain inference and NTFS user-file recovery.
+       [x] Copy in-use NTFS root files with resident unnamed DATA and sequence-checked parent names.
+       [ ] Add OEM short names, deleted-chain inference, NTFS nonresident files/directory traversal.
 4. [x] Export signature candidates safely on POSIX, preserving bytes and rejecting traversal, symlinks,
        overwrite and invalid destinations; verify saved bytes in integration tests.
 5. [x] Propagate cancellation/progress into image scan/export loops and test worker shutdown.

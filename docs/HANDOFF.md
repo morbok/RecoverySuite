@@ -12,6 +12,8 @@ Supported read-only image workflows:
   1023-directory and 64 MiB directory-read limits. Empty folders/permissions/timestamps are not exported.
 - NTFS boot/initialized-MFT snapshots via GUI or CLI image mft: bounded mapping pairs and FILE
   update-sequence validation, raw bytes preserved. No user-file reconstruction or mirror fallback.
+- In-use NTFS root files with resident unnamed DATA via GUI or CLI image ntfs-files. Sequence-check
+  root parent links, safe Unicode names, one name/record; no allocation-bitmap/index cross-check.
 - CLI image info/analyze for geometry and FAT/NTFS boot-sector fields; unknown metrics stay unknown.
 
 All image export uses a directory-anchored POSIX writer with exclusive creation, path/name checks,
@@ -28,7 +30,7 @@ GUI executeOperation and CLI image commands provide actual filesystem output. Ca
 the shared scanner and absolute offsets. Never restore manufactured file/FAT/MFT contents.
 
 Remaining scope includes deleted-file chain inference, OEM short-name support,
-NTFS MFT/files, Windows safe export, session resume, hardware QA and packaging. Signature
+NTFS nonresident files/directory traversal, Windows safe export, session resume, hardware QA and packaging. Signature
 candidates and readback equality do not establish full format or filesystem validity.
 
 Graphify is installed as a CLI/Codex skill. Query the ignored graphify-out/graph.json first, verify

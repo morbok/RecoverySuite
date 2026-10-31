@@ -47,8 +47,8 @@ std::string GUIRecoveryService::validateImageOperation(const models::RecoveryOpe
     if (!imageReader_ || !imageReader_->isOpen()) return "Open a disk image first";
     try { imageReader_->validateIdentity(); }
     catch (const std::exception& failure) { return failure.what(); }
-    if (operation.operationType != "carving" && operation.operationType != "metadata_recovery" && operation.operationType != "file_recovery" && operation.operationType != "file_tree_recovery" && operation.operationType != "ntfs_mft_snapshot")
-        return "Choose signature carving, a metadata snapshot or FAT12/16/32 file recovery";
+    if (operation.operationType != "carving" && operation.operationType != "metadata_recovery" && operation.operationType != "file_recovery" && operation.operationType != "file_tree_recovery" && operation.operationType != "ntfs_mft_snapshot" && operation.operationType != "ntfs_resident_recovery")
+        return "Choose signature carving, a metadata snapshot or a supported FAT/NTFS file-recovery method";
     std::error_code error;
     const auto source = std::filesystem::canonical(operation.targetDevicePath, error);
     if (error || source.string() != imageReader_->sourcePath()) return "The operation source does not match the opened image";
@@ -118,6 +118,18 @@ models::RecoveryResult GUIRecoveryService::executeOperation(const models::Recove
             if (carving) {
                 summary = recovery::carveSignatures(*imageReader_,operation.startSector,operation.numSectors,
                     saveItem,report,cancellationToken);
+            } else if(operation.operationType=="ntfs_resident_recovery") {
+                const auto files=recovery::recoverNtfsResidentRootFiles(*imageReader_,operation.startSector,operation.numSectors,saveItem,report,cancellationToken);
+                summary.processedBytes=files.processedBytes;summary.cancelled=cancelled();
+                summary.skippedCandidates=files.invalidFiles+files.nonresidentFiles+files.unsupportedFiles;
+                result.details["Invalid NTFS root files"]=std::to_string(files.invalidFiles);
+                result.details["Nonresident NTFS root files not reconstructed"]=std::to_string(files.nonresidentFiles);
+                result.details["Unsupported NTFS root-file features"]=std::to_string(files.unsupportedFiles);
+                result.details["Unused user-record slots skipped"]=std::to_string(files.unusedRecords);
+                result.details["Directory records skipped"]=std::to_string(files.directoryRecords);
+                result.details["Extension records skipped"]=std::to_string(files.extensionRecords);
+                result.details["Non-root files skipped"]=std::to_string(files.nonRootFiles);
+                result.details["Other root names not exported"]=std::to_string(files.otherRootNames);
             } else if(operation.operationType=="ntfs_mft_snapshot") {
                 const auto mft=recovery::readNtfsMft(*imageReader_,operation.startSector,operation.numSectors,report,cancellationToken);
                 result.details["MFT record bytes"]=std::to_string(mft.recordSize);
@@ -158,14 +170,16 @@ models::RecoveryResult GUIRecoveryService::executeOperation(const models::Recove
             result.details["Verification"] = operation.verifyAfterRecovery ? "Saved bytes were read back and compared" : "Not requested";
             result.success = !result.cancelled && !result.failedItemsCount && !summary.skippedCandidates;
             if (result.failedItemsCount) result.errorMessage = "Some candidates could not be saved; existing files were kept";
-            else if (summary.skippedCandidates) result.errorMessage = carving ? "Some signature candidates were incomplete or larger than 16 MiB" : "Some FAT files or directories have invalid or unsupported names, sizes or cluster chains";
+            else if (summary.skippedCandidates) result.errorMessage = carving ? "Some signature candidates were incomplete or larger than 16 MiB" : "Some files or directories have invalid metadata or unsupported recovery features";
         }
     } catch (const std::exception& failure) { result.errorMessage = failure.what(); result.success = false; }
     result.cancelled = result.cancelled || cancelled();
     if (result.cancelled) result.success = false;
     result.endTime = std::chrono::system_clock::now();
     result.details["Export"] = result.outputWritten ? "Only the listed items were saved to the destination" : "No output files were saved";
-    result.details["Recovery method"] = operation.operationType == "ntfs_mft_snapshot"
+    result.details["Recovery method"] = operation.operationType == "ntfs_resident_recovery"
+        ? "In-use NTFS root files with unnamed resident DATA and sequence-matching parent references. One preferred name per record. No index/bitmap cross-check, nonresident/deleted/recursive recovery or alternate-stream export."
+        : operation.operationType == "ntfs_mft_snapshot"
         ? "NTFS boot and initialized MFT bytes. Mapping pairs, FILE headers and update-sequence fixups checked; raw on-disk bytes preserved. No file reconstruction, mirror fallback or attribute-list extensions."
         : operation.operationType == "metadata_recovery"
         ? "FAT metadata snapshot: boot sector and FAT copies; FAT12/16 root entries included. No repair, FAT32 root chain or NTFS MFT reconstruction."

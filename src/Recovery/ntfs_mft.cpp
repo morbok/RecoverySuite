@@ -1,5 +1,7 @@
 #include "ntfs_mft.h"
 #include "source_bytes.h"
+#include "unicode_file_name.h"
+#include <set>
 #include <algorithm>
 #include <limits>
 #include <map>
@@ -32,11 +34,12 @@ std::vector<uint8_t> decodeRecord(Bytes raw) {
 }
 struct Run {uint64_t lcn,clusters;};
 struct Stream {std::vector<Run> runs;uint64_t initialized{},logical{},allocated{};};
-Stream parseMftData(Bytes record,uint64_t clusters,uint64_t clusterBytes,uint64_t mftCluster,const std::function<bool()>& cancelled) {
-    Stream stream;bool found=false,ended=false;const auto used=le(record,24,4);
+struct Attribute {uint64_t type;Bytes bytes;bool nonResident;uint64_t nameLength;};
+std::vector<Attribute> listAttributes(Bytes record,const std::function<bool()>& cancelled) {
+    std::vector<Attribute> result;const auto used=le(record,24,4);
     for(size_t pos=le(record,20,2);pos+4<=used;) {
         if(cancelled&&cancelled())invalid("cancelled");
-        const auto type=le(record,pos,4);if(type==0xffffffff){ended=true;break;}
+        const auto type=le(record,pos,4);if(type==0xffffffff)return result;
         if(used-pos<16)invalid("truncated attribute header");
         const auto length=le(record,pos+4,4),form=le(record,pos+8,1),nameLength=le(record,pos+9,1),nameOffset=le(record,pos+10,2);
         const uint64_t header=form==0?24:64;
@@ -47,6 +50,15 @@ Stream parseMftData(Bytes record,uint64_t clusters,uint64_t clusterBytes,uint64_
             const auto offset=le(attribute,20,2),size=le(attribute,16,4);
             if(offset<header||offset>length||size>length-offset||(nameLength&&nameOffset+nameLength*2>offset))invalid("invalid resident value bounds");
         }
+        result.push_back({type,attribute,form==1,nameLength});pos+=length;
+    }
+    invalid("missing attribute end marker");
+}
+Stream parseMftData(Bytes record,uint64_t clusters,uint64_t clusterBytes,uint64_t mftCluster,const std::function<bool()>& cancelled) {
+    Stream stream;bool found=false;
+    for(const auto& entry:listAttributes(record,cancelled)) {
+        const auto type=entry.type,nameLength=entry.nameLength;const auto attribute=entry.bytes;
+        const auto length=attribute.size();const bool form=entry.nonResident;constexpr uint64_t header=64;
         if(type==0x20)invalid("MFT attribute-list extensions are unsupported");
         if(type==0x80&&!nameLength) {
             if(found||form!=1||le(attribute,12,2)||le(attribute,16,8)||le(attribute,34,2))invalid("unsupported MFT DATA flags, form or extension");
@@ -78,9 +90,8 @@ Stream parseMftData(Bytes record,uint64_t clusters,uint64_t clusterBytes,uint64_
             if(!terminated||stream.runs.empty()||le(attribute,24,8)!=total-1||stream.allocated!=total*clusterBytes||stream.runs.front().lcn!=mftCluster)
                 invalid("incomplete or inconsistent MFT mapping pairs");
         }
-        pos+=length;
     }
-    if(!ended||!found)invalid("missing MFT DATA attribute or end marker");
+    if(!found)invalid("missing MFT DATA attribute or end marker");
     return stream;
 }
 }
@@ -128,4 +139,80 @@ NtfsMftSnapshot readNtfsMft(disk::IDiskReader& reader,uint64_t start,uint64_t co
     }
     check();return result;
 }
+NtfsResidentSummary recoverNtfsResidentRootFiles(disk::IDiskReader& reader,uint64_t start,uint64_t count,
+    const std::function<void(const std::string&,const std::vector<uint8_t>&)>& item,
+    const std::function<void(uint64_t)>& progress,const std::function<bool()>& cancelled) {
+    constexpr size_t kRootRecord=5,kFirstUserRecord=16,kMaxOutputs=10000;
+    const auto check=[&]{if(cancelled&&cancelled())invalid("cancelled");};
+    const auto mft=readNtfsMft(reader,start,count,progress,cancelled);NtfsResidentSummary result;result.processedBytes=mft.processedBytes;
+    const Bytes records=mft.initializedRecords;const auto slots=records.size()/mft.recordSize;
+    if(slots<=kRootRecord)invalid("root directory record is not initialized");
+    const auto root=decodeRecord(records.subspan(kRootRecord*mft.recordSize,mft.recordSize));
+    const auto rootSequence=le(root,16,2);
+    if(le(root,22,2)!=3||le(root,32,8)||!rootSequence)invalid("invalid root directory base record");
+    for(size_t index=kFirstUserRecord;index<slots;++index) {
+        check();const auto raw=records.subspan(index*mft.recordSize,mft.recordSize);
+        if(std::all_of(raw.begin(),raw.end(),[](uint8_t c){return c==0;}))continue;
+        const auto record=decodeRecord(raw);const auto flags=le(record,22,2);
+        if(!(flags&1)){++result.unusedRecords;continue;}
+        if(flags&2){++result.directoryRecords;continue;}
+        if(le(record,32,8)){++result.extensionRecords;continue;}
+        if(result.foundItems+result.invalidFiles+result.nonresidentFiles+result.unsupportedFiles>=kMaxOutputs)invalid("resident output item limit reached");
+        std::string selected;std::vector<uint8_t> data;
+        try {
+            if(!le(record,16,2))invalid("zero user-record sequence");
+            bool standard=false,hasData=false,nonresident=false,unsupported=false,staleRoot=false,filename=false,rootLink=false;
+            int preferred=-1;std::set<std::string> names;
+            for(const auto& attribute:listAttributes(record,cancelled)) {
+                const auto bytes=attribute.bytes;
+                if(attribute.type==0x20||attribute.type==0xc0)unsupported=true;
+                if(attribute.type==0x10) {
+                    if(standard||attribute.nonResident||attribute.nameLength||le(bytes,12,2))invalid("invalid STANDARD_INFORMATION");
+                    const auto value=bytes.subspan(le(bytes,20,2),le(bytes,16,4));
+                    if(value.size()<36)invalid("short STANDARD_INFORMATION");
+                    standard=true;
+                    if(le(value,32,4)&0x10)invalid("file record has directory attributes");
+                    if(le(value,32,4)&0x4e00)unsupported=true;
+                }
+                if(attribute.type==0x30) {
+                    filename=true;
+                    if(attribute.nonResident||attribute.nameLength||le(bytes,12,2))invalid("invalid FILE_NAME form");
+                    const auto value=bytes.subspan(le(bytes,20,2),le(bytes,16,4));
+                    if(value.size()<66)invalid("short FILE_NAME");
+                    const auto parent=le(value,0,8),length=le(value,64,1),space=le(value,65,1);
+                    if(!length||value.size()!=66+length*2||space>3)invalid("invalid FILE_NAME length or namespace");
+                    if((parent&0x0000ffffffffffff)!=kRootRecord)continue;
+                    rootLink=true;
+                    if((parent>>48)!=rootSequence){staleRoot=true;continue;}
+                    std::vector<uint16_t> units;units.reserve(length);
+                    for(size_t j=0;j<length;++j)units.push_back(static_cast<uint16_t>(le(value,66+j*2,2)));
+                    auto name=decodeSafeFileName(units);if(name.empty())continue;
+                    names.insert(name);const int rank=space==2?0:(space==0?1:2);
+                    if(rank>preferred){preferred=rank;selected=std::move(name);}
+                }
+                if(attribute.type==0x80&&!attribute.nameLength) {
+                    if(hasData)invalid("multiple unnamed DATA attributes");
+                    hasData=true;nonresident=attribute.nonResident;
+                    if(le(bytes,12,2))unsupported=true;
+                    if(!nonresident) {
+                        const auto value=bytes.subspan(le(bytes,20,2),le(bytes,16,4));data.assign(value.begin(),value.end());
+                    }
+                }
+            }
+            if(selected.empty()) {
+                if(staleRoot)invalid("obsolete root parent sequence");
+                if(!filename)invalid("missing FILE_NAME");
+                if(rootLink)invalid("no safe root filename");
+                ++result.nonRootFiles;continue;
+            }
+            if(unsupported){++result.unsupportedFiles;continue;}
+            if(!standard||!hasData)invalid("missing resident-file metadata");
+            if(nonresident){++result.nonresidentFiles;continue;}
+            if(names.size()>1)result.otherRootNames+=names.size()-1;
+        }catch(const std::runtime_error&){check();++result.invalidFiles;continue;}
+        check();item(selected,data);++result.foundItems;if(progress)progress(result.processedBytes);
+    }
+    check();return result;
+}
+
 }

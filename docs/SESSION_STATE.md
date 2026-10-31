@@ -191,3 +191,29 @@ integration suites pass ASan/UBSan (Qt leak detection disabled). Selected NTFS w
 under GDB, 7 QtTest passes including setup/cleanup. Graphify: 3798 nodes / 6721 edges; 20 existing
 config-node source_file warnings. Remote CI remains unverified; no merge. Next: actual NTFS user-file
 reconstruction. Legacy NTFS factory structs/analyzer remain unvalidated and are not used by this path.
+
+
+## 2026-10-31 — NTFS resident root-file checkpoint
+
+Added GUI NTFS resident root files and CLI image ntfs-files. Read initialized MFT with the shared
+validated reader, then copy unnamed resident DATA from in-use user base records. Check the root
+record and parent sequence references, STANDARD_INFORMATION/FILE_NAME/DATA bounds, required
+metadata, duplicate data attributes and unsafe Unicode names. Restore USA words before copying
+payloads, including data that crosses a 512-byte stride. Empty resident files are preserved.
+Choose one preferred safe root name per record (Windows before DOS); count other names not exported.
+Skip unused, directory, extension and non-root records. Unsupported/nonresident root files make the
+result failed/partial; completed output is retained. No allocation-bitmap/index cross-check,
+nonresident/deleted/recursive recovery, ADS export or original permissions/timestamps.
+
+The attribute walker is shared with MFT bootstrap parsing. FAT and NTFS share a bounded UTF-16 to
+UTF-8 filename decoder; FAT regression tests remain green. Cancellation, source identity and safe
+flat POSIX output behavior are reused. Added real GUI/CLI export tests at nonzero volume offsets
+with 512/4096 sectors, Unicode and empty files, exact restored payload bytes, unused/non-root/extension
+records, stale root references, invalid names and attribute bounds, duplicate/missing attributes,
+unsupported file features, root validation, DOS-name preference, repeats and cancellation.
+
+Validation: 28/28 CTest targets in Debug and Release; image, FAT metadata, FAT files and NTFS suites
+pass ASan/UBSan (Qt leak detection disabled). Selected resident tests exit normally under GDB:
+22 QtTest passes including setup/cleanup. Graphify: 3839 nodes / 6834 edges; 20 existing config-node
+source_file warnings. Remote CI remains unverified; no merge. Remaining NTFS scope includes
+nonresident file streams, directory traversal, allocation/index consistency and attribute lists.

@@ -1,5 +1,6 @@
 #pragma once
 #include "source_bytes.h"
+#include "unicode_file_name.h"
 #include <array>
 #include <string>
 
@@ -38,28 +39,7 @@ private:
         while(count<length_&&units_[count]!=0)++count;
         if(!count||count>255||(count+12)/13!=length_/13)return {};
         if(count<length_)for(size_t i=count+1;i<length_;++i)if(units_[i]!=0xffff)return {};
-        std::string name;
-        for(size_t i=0;i<count;++i) {
-            uint32_t code=units_[i];
-            if(code>=0xd800&&code<=0xdbff) {
-                if(++i>=count||units_[i]<0xdc00||units_[i]>0xdfff)return {};
-                code=0x10000+((code-0xd800)<<10)+(units_[i]-0xdc00);
-            }else if(code>=0xdc00&&code<=0xdfff)return {};
-            if(code==0xffff||code<32||(code>=127&&code<=159)||
-               (code<128&&std::string("\"*/:<>?\\|").find(static_cast<char>(code))!=std::string::npos))return {};
-            if(code<0x80)name.push_back(static_cast<char>(code));
-            else if(code<0x800) {
-                name.push_back(static_cast<char>(0xc0|(code>>6)));name.push_back(static_cast<char>(0x80|(code&63)));
-            }else if(code<0x10000) {
-                name.push_back(static_cast<char>(0xe0|(code>>12)));name.push_back(static_cast<char>(0x80|((code>>6)&63)));name.push_back(static_cast<char>(0x80|(code&63)));
-            }else {
-                name.push_back(static_cast<char>(0xf0|(code>>18)));name.push_back(static_cast<char>(0x80|((code>>12)&63)));
-                name.push_back(static_cast<char>(0x80|((code>>6)&63)));name.push_back(static_cast<char>(0x80|(code&63)));
-            }
-            if(name.size()>255)return {};
-        }
-        if(name=="."||name==".."||name.back()=='.'||name.back()==' ')return {};
-        return name;
+        return decodeSafeFileName(std::span<const uint16_t>(units_.data(),count));
     }
     std::array<uint16_t,260> units_{};
     bool active_{},seen_{};

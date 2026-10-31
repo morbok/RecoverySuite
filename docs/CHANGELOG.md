@@ -1,3 +1,12 @@
+# 2026-10-31 — NTFS resident root-file recovery
+
+Added GUI/CLI image ntfs-files for unnamed resident DATA from in-use base FILE records. Check
+root-parent sequence references, attribute/value bounds, Unicode names, unsupported file flags
+and duplicate streams. Preserve empty files and restored data across USA strides. Skip non-root,
+directory, extension and unused records; report unsupported/nonresident root files as partial.
+Share the bounded UTF-16 filename decoder with FAT and the attribute walker with MFT snapshots.
+No allocation-bitmap/index validation, nonresident/deleted/recursive recovery or ADS export.
+
 # 2026-10-31 — Bounded NTFS MFT snapshots
 
 Added GUI/CLI image mft exports of the actual NTFS boot sector and initialized MFT stream.
