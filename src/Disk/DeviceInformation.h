@@ -41,6 +41,7 @@ enum class PartitionStyle {
  */
 struct DeviceInformation {
     // Basic identification
+    std::string devicePath;
     uint64_t diskNumber = 0;           // Physical disk number (0-based)
     bool isRemovable = false;          // Whether the disk is removable media
     bool isReadOnly = false;           // Whether the disk is read-only

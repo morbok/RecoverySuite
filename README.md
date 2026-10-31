@@ -227,3 +227,17 @@ Session files use atomic replacement; do not select the source image as the sess
 
 See [the active roadmap](docs/MASTER_TODO.md), [session state](docs/SESSION_STATE.md),
 and [the handoff](docs/HANDOFF.md) before continuing development.
+
+### Native device acquisition (development)
+
+Use `RecoverySuite_CLI device capture <device> --output <new-image>` with an existing output
+parent directory on a different physical disk. Linux device names are e.g. `/dev/sdb`; Windows
+uses `\\.\PhysicalDrive2`. Device access requires OS permissions. Linux refuses mounted sources;
+Windows requires an already offline source disk. The application never takes disks offline or
+writes source sectors. Read errors stop acquisition; this is not a damaged-drive retry tool.
+Outputs are exclusive, streamed, read back and SHA-256 reported; cancellation removes incomplete
+output. Open the resulting image with GUI/CLI recovery and its optional recovery session.
+
+Enumeration reports actual OS metadata only. SMART/NVMe health, NAND estimates and vendor commands
+are unavailable. Windows native export and acquisition are development features pending CI and
+real-device QA; do not infer real-hardware validation from synthetic image tests.

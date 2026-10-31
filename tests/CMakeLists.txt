@@ -447,3 +447,8 @@ set_target_properties(test_recovery_session PROPERTIES AUTOMOC ON)
 target_link_libraries(test_recovery_session PRIVATE RecoverySuite_Application Qt6::Test)
 add_dependencies(test_recovery_session RecoverySuite_CLI)
 add_test(NAME test_recovery_session COMMAND test_recovery_session)
+
+add_executable(test_native_io test_native_io.cpp)
+set_target_properties(test_native_io PROPERTIES AUTOMOC ON)
+target_link_libraries(test_native_io PRIVATE RecoverySuite_Application Qt6::Test)
+add_test(NAME test_native_io COMMAND test_native_io)

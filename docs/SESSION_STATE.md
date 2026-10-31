@@ -330,3 +330,21 @@ overwrite. CLI image --session and session resume; GUI session path and File/Res
 review. Tests cover interruption/restart, CLI, source/output tampering, malformed schema/engine,
 configuration mismatch, pending/missing outputs and concurrent locks. Hard-killed incomplete output
 is reported as a conflict; no arbitrary file is deleted. Linux integration validation follows.
+
+## Stage 5 — Native read-only device acquisition and Windows I/O
+
+Added native Linux sysfs and Windows storage-interface enumeration with measured geometry and
+reported identity fields. Removed manufactured storage health/NAND/vendor-command results.
+PhysicalDisk now delegates to a read-only native device reader; all physical writes are disabled.
+CLI `device capture <device> --output <new-image>` streams and verifies an exclusive image output,
+reports SHA-256 and removes its incomplete output on cancellation/errors. Mounted source disks on
+Linux and online source disks on Windows are rejected. Output on the same underlying physical
+disk is rejected. No device state is changed automatically. Use normal image recovery afterwards.
+
+Windows image I/O uses Unicode native paths, retained file IDs and write/delete sharing restrictions.
+Windows export now anchors each component to retained directory handles, rejects reparse points and
+unsafe/reserved names, creates outputs exclusively, verifies bytes and atomically replaces only the
+selected session state. The Windows CI job compiles and runs all registered tests; actual CI outcome
+will be recorded separately. Native I/O tests cover Unicode, source identity, output paths, state
+replacement, no-overwrite, cancellation, regular-file/device rejection and injectable Linux sysfs.
+Local Debug: 30 registered test executables. Real hardware remains untested.

@@ -21,7 +21,7 @@ if(WIN32)
             cfgmgr32
         )
 elseif(UNIX AND NOT APPLE)
-    # Linux-specific libraries (none needed for stub)
+    target_sources(RecoverySuite_Platform PRIVATE Linux/Disk/LinuxDiskEnumerator.cpp)
 elseif(APPLE)
     # macOS-specific libraries (none needed for stub)
 endif()
@@ -32,6 +32,7 @@ target_include_directories(RecoverySuite_Platform
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/src
 )
 
 # Set C++20 standard for this target

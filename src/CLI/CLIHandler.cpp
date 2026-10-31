@@ -8,6 +8,7 @@
 #include <set>
 #include "Application/Service/GUIRecoveryService.h"
 #include "Application/Service/recovery_session.h"
+#include "Application/Service/device_capture.h"
 
 namespace recoverysuite {
 namespace cli {
@@ -45,7 +46,10 @@ int CLIHandler::run(int argc, char* argv[]) {
                    [](unsigned char c){ return std::tolower(c); });
 
     // Route to appropriate handler
-    if(command=="session") {
+    if(command=="device") {
+        if(args.size()!=4||args[0]!="capture"||args[2]!="--output"){printError("Use device capture <device-path> --output <new-image-file>");return 2;}
+        try{const auto captured=application::service::captureDevice(args[1],args[3],{},cancellation_);std::cout<<"Image saved and verified: "<<args[3]<<"\nBytes: "<<captured.bytes<<"\nSector size: "<<captured.sectorSize<<"\nSHA-256: "<<captured.sha256<<'\n';return 0;}catch(const std::exception& failure){printError(failure.what());return cancellation_&&cancellation_()?130:1;}
+    } else if(command=="session") {
         if(args.size()!=2||args[0]!="resume"){printError("Use session resume <session.json>");return 2;}
         try {
             const auto session=application::service::RecoverySession::inspect(args[1]);application::service::GUIRecoveryService service(nullptr);service.openImage(session.operation.targetDevicePath,session.sectorSize);
@@ -497,6 +501,7 @@ Usage: RecoverySuite_CLI <command> [arguments]
   image files <image> --output <existing-folder>
   image tree <image> --output <existing-folder>
   image mft <image> --output <existing-folder>
+  device capture <device-path> --output <new-image-file>
   session resume <session.json>
   image <method> <image> --output <folder> --session <session.json>
   image ntfs-deleted <image> --output <existing-folder>

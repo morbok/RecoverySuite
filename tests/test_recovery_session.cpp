@@ -122,6 +122,8 @@ private slots:
     auto doc =
         QJsonDocument::fromJson(read(root.filePath("session.json"))).object();
     if (fault == "source") {
+      save(root.filePath("other.img"), image());
+      service.openImage(root.filePath("other.img").toStdString());
       auto b = image();
       b[b.size() - 1] = 1;
       save(root.filePath("source.img"), b);

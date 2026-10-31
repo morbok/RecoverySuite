@@ -60,7 +60,6 @@ if(WIN32)
             setupapi
             version
             cfgmgr32
-            wbemuuid
     )
 elseif(UNIX AND NOT APPLE)
     find_library(UDEV_LIBRARY NAMES udev libudev.so.1 REQUIRED)

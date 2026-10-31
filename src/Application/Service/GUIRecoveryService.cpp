@@ -1,4 +1,5 @@
 #include "recovery_session.h"
+#include "Disk/Access/path_utf8.h"
 #include "GUIRecoveryService.h"
 #include "RecoveryService.h"
 #include "../../Logging/Logger.h"
@@ -51,8 +52,8 @@ std::string GUIRecoveryService::validateImageOperation(const models::RecoveryOpe
     if (operation.operationType != "carving" && operation.operationType != "metadata_recovery" && operation.operationType != "file_recovery" && operation.operationType != "file_tree_recovery" && operation.operationType != "ntfs_mft_snapshot" && operation.operationType != "ntfs_resident_recovery" && operation.operationType != "ntfs_tree_recovery" && operation.operationType != "ntfs_checked_recovery" && operation.operationType != "ntfs_deleted_recovery" && operation.operationType != "fat_deleted_recovery")
         return "Choose signature carving, a metadata snapshot or a supported FAT/NTFS file-recovery method";
     std::error_code error;
-    const auto source = std::filesystem::canonical(operation.targetDevicePath, error);
-    if (error || source.string() != imageReader_->sourcePath()) return "The operation source does not match the opened image";
+    const auto source = std::filesystem::canonical(disk::nativePath(operation.targetDevicePath), error);
+    if (error || disk::utf8Path(source) != imageReader_->sourcePath()) return "The operation source does not match the opened image";
     if (!operation.numSectors || operation.startSector >= imageReader_->getTotalSectors() ||
         operation.numSectors > imageReader_->getTotalSectors() - operation.startSector ||
         operation.numSectors > std::numeric_limits<uint64_t>::max() / imageReader_->getSectorSize())
