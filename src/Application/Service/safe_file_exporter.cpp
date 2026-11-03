@@ -632,6 +632,7 @@ void SafeFileExporter::replaceState(const std::string &name,
   };
   auto file = output(impl_->parents.back().value, temporary, data.size(), read,
                      true, {});
+  bool committed = false;
   try {
     const auto target = wide(name);
     std::vector<uint8_t> buffer(sizeof(FILE_RENAME_INFO) +
@@ -646,12 +647,19 @@ void SafeFileExporter::replaceState(const std::string &name,
       throw std::runtime_error(
           "Cannot atomically commit session checkpoint (Windows error " +
           std::to_string(GetLastError()) + ")");
+    committed = true;
     if (!FlushFileBuffers(file.value))
-      throw std::runtime_error("Cannot flush session checkpoint");
+      throw std::runtime_error(
+          "Cannot flush session checkpoint (Windows error " +
+          std::to_string(GetLastError()) + ")");
   } catch (...) {
-    FILE_DISPOSITION_INFO disposition{TRUE};
-    SetFileInformationByHandle(file.value, FileDispositionInfo, &disposition,
-                               sizeof(disposition));
+    // After replacement the handle names the committed journal. A flush failure
+    // must preserve it; deleting it would also lose the replaced checkpoint.
+    if (!committed) {
+      FILE_DISPOSITION_INFO disposition{TRUE};
+      SetFileInformationByHandle(file.value, FileDispositionInfo, &disposition,
+                                 sizeof(disposition));
+    }
     throw;
   }
 }
