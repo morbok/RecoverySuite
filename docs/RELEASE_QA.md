@@ -62,3 +62,16 @@ Linux requires an unmounted source. Acquisition stops on read errors and offers 
 SMART/NVMe diagnostics, hex inspection, plugins, broader damaged/deleted chain inference, OEM
 short names and nested/MFT-bootstrap attribute lists are outside the implemented milestone.
 Review current CI on the exact head and complete code review before merging.
+
+## Prototype artifact and CI-only execution
+
+Application/device tests must run on CI runners or a dedicated evaluation machine, not on the
+user's workstation. Commands above describe that evaluation environment. Linux and Windows
+remain required targets. `RecoverySuite-prototype` is produced only after all platform, fuzz
+and bundle-integrity jobs succeed. It contains both platform packages, `START_HERE.md`,
+`manifest.json` with source revision/run provenance and a combined `SHA256SUMS`. The assembly
+step verifies CPack sidecars and refuses missing, duplicate or altered packages.
+
+A failed platform blocks the combined artifact. CTest JUnit output, Qt text reports and
+`LastTest.log` are uploaded separately as diagnostics, even on failure. The workflow may be
+started manually with `workflow_dispatch`; it neither runs local tests nor publishes a release.

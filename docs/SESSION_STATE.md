@@ -382,3 +382,23 @@ targets and passed 27/30 test executables; three Windows fixture/checkpoint test
 Boot-analysis fixtures now use separate images instead of rewriting a source held read-only.
 Windows QtTest reports are captured to files and printed in CI, and destination handles request
 add/rename rights only at the selected output directory. No safety checks or tests are disabled.
+
+## 2026-11-04 — CI-only validation and prototype delivery
+
+User requested continued Linux and Windows work and no testing on their workstation. Keep
+application, package, fuzz and device tests on disposable CI runners from this checkpoint.
+Local source edits, Graphify updates and Git saves/pushes remain authorized.
+
+Added persistent CTest JUnit/Qt reports for both platforms, including failed runs, and a
+combined prototype job gated on Linux Debug/Release, Windows Release, fuzz and bundle integrity
+checks. It validates all three package SHA-256 sidecars before producing source-revision metadata,
+installation notes and the combined artifact. No public release, tag or merge is performed.
+
+Static review found that Windows checkpoint cleanup deleted the newly committed journal if
+its post-rename flush failed. Preserve the committed state on that error; delete only an
+uncommitted temporary file. Existing checkpoint tests remain enabled in Windows CI.
+
+No tests were run on the user's workstation for this checkpoint. CI from fc11f11 remains
+unverified here: the GitHub connection is missing and unauthenticated API access returns 404.
+A GitHub connection has been requested; do not claim Windows or prototype qualification without
+reading the resulting exact-head checks.

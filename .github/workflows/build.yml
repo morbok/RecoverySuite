@@ -1,5 +1,6 @@
 name: Build and test
 on:
+  workflow_dispatch:
   pull_request:
   push:
     branches: [main]
@@ -21,8 +22,18 @@ jobs:
       - name: Build
         run: cmake --build build --parallel 2
       - name: Test
-        run: ctest --test-dir build --output-on-failure --timeout 60
+        run: ctest --test-dir build --output-on-failure --timeout 60 --output-junit "$GITHUB_WORKSPACE/build/test-results.xml"
 
+      - name: Preserve Linux test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostics-Linux-${{ matrix.build_type }}
+          path: |
+            build/test-results.xml
+            build/Testing/Temporary/LastTest.log
+            build/Testing/Temporary/LastTestsFailed.log
+          if-no-files-found: ignore
       - name: Installed package smoke and Linux packages
         if: matrix.build_type == 'Release'
         run: |
@@ -67,11 +78,23 @@ jobs:
       - name: Test
         shell: pwsh
         run: |
-          ctest --test-dir build -C Release --output-on-failure --timeout 60
+          $PSNativeCommandUseErrorActionPreference = $false
+          ctest --test-dir build -C Release --output-on-failure --timeout 60 --output-junit "$env:GITHUB_WORKSPACE/build/test-results.xml"
           $testExit = $LASTEXITCODE
           Get-ChildItem build/tests -Filter '*.qt.txt' | ForEach-Object { Write-Output $_.Name; Get-Content -LiteralPath $_.FullName }
           if ($testExit -ne 0) { exit $testExit }
 
+      - name: Preserve Windows test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostics-Windows
+          path: |
+            build/test-results.xml
+            build/tests/*.qt.txt
+            build/Testing/Temporary/LastTest.log
+            build/Testing/Temporary/LastTestsFailed.log
+          if-no-files-found: ignore
       - name: Read-only synthetic Windows VHD QA
         shell: pwsh
         run: ./scripts/qa_vhd_device.ps1 -Cli build/bin/Release/RecoverySuite_CLI.exe
@@ -118,3 +141,33 @@ jobs:
           name: fuzz-findings
           path: build-fuzz/findings
           if-no-files-found: ignore
+
+  tooling:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify prototype package integrity gates
+        run: python3 -m unittest discover -s tests -p test_prototype_bundle.py -v
+
+  prototype:
+    needs: [linux, windows, fuzz, tooling]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: RecoverySuite-Linux-development
+          path: prototype/Linux
+      - uses: actions/download-artifact@v4
+        with:
+          name: RecoverySuite-Windows-development
+          path: prototype/Windows
+      - name: Assemble qualified prototype bundle
+        env:
+          PROTOTYPE_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: python3 scripts/assemble_prototype.py prototype
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RecoverySuite-prototype
+          path: prototype/
+          if-no-files-found: error

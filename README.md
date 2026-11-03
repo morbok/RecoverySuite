@@ -259,3 +259,17 @@ cpack -C Release -G ZIP
 The CLI accepts Unicode arguments through the native Windows wide-character entry point.
 Windows output is limited to local drive paths; unsafe/reserved names and reparse points are
 rejected. The portable package bundles Qt; see RELEASE_QA.md for runtime prerequisites.
+
+## Linux and Windows prototype delivery
+
+Both platforms are release targets. The `Build and test` workflow builds Linux Debug/Release
+and Windows x64 Release, validates disposable loop/VHD devices and package contents, and fuzzes
+parsers. Test reports are preserved even when a test fails. Once every required job passes,
+the `RecoverySuite-prototype` artifact combines Linux TGZ/Ubuntu 24.04 DEB and Windows ZIP,
+installation notes, source revision and SHA-256 manifest. A failing platform prevents this
+combined prototype from being produced. Platform development artifacts can remain available
+individually; their existence does not establish a successful combined prototype.
+
+Current instruction: perform application/device/package tests on CI runners or a dedicated
+evaluation machine, not on the user's workstation. No CI success is assumed without checking
+the exact revision. Prototypes are development artifacts, not signed/stable releases.
