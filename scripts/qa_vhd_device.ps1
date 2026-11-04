@@ -60,3 +60,6 @@ try {
     if ($attached) { Dismount-DiskImage -ImagePath $vhd }
     Remove-Item -LiteralPath $fixture -Recurse -Force
 }
+# The final CLI call intentionally rejects an existing output. Its nonzero
+# LASTEXITCODE must not escape after all assertions and cleanup have succeeded.
+exit 0

@@ -418,3 +418,12 @@ cleanup coverage to the native I/O suite. No checks are disabled and no path-bas
 rename fallback is used. This fix still requires its own remote CI outcome.
 
 No application, build, package, unit, fuzz or device tests were run on this workstation.
+
+CI at `5e15757` (run `41904888587`) passed all 30 Windows test executables,
+including session/native I/O regressions; Linux Debug/Release, packages, loop QA,
+fuzz and tooling passed. Windows VHD QA successfully rejected an online source,
+captured the offline fixture byte-for-byte and rejected an existing destination.
+Its step still exited 1 because PowerShell retained the expected rejection's
+LASTEXITCODE. The fixture now explicitly exits 0 only after its assertions and
+cleanup succeed. Exceptions still fail the step. Windows packaging and the
+combined prototype remain pending a successful new-head run.
