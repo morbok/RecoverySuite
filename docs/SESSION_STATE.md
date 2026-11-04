@@ -402,3 +402,19 @@ No tests were run on the user's workstation for this checkpoint. CI from fc11f11
 unverified here: the GitHub connection is missing and unauthenticated API access returns 404.
 A GitHub connection has been requested; do not claim Windows or prototype qualification without
 reading the resulting exact-head checks.
+
+## 2026-11-04 — GitHub connected; Windows checkpoint diagnosis
+
+GitHub access is now connected. Exact-head CI for `50c3dfb` (run `41720671775`)
+passed Linux Debug/Release, fuzz and prototype tooling checks. Windows compiled and
+passed 28/30 test executables; native I/O and session tests failed at checkpoint
+replacement with Windows error 87. The combined prototype was correctly skipped.
+
+Replaced the failing Win32 rename wrapper with native NtSetInformationFile,
+FileRenameInformation (class 10), preserving the retained destination directory
+handle and relative Unicode filename. Errors retain the native NTSTATUS. Added
+Unicode checkpoint replacement and failed-directory-replacement preservation/temporary
+cleanup coverage to the native I/O suite. No checks are disabled and no path-based
+rename fallback is used. This fix still requires its own remote CI outcome.
+
+No application, build, package, unit, fuzz or device tests were run on this workstation.

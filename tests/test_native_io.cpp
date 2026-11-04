@@ -109,6 +109,24 @@ private slots:
     QVERIFY(!requested);
     QVERIFY(!QFileInfo::exists(root.filePath("oversized.bin")));
   }
+  void checkpointUnicodeAndFailedReplacement() {
+    QTemporaryDir root;
+    application::service::SafeFileExporter writer(root.path().toStdString());
+    const auto name = QString::fromUtf8("Oturum 🧪.json");
+    writer.replaceState(name.toStdString(), {'o', 'l', 'd'});
+    writer.replaceState(name.toStdString(), {'n', 'e', 'w'});
+    QCOMPARE(read(root.filePath(name)), QByteArray("new"));
+    QVERIFY(QDir().mkdir(root.filePath("occupied")));
+    save(root.filePath("occupied/keep.bin"), "keep");
+    QVERIFY_EXCEPTION_THROWN(writer.replaceState("occupied", {'x'}),
+                             std::runtime_error);
+    QCOMPARE(read(root.filePath("occupied/keep.bin")), QByteArray("keep"));
+    QCOMPARE(read(root.filePath(name)), QByteArray("new"));
+    QCOMPARE(QDir(root.path())
+                 .entryList({".rs-state-*"}, QDir::Files | QDir::Hidden)
+                 .size(),
+             0);
+  }
   void rejectsLinks() {
     QTemporaryDir root;
     QVERIFY(QDir().mkdir(root.filePath("real")));

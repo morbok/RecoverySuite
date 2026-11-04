@@ -634,19 +634,38 @@ void SafeFileExporter::replaceState(const std::string &name,
                      true, {});
   bool committed = false;
   try {
+    // Keep the destination relative to the retained directory handle. The
+    // Win32 FileRenameInfo wrapper rejected this form with error 87 on CI;
+    // NtSetInformationFile accepts native FileRenameInformation (class 10).
+    using SetInformation = NTSTATUS(NTAPI *)(HANDLE, PIO_STATUS_BLOCK, PVOID,
+                                             ULONG, FILE_INFORMATION_CLASS);
+    static const auto setInformation = reinterpret_cast<SetInformation>(
+        GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "NtSetInformationFile"));
+    if (!setInformation)
+      throw std::runtime_error(
+          "Handle-relative checkpoint rename is unavailable");
+    struct NativeRenameInformation {
+      BOOLEAN ReplaceIfExists;
+      HANDLE RootDirectory;
+      ULONG FileNameLength;
+      WCHAR FileName[1];
+    };
     const auto target = wide(name);
-    std::vector<uint8_t> buffer(sizeof(FILE_RENAME_INFO) +
+    std::vector<uint8_t> buffer(sizeof(NativeRenameInformation) +
                                 target.size() * sizeof(wchar_t));
-    auto *rename = reinterpret_cast<FILE_RENAME_INFO *>(buffer.data());
+    auto *rename = reinterpret_cast<NativeRenameInformation *>(buffer.data());
     rename->ReplaceIfExists = TRUE;
     rename->RootDirectory = impl_->parents.back().value;
-    rename->FileNameLength = DWORD(target.size() * sizeof(wchar_t));
+    rename->FileNameLength = ULONG(target.size() * sizeof(wchar_t));
     std::copy(target.begin(), target.end(), rename->FileName);
-    if (!SetFileInformationByHandle(file.value, FileRenameInfo, rename,
-                                    DWORD(buffer.size())))
+    IO_STATUS_BLOCK status{};
+    const auto result =
+        setInformation(file.value, &status, rename, ULONG(buffer.size()),
+                       static_cast<FILE_INFORMATION_CLASS>(10));
+    if (result < 0)
       throw std::runtime_error(
-          "Cannot atomically commit session checkpoint (Windows error " +
-          std::to_string(GetLastError()) + ")");
+          "Cannot atomically commit session checkpoint (NTSTATUS " +
+          std::to_string(static_cast<ULONG>(result)) + ")");
     committed = true;
     if (!FlushFileBuffers(file.value))
       throw std::runtime_error(
