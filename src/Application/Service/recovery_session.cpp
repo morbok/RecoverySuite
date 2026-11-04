@@ -29,14 +29,21 @@ std::string string(const QJsonObject &object, const char *key) {
   return value.toString().toStdString();
 }
 QJsonObject document(const std::string &path) {
+  constexpr qint64 maximumBytes = 16 * 1024 * 1024;
   QFileInfo info(QString::fromStdString(path));
-  if (info.isSymLink() || !info.isFile() || info.size() > 16 * 1024 * 1024)
-    fail("Session must be a regular file below 16 MiB");
+  if (info.isSymLink() || !info.isFile() || info.size() > maximumBytes)
+    fail("Session must be a regular file no larger than 16 MiB");
   QFile file(info.absoluteFilePath());
   if (!file.open(QIODevice::ReadOnly))
     fail("Cannot read session");
+  // Enforce the bound on the actual read as well: the file may have grown or
+  // been replaced since QFileInfo inspected its size.
+  const auto bytes = file.read(maximumBytes + 1);
+  if (file.error() != QFileDevice::NoError || bytes.size() > maximumBytes ||
+      !file.atEnd())
+    fail("Cannot read session within the 16 MiB limit");
   QJsonParseError error{};
-  const auto doc = QJsonDocument::fromJson(file.readAll(), &error);
+  const auto doc = QJsonDocument::fromJson(bytes, &error);
   if (error.error != QJsonParseError::NoError || !doc.isObject())
     fail("Malformed session JSON");
   const auto obj = doc.object();

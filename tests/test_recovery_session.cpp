@@ -193,6 +193,31 @@ private slots:
                  .status,
              std::string("completed"));
   }
+  void sessionDocumentSizeLimit() {
+    QTemporaryDir root;
+    QVERIFY(QDir().mkdir(root.filePath("out")));
+    save(root.filePath("source.img"), image());
+    GUIRecoveryService service(nullptr);
+    service.openImage(root.filePath("source.img").toStdString());
+    const auto op = operation(root.path());
+    QVERIFY(service.executeOperation(op).success);
+    const auto original = read(root.filePath("session.json"));
+    auto padded = original;
+    padded.append(QByteArray(16 * 1024 * 1024 - padded.size(), ' '));
+    save(root.filePath("session.json"), padded);
+    QCOMPARE(RecoverySession::inspect(op.sessionPath).status,
+             std::string("completed"));
+    padded.append(' ');
+    save(root.filePath("session.json"), padded);
+    QVERIFY_EXCEPTION_THROWN(RecoverySession::inspect(op.sessionPath),
+                             std::runtime_error);
+    auto resumed = op;
+    resumed.resumeSession = true;
+    QVERIFY(!service.executeOperation(resumed).success);
+    save(root.filePath("session.json"), original);
+    const auto result = service.executeOperation(resumed);
+    QVERIFY2(result.success, result.errorMessage.c_str());
+  }
 };
 QTEST_GUILESS_MAIN(TestRecoverySession)
 #include "test_recovery_session.moc"

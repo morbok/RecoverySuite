@@ -1,13 +1,19 @@
 # RecoverySuite active roadmap
 
-Updated: 2026-10-31. Historical phase summaries are not the release checklist.
+Updated: 2026-11-05. Historical phase summaries are not the release checklist.
+
+Verified prototype baseline: `8de6f93`, CI run `41905828702`: all six jobs passed,
+including 30 CTest executables on Linux Debug/Release and Windows Release, synthetic
+loop/VHD acquisition, installed/extracted package smoke, parser fuzzing and the
+combined Linux/Windows prototype artifact. Later code needs its own CI result.
+Tests must run on CI or a dedicated evaluation machine, not the user's workstation.
 
 ## Completed in the handoff
 
 - [x] Recover Claude's unfinished results interface and restore a buildable Linux checkout.
 - [x] Show completed, failed, cancelled and partial results with backend item names/sizes.
 - [x] Remove fabricated duration/recovered-byte statistics and distinguish requested output from saved output.
-- [x] Restore and run the 28 registered CTest targets with assertions enabled.
+- [x] Restore the original 28 CTest targets; expand to 30 with sessions/native I/O and keep assertions enabled.
 - [x] Repair the input-validation and partition parsing bugs uncovered by active assertions.
 - [x] Add Debug/Release Linux CI and reproducible build instructions.
 
@@ -36,19 +42,23 @@ Updated: 2026-10-31. Historical phase summaries are not the release checklist.
 6. [ ] Audit remaining simulated recovery implementations, FAT/NTFS completeness, boundary arithmetic,
        short reads, hostile metadata, memory limits and error propagation. Register any useful orphaned tests.
        [x] Correct legacy NTFS boot fields and remove fabricated consistency/allocation/repair metrics.
-7. [ ] Add end-to-end fixtures for deleted files, fragmentation, corruption and partial output failures;
-       run sanitizers and fuzz parsers before real-device testing.
+       [x] Harden legacy FAT boot reads/geometry and remove fabricated health/allocation/partition metrics.
+       [ ] Continue the remaining legacy filesystem, analysis and orphaned-test audit; the above is scoped work.
+7. [x] Add bounded end-to-end fixtures for deleted files, fragmentation, corruption and partial output failures;
+       run sanitizers and fuzz parsers on synthetic inputs. This does not complete physical-media QA.
 8. [ ] Complete native platform validation (real hardware remains open).
        [x] Replace fake inventory with Linux sysfs / Windows storage metadata.
        [x] Add guarded read-only physical acquisition, source/destination checks and safe Windows output.
        [x] Add Windows build/tests and Linux synthetic loop acquisition CI.
-       [ ] Verify Windows device acquisition and physical USB/SATA/NVMe behavior.
+       [x] Verify Windows acquisition using a fresh synthetic read-only VHD.
+       [ ] Qualify physical USB/SATA/NVMe acquisition, disconnects, permission failures and failing media on both platforms.
 9. [x] Implement session persistence and resume with versioned state and source identity checks.
 10. [ ] Complete intended SSD diagnostics, hex inspection and optional plugin support according to actual
         product scope; expose unavailable features honestly.
 11. [ ] Finish stable-release QA and redistribution decisions.
         [x] Add development Linux TGZ/Ubuntu DEB and Windows ZIP with checksums.
         [x] Add installed/extracted CLI and GUI smoke tests and instrumented parser fuzzing.
+        [x] Produce a combined, checksum-verified prototype only after all required CI jobs pass.
         [ ] Complete hardware matrix, signing, application license and third-party notices, and code review.
 
 ## Git workflow

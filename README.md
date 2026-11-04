@@ -213,7 +213,9 @@ Session files use atomic replacement; do not select the source image as the sess
 
 ## Current state
 
-- GUI and CLI compile on Linux; all 28 registered CTest executables pass locally in Debug and Release.
+- GUI and CLI build on Linux and Windows x64. All 30 registered CTest executables passed
+  Linux Debug/Release and Windows Release CI at `8de6f93` (run `41905828702`).
+  Newer revisions require their own CI results; no application tests run on the user's workstation.
 - The GUI connects real image selection, range/output validation, worker scanning, safe file export
   and results. Progress and cancellation reach the streaming scan and output loops.
 - POSIX output export rejects traversal, symlink components, unsafe names and existing files. It
@@ -222,9 +224,14 @@ Session files use atomic replacement; do not select the source image as the sess
   files, with optional bounded recursive traversal. NTFS root files support resident and bounded nonresident DATA. NTFS tree and checked modes support subfolders; separate deleted modes export explicitly labelled candidates.
 - Legacy NTFS factory inspection reads actual 64-bit boot fields. Unexamined allocation, mount and
   repair metrics throw `std::logic_error`; version/label remain unknown, and the legacy analyzer
-  reports full consistency analysis unavailable. Use the image workflows for supported MFT/file work.
-- Windows safe export is unavailable; Windows builds and recovery against real devices remain unvalidated.
-- Integration tests use synthetic images; the image workflow also passes AddressSanitizer/UBSan locally.
+  reports full consistency analysis unavailable. Legacy FAT inspection also rejects malformed boot
+  geometry and reports unexamined health/allocation/partition properties as unavailable, rather than
+  manufacturing healthy or zero values. Use the image workflows for supported MFT/file work.
+- Windows Unicode image access, directory-anchored export, sessions and read-only acquisition
+  passed synthetic CI, including a disposable VHD. Physical USB/SATA/NVMe and failing-media
+  behavior remain unqualified on both platforms.
+- Integration tests use synthetic images; CI also fuzzes parsers with AddressSanitizer/UBSan.
+  Earlier local validation is historical. Continue validation only on CI or a dedicated test machine.
 
 See [the active roadmap](docs/MASTER_TODO.md), [session state](docs/SESSION_STATE.md),
 and [the handoff](docs/HANDOFF.md) before continuing development.

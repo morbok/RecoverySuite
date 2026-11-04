@@ -21,7 +21,7 @@ public:
 
     // Analyze the filesystem for consistency and health
     // @param reader: the filesystem reader to use for accessing data
-    // @return true if the filesystem appears consistent and healthy, false otherwise
+    // Throws std::logic_error until whole-volume analysis is implemented.
     bool analyze(const FilesystemReader& reader) const override;
 
     // Get a human-readable description of the last analysis
@@ -36,9 +36,6 @@ public:
     // Get the estimated number of errors found
     virtual uint32_t getErrorCount() const override;
 
-protected:
-    // Reference to the filesystem reader (not owned)
-    const FilesystemReader& reader_;
 };
 
 } // namespace fat

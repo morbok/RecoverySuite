@@ -1,37 +1,35 @@
 #include "FATAnalyzer.h"
-#include <sstream>
+#include <stdexcept>
 
 namespace recoverysuite {
 namespace filesystem {
 namespace fat {
 
-FATAnalyzer::FATAnalyzer(const FilesystemReader& reader)
-    : reader_(reader) {
-}
+FATAnalyzer::FATAnalyzer(const FilesystemReader &reader) { (void)reader; }
 
-bool FATAnalyzer::analyze(const FilesystemReader& reader) const {
-    // Placeholder implementation: always return true (healthy)
-    (void)reader;
-    // In a real implementation, we would check the FAT boot sector, FAT tables, etc.
-    return true;
+bool FATAnalyzer::analyze(const FilesystemReader &reader) const {
+  (void)reader;
+  throw std::logic_error(
+      "FAT whole-volume consistency analysis is unavailable");
 }
 
 std::string FATAnalyzer::getAnalysisDescription() const {
-    return "FAT filesystem analysis: basic boot sector validation";
+  return "FAT whole-volume consistency analysis unavailable";
 }
 
 std::string FATAnalyzer::getAnalysisDetails() const {
-    return "No detailed analysis implemented yet.";
+  return "Allocation chains and directory consistency: unexamined; corruption "
+         "and repair needs: unknown";
 }
 
 bool FATAnalyzer::needsRepair() const {
-    // Placeholder: assume no repair needed
-    return false;
+  throw std::logic_error(
+      "FAT repair needs are unknown without consistency analysis");
 }
 
 uint32_t FATAnalyzer::getErrorCount() const {
-    // Placeholder: no errors
-    return 0;
+  throw std::logic_error(
+      "FAT corruption count is unknown without consistency analysis");
 }
 
 } // namespace fat

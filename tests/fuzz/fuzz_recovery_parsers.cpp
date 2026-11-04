@@ -1,3 +1,6 @@
+#include "Filesystem/FAT/FATFilesystem.h"
+#include "Filesystem/FAT/FATMetadata.h"
+#include "Filesystem/FAT/FATVolume.h"
 #include "Recovery/fat_root_files.h"
 #include "Recovery/ntfs_mft.h"
 #include "Recovery/signature_carver.h"
@@ -41,6 +44,35 @@ public:
     return true;
   }
 };
+class LegacySource final : public filesystem::FilesystemReader {
+  MemorySource &source_;
+
+public:
+  explicit LegacySource(MemorySource &source) : source_(source) {}
+  uint32_t readSector(uint64_t sector, uint8_t *output,
+                      uint32_t size) override {
+    return readSectors(sector, 1, output, size);
+  }
+  uint32_t readSectors(uint64_t start, uint32_t count, uint8_t *output,
+                       uint32_t size) override {
+    if (size != getSectorSize())
+      return 0;
+    std::vector<std::byte> bytes;
+    if (!source_.readSectors(start, count, bytes))
+      return 0;
+    std::memcpy(output, bytes.data(), bytes.size());
+    return static_cast<uint32_t>(bytes.size());
+  }
+  uint32_t readCluster(uint64_t, uint8_t *, uint32_t) override { return 0; }
+  uint32_t readClusters(uint64_t, uint32_t, uint8_t *, uint32_t) override {
+    return 0;
+  }
+  uint64_t getTotalSectors() const override {
+    return source_.getTotalSectors();
+  }
+  uint32_t getSectorSize() const override { return source_.getSectorSize(); }
+  uint64_t getStartOffset() const override { return 0; }
+};
 template <class F> void parse(F &&parser) {
   // Malformed/unsupported images are expected to fail validation. Sanitizer
   // findings still abort.
@@ -55,6 +87,16 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size) {
   if (!size || size > 262144)
     return 0;
   MemorySource source(input, size);
+  auto legacy = std::make_shared<LegacySource>(source);
+  parse([&] { filesystem::fat::FATMetadata metadata(*legacy); });
+  parse([&] {
+    filesystem::fat::FATFilesystem fat(legacy);
+    fat.getType();
+    fat.getMetadata();
+    auto volume = fat.getVolume();
+    volume->isValid();
+    volume->getEndOffset();
+  });
   const auto count = source.getTotalSectors();
   const auto borrowed =
       std::shared_ptr<disk::IDiskReader>(&source, [](disk::IDiskReader *) {});

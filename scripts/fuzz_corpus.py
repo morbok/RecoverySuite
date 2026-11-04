@@ -92,5 +92,13 @@ def gpt_fixture():
 
 if __name__ == '__main__':
     target = Path(sys.argv[1]); target.mkdir(parents=True, exist_ok=True)
-    for name, data in {**fixtures(), "gpt.img": gpt_fixture()}.items():
+    corpus = fixtures()
+    fat4k = bytearray(4096)
+    fat4k[:512] = corpus['fat12.img'][:512]
+    put(fat4k, 11, 4096)
+    zero_cluster = bytearray(corpus['fat12.img'])
+    zero_cluster[13] = 0
+    for name, data in {**corpus, "gpt.img": gpt_fixture(),
+                       "fat-4k-boot.img": fat4k,
+                       "fat-zero-cluster.img": zero_cluster}.items():
         (target / name).write_bytes(data)

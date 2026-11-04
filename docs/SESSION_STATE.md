@@ -1,6 +1,6 @@
 # RecoverySuite session state
 
-Updated: 2026-10-31
+Updated: 2026-11-05
 
 ## Checkpoint
 
@@ -43,7 +43,7 @@ explicit uncertainty. MFT bootstrap/nested lists and broader damaged/deleted-cha
 image sessions, native read-only CLI acquisition and anchored Windows export are implemented;
 see current platform CI results below and RELEASE_QA.md for remaining hardware/release gates.
 The signature carver does not validate full file formats. Limits: 16 MiB/candidate, 10,000 attempted
-outputs, 64 KiB scan chunks. Windows and real hardware have not been validated.
+outputs, 64 KiB scan chunks. Windows synthetic CI is validated at the prototype baseline below; physical hardware remains unqualified.
 
 Graphify 0.9.97 was installed as a local developer tool and Codex skill. The ignored graphify-out/
 contains the AST graph, report, HTML and query memory. Use scoped queries first and update after edits;
@@ -427,3 +427,29 @@ Its step still exited 1 because PowerShell retained the expected rejection's
 LASTEXITCODE. The fixture now explicitly exits 0 only after its assertions and
 cleanup succeed. Exceptions still fail the step. Windows packaging and the
 combined prototype remain pending a successful new-head run.
+
+
+## 2026-11-05 — Scoped legacy FAT audit and bounded session reads
+
+Verified baseline `8de6f93` passed all six CI jobs, including Linux Debug/Release,
+Windows 30/30 tests, loop/VHD acquisition, package smoke, fuzz and combined prototype.
+Updated README, handoff and active roadmap to distinguish that evidence from
+remaining physical-device and stable-release gates.
+
+Static review found legacy FATFilesystem reading 4 KiB sectors into a 512-byte
+stack buffer, divide-by-zero/underflow risks in repeated geometry calculations,
+incorrect one-FAT/FAT32 sizing and unchecked volume-end overflow. Shared bounded
+boot reads and validated wide geometry now cover filesystem, metadata and volume
+inspection. Null readers and short/mismatched sector reads fail explicitly.
+Removed fabricated FAT health/error/allocation/mount/partition/bootability answers;
+unobserved properties throw explicit unavailable errors. The analyzer retains no
+reference to the factory's temporary cached-boot reader.
+
+Session JSON now limits the actual read to 16 MiB plus one detection byte, even
+if the file grows after the size check. CI regression cases cover 4 KiB reads,
+invalid geometry, insufficient FAT capacity, one-FAT type selection, null/short
+reads, offset overflow, unknown metrics and session size boundaries. Parser fuzzing
+now also exercises the legacy FAT inspection path with 4 KiB/zero-cluster seeds.
+This is a scoped audit; remaining legacy analysis/cancellation/orphaned tests and
+broader features are still open. No local builds or tests were run for this work;
+new-head CI must pass before claiming this change is qualified.

@@ -20,12 +20,12 @@ Supported read-only image workflows:
 - Separate NTFS/FAT deleted modes export retained-record/free-cluster candidates with explicit uncertainty.
 - CLI image info/analyze for geometry and FAT/NTFS boot-sector fields; unknown metrics stay unknown.
 
-All image export uses a directory-anchored POSIX writer with exclusive creation, path/name checks,
+Image export uses directory-anchored POSIX/Windows writers with exclusive creation, path/name checks,
 component-by-component safe directory creation for tree mode,
 optional readback comparison and partial-output cleanup. Cancellation reaches source reads and writes.
 Closing the GUI cancels and waits for worker cleanup; use the atomic flag, not queued cancellation.
 
-There are 28 registered CTest executables. New integration suites cover images, CLI processes, FAT
+There are 30 registered CTest executables. New integration suites cover images, CLI processes, FAT
 snapshots, FAT files and NTFS MFT snapshots. Build/test commands and limits are in README.md. Check actual CI on the
 current head before merge. Keep generated Graphify output and local configuration out of commits.
 
@@ -37,9 +37,18 @@ Legacy RecoveryService recoverMetadata/recoverFiles/carveFiles return buffers, w
 GUI executeOperation and CLI image commands provide actual filesystem output. CarvingEngine uses
 the shared scanner and absolute offsets. Never restore manufactured file/FAT/MFT contents.
 
-Remaining scope includes deleted-file chain inference, OEM short-name support,
-broader damaged/deleted-chain inference, MFT bootstrap/nested attribute lists, Windows safe export, session resume, hardware QA and packaging. Signature
-candidates and readback equality do not establish full format or filesystem validity.
+Sessions/resume, native read-only CLI capture and development packages are implemented.
+Exact-head CI at `8de6f93` (run `41905828702`) passed Linux Debug/Release, Windows,
+fuzz, tooling and combined prototype delivery. Both OS jobs passed all 30 CTest
+executables; synthetic loop/VHD acquisition and installed/extracted package smoke passed.
+Newer changes require their own CI results. Do not run tests/builds/apps on the user's
+workstation; use CI or a dedicated evaluation machine.
+
+Remaining scope includes OEM short-name support, broader damaged/deleted-chain inference,
+MFT bootstrap/nested attribute lists, physical-device/failing-media QA, signing,
+application license/third-party notices, independent review and remaining legacy-code audit.
+SMART/NVMe health, hex inspection and plugins remain outside the implemented milestone.
+Signature candidates and readback equality do not establish full format or filesystem validity.
 
 Graphify is installed as a CLI/Codex skill. Query the ignored graphify-out/graph.json first, verify
 relevant sources, and run graphify update . after code changes.
