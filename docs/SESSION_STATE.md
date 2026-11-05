@@ -494,3 +494,10 @@ and the GUI preview-before-recovery flow. Exact-head validation remains pending.
 The follow-up revision adds source-identity checks for image previews, a 70,000-byte
 file test proving preview truncation at 65,536 bytes, and a changed-source rejection
 case. Standard-formatted native exFAT QA and cross-link rejection are now in CI.
+
+CI follow-up: Linux final revision passed all 31 suites, native exFAT recovery
+and 5,000 sanitizer fuzz iterations. Windows exposed a fixture error: the open
+read-only image handle correctly prevents the mutation used by the changed-source
+test. The test now checks write denial plus unchanged preview on Windows, and
+changed-source rejection after a successful mutation on Linux. The implementation
+revision before that fixture addition passed all 31 Windows suites.

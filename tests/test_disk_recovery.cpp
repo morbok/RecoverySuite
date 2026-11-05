@@ -268,10 +268,21 @@ private slots:
              payload.left(65536));
     QCOMPARE(read(path), original);
     QCOMPARE(QDir(root.path()).entryList(QDir::Files).size(), 1);
-    save(path, original + QByteArray(512, 'z'));
+    QFile mutation(path);
+#ifdef _WIN32
+    // Native Windows read-only handles deny concurrent writes. Verify that
+    // protection rather than trying to bypass it to construct this fixture.
+    QVERIFY(!mutation.open(QIODevice::WriteOnly | QIODevice::Append));
+    QCOMPARE(read(path), original);
+    QCOMPARE(service.previewCandidate("FAT12_32/Existing/HELLO.TXT"), preview);
+#else
+    QVERIFY(mutation.open(QIODevice::WriteOnly | QIODevice::Append));
+    QCOMPARE(mutation.write(QByteArray(512, 'z')), qint64(512));
+    mutation.close();
     QVERIFY_EXCEPTION_THROWN(
         service.previewCandidate("FAT12_32/Existing/HELLO.TXT"),
         std::runtime_error);
+#endif
   }
   void exfatLostVolumeAndSelectedRecovery() {
     QTemporaryDir root;
