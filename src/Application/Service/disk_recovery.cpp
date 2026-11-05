@@ -25,7 +25,7 @@ models::StorageDevice GUIRecoveryService::openDevice(const std::string &path) {
   scanVolumes_.clear();
   scanCatalog_.clear();
   return {info.devicePath,     info.modelNumber,    info.serialNumber,
-          info.totalSizeBytes, info.bytesPerSector, true};
+          info.totalSizeBytes, static_cast<uint32_t>(info.bytesPerSector), true};
 }
 
 models::RecoveryResult GUIRecoveryService::executeDiskOperation(

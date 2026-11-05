@@ -32,9 +32,11 @@ GUIRecoveryService::~GUIRecoveryService() {
 
 std::vector<models::StorageDevice> GUIRecoveryService::enumerateStorageDevices() {
     std::vector<models::StorageDevice> devices;
-    for (const auto& info : disk::createDiskEnumerator()->enumerateDisks())
+    for (const auto& info : disk::createDiskEnumerator()->enumerateDisks()) {
+        if (info.bytesPerSector > std::numeric_limits<uint32_t>::max()) continue;
         devices.push_back({info.devicePath, info.modelNumber, info.serialNumber,
-            info.totalSizeBytes, info.bytesPerSector, info.isReadOnly});
+            info.totalSizeBytes, static_cast<uint32_t>(info.bytesPerSector), info.isReadOnly});
+    }
     return devices;
 }
 
