@@ -113,6 +113,7 @@ struct RecoveryResult {
     bool failedItemsKnown{};
     bool outputWritten{};
     bool scanOnly{};
+    std::vector<uint8_t> previewBytes; // Bounded to 64 KiB; never exported by preview
     std::vector<RecoveredItem> recoveredItems;
     uint64_t processedBytes{};
     uint64_t recoveredBytes{};

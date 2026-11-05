@@ -49,6 +49,11 @@ public:
      */
     models::StorageDevice openImage(const std::string& path, uint32_t sectorSize = 512);
     models::StorageDevice openDevice(const std::string& path);
+    /** Read at most 64 KiB from a current catalog candidate; no files written.
+     * Call off the GUI thread. Cancellation also stops discovery replay.
+     */
+    std::vector<uint8_t> previewCandidate(const std::string& name,
+        const std::function<bool()>& cancelled = {});
     bool sourceIsPhysical() const { return bool(deviceReader_); }
     /** Return an empty string if valid, otherwise a user-facing validation error. No output is written. */
     std::string validateOperation(const models::RecoveryOperation& operation) const;

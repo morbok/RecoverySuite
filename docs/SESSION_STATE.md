@@ -485,3 +485,8 @@ allocation bitmap checks, retained deleted candidates, UTF-16 paths and zeroed
 uninitialized tails. Added CI-only synthetic erased-partition recovery and corrupt
 metadata cases; parser is included in the sanitizer fuzz target. Validation pending
 for this revision. No local builds, tests or device scans were performed.
+
+Added asynchronous, cancellable candidate inspection in the review screen. The
+service replays current-volume discovery and reads at most 64 KiB; text/hex output
+is inert and writes nothing. CI cases cover content, invalid selection, cancellation
+and the GUI preview-before-recovery flow. Exact-head validation remains pending.

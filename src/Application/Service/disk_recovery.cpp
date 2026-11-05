@@ -3,6 +3,44 @@
 #include <set>
 
 namespace recoverysuite::application::service {
+std::vector<uint8_t>
+GUIRecoveryService::previewCandidate(const std::string &name,
+                                     const std::function<bool()> &cancelled) {
+  std::unique_lock lock(imageMutex_, std::try_to_lock);
+  if (!lock.owns_lock())
+    throw std::runtime_error(
+        "Wait for the current operation before previewing a file");
+  if (!scanValid_ || !sourceReader_ || !scanCatalog_.contains(name))
+    throw std::runtime_error("Choose a file from the current scan first");
+  if (deviceReader_)
+    deviceReader_->validateIdentity();
+  std::vector<uint8_t> bytes;
+  bool found = false;
+  const auto stopping = [&] { return found || (cancelled && cancelled()); };
+  recovery::scanDiskFiles(
+      *sourceReader_, scanVolumes_,
+      [&](const std::string &path, uint64_t size, const auto &read,
+          const std::string &) {
+        if (path != name || stopping())
+          return;
+        if (size != scanCatalog_.at(name))
+          throw std::runtime_error("The file changed since the scan");
+        const auto count = static_cast<size_t>(std::min<uint64_t>(size, 65536));
+        if (count)
+          bytes = read(0, count);
+        if (bytes.size() != count)
+          throw std::runtime_error("Incomplete preview read");
+        found = true;
+      },
+      {}, stopping);
+  if (cancelled && cancelled())
+    throw std::runtime_error("Preview cancelled");
+  if (!found)
+    throw std::runtime_error(
+        "This candidate could not be read again; scan the drive again");
+  return bytes;
+}
+
 models::StorageDevice GUIRecoveryService::openDevice(const std::string &path) {
   std::unique_lock lock(imageMutex_, std::try_to_lock);
   if (!lock.owns_lock())
@@ -24,8 +62,12 @@ models::StorageDevice GUIRecoveryService::openDevice(const std::string &path) {
   scanValid_ = false;
   scanVolumes_.clear();
   scanCatalog_.clear();
-  return {info.devicePath,     info.modelNumber,    info.serialNumber,
-          info.totalSizeBytes, static_cast<uint32_t>(info.bytesPerSector), true};
+  return {info.devicePath,
+          info.modelNumber,
+          info.serialNumber,
+          info.totalSizeBytes,
+          static_cast<uint32_t>(info.bytesPerSector),
+          true};
 }
 
 models::RecoveryResult GUIRecoveryService::executeDiskOperation(
@@ -116,7 +158,8 @@ models::RecoveryResult GUIRecoveryService::executeDiskOperation(
           } else if (selected.contains(name) && seen.insert(name).second) {
             try {
               if (scanCatalog_.at(name) != size)
-                throw std::runtime_error("A selected file changed since the scan");
+                throw std::runtime_error(
+                    "A selected file changed since the scan");
               if (deviceReader_)
                 deviceReader_->validateDestination(operation.outputPath);
               exporter->writeStream(name, size, read, true, true, cancelled);
@@ -166,7 +209,8 @@ models::RecoveryResult GUIRecoveryService::executeDiskOperation(
   result.details["Filesystem volumes found"] =
       std::to_string(scanVolumes_.size());
   result.details["Supported recovery"] =
-      "FAT12/16/32, exFAT 1.0 (single FAT), NTFS and JPEG/PDF/ZIP signatures. ext4, encrypted "
+      "FAT12/16/32, exFAT 1.0 (single FAT), NTFS and JPEG/PDF/ZIP signatures. "
+      "ext4, encrypted "
       "and compressed filesystem data are not supported yet.";
   result.details["Recovery limits"] =
       "Candidates can contain overwritten or incomplete bytes. Interrupted "

@@ -27,7 +27,7 @@ No completion percentage is meaningful without coverage of those user scenarios.
 
 - Other filesystem coverage (including ext4); broader formats beyond JPEG/PDF/ZIP carving.
 - exFAT TexFAT/two-FAT support and damaged/missing boot-region recovery.
-- Rich file previews and corruption/quality assessment; browsing a candidate is not proof it is intact.
+- Rich media/document previews and corruption/quality assessment; bounded text/hex inspection is available, but does not prove a whole file is intact.
 - More damaged-volume reconstruction, missing boot/MFT metadata, fragmented deleted chains,
   sparse/compressed/encrypted data and larger file-count/file-size limits.
 - Physical scan persistence, fast rediscovery and robust failing-media rescue acquisition/retries.
@@ -54,3 +54,12 @@ aggregate metadata, 1,024 directories and 32 nested levels. Deleted directories,
 TexFAT, missing allocation bitmaps, invalid boot checksums and damaged entry sets
 are rejected; signature fallback remains available. Checks do not prove that
 deleted contents are intact. Tests run in GitHub CI, never on the user's PC.
+
+## Candidate inspection milestone (validation pending)
+
+The results screen can inspect the highlighted file before any export. It reads
+at most 64 KiB from the current scan, displays plain text or hexadecimal, and
+creates no output files. Discovery replay runs on the existing cancellable worker
+thread; changing source and concurrent recovery are blocked until it finishes.
+Inspection rejects names outside the current catalog and changed file sizes. It
+is intentionally a partial content view, not a file-format validity assessment.

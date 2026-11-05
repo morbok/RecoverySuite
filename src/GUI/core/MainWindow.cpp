@@ -60,6 +60,11 @@ MainWindow::MainWindow(application::service::GUIRecoveryService* service, QWidge
         for(const auto& name:names)operation_.selectedPaths.push_back(name.toStdString());
         state_.transitionTo(ApplicationState::RECOVERY_CONFIGURATION);handleStartRecovery();
     });
+    connect(results_, &widgets::RecoveryResultsWidget::previewRequested, this, [this](const QString& name) {
+        if(running_)return;
+        operation_.operationType="disk_preview";operation_.selectedPaths={name.toStdString()};
+        state_.transitionTo(ApplicationState::RECOVERY_CONFIGURATION);handleStartRecovery();
+    });
     state_.transitionTo(ApplicationState::SOURCE_SELECTION); updateControls();
 }
 MainWindow::~MainWindow() {
@@ -72,7 +77,7 @@ void MainWindow::showSources() {
 }
 void MainWindow::updateControls() {
     chooseImage_->setEnabled(!running_); settings_->setEnabled(!running_ && !operation_.targetDevicePath.empty());
-    source_->setEnabled(!running_); configuration_->setEnabled(!running_);
+    source_->setEnabled(!running_); configuration_->setEnabled(!running_); results_->setEnabled(!running_);
     cancel_->setEnabled(running_ && !closeWhenFinished_);
 }
 void MainWindow::onSourceSelected(const QString& path) {
@@ -89,13 +94,15 @@ void MainWindow::onConfigurationReady(const application::service::models::Recove
 }
 void MainWindow::handleStartRecovery() {
     if (running_ || !service_) return;
-    const auto error = service_->validateOperation(operation_);
+    const bool preview=operation_.operationType=="disk_preview";
+    const auto error = preview ? std::string{} : service_->validateOperation(operation_);
     if (!error.empty()) { status_->setText(QString::fromStdString(error)); return; }
     if (!state_.transitionTo(ApplicationState::VALIDATION) || !state_.transitionTo(ApplicationState::RECOVERY)) {
         status_->setText(tr("Return to recovery settings before starting another scan")); return;
     }
-    running_ = true; updateControls(); results_->clear(); progress_->resetProgress();
-    pages_->setCurrentWidget(progress_); status_->setText(tr("Scanning source…"));
+    running_ = true; updateControls();
+    if(!preview) { results_->clear(); progress_->resetProgress();pages_->setCurrentWidget(progress_); }
+    status_->setText(preview ? tr("Reading file preview…") : tr("Scanning source…"));
     thread_ = new QThread(this);
     auto* worker = new RecoveryWorker(service_, operation_); worker->moveToThread(thread_);
     connect(thread_, &QThread::started, worker, &RecoveryWorker::process);
@@ -123,6 +130,10 @@ void MainWindow::handleRecoveryProgress(const application::service::models::Reco
     status_->setText(QString::fromStdString(progress.currentStep));
 }
 void MainWindow::handleRecoveryFinished(const application::service::models::RecoveryResult& result) {
+    if(result.operationType=="disk_preview") {
+        results_->setPreview(result);state_.transitionTo(ApplicationState::RESULTS);
+        status_->setText(result.success ? tr("Preview ready; no files saved") : QString::fromStdString(result.errorMessage));return;
+    }
     results_->setRecoveryResult(result); state_.transitionTo(ApplicationState::RESULTS);
     pages_->setCurrentWidget(results_);
     status_->setText(result.scanOnly ? tr("Scan finished. Select files and a destination on another drive.") : result.cancelled ? tr("Cancelled; review saved items below") : (result.success ? tr("Scan complete") : tr("Scan finished with errors; review results")));
@@ -151,7 +162,12 @@ void RecoveryWorker::process() {
     application::service::models::RecoveryResult result{};
     try {
         if (!service_) throw std::runtime_error("Recovery service is unavailable");
-        result = service_->executeOperation(operation_, [this](const auto& progress) { emit progressUpdated(progress); }, [this] { return cancelled_.load(); });
+        if(operation_.operationType=="disk_preview") {
+            result.operationType="disk_preview";
+            if(operation_.selectedPaths.size()!=1)throw std::runtime_error("Choose one file to inspect");
+            result.previewBytes=service_->previewCandidate(operation_.selectedPaths.front(),[this]{return cancelled_.load();});
+            result.success=true;
+        } else result = service_->executeOperation(operation_, [this](const auto& progress) { emit progressUpdated(progress); }, [this] { return cancelled_.load(); });
     } catch (const std::exception& failure) { result.errorMessage = failure.what(); result.cancelled = cancelled_.load(); }
     emit finished(result);
 }

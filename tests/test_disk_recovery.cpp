@@ -172,6 +172,13 @@ private slots:
       foundSignature |= item.name.starts_with("Signature matches/");
       QVERIFY(!item.confidence.empty());
     }
+    QCOMPARE(service.previewCandidate(live),
+             std::vector<uint8_t>({'h', 'e', 'l', 'l', 'o'}));
+    QVERIFY_EXCEPTION_THROWN(service.previewCandidate("../not-in-catalog"),
+                             std::runtime_error);
+    QVERIFY_EXCEPTION_THROWN(
+        service.previewCandidate(live, [] { return true; }),
+        std::runtime_error);
     QVERIFY(foundLive);
     QVERIFY(foundDeleted);
     QVERIFY(foundSignature);
@@ -299,6 +306,14 @@ private slots:
     auto *rows = window.findChild<QTreeWidget *>("scanCandidates");
     QVERIFY(rows);
     QTRY_VERIFY_WITH_TIMEOUT(rows->topLevelItemCount() >= 3, 10000);
+    QTRY_VERIFY(
+        window.findChild<QPushButton *>("recoverySettings")->isEnabled());
+    rows->setCurrentItem(rows->topLevelItem(0));
+    window.findChild<QPushButton *>("previewCandidate")->click();
+    QTRY_VERIFY_WITH_TIMEOUT(window.findChild<QLabel *>("previewStatus")
+                                 ->text()
+                                 .contains("Nothing saved"),
+                             10000);
     QTRY_VERIFY(
         window.findChild<QPushButton *>("recoverySettings")->isEnabled());
     snapshot(window, "02-review-candidates");
