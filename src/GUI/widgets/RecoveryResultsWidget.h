@@ -19,6 +19,12 @@ public:
 signals:
     void recoverSelection(const QStringList& names, const QString& destination);
 private:
+    QWidget* summaryPanel_;
+    QLabel* heading_;
+    QLabel* scanBanner_;
+    QPushButton* detailsToggle_;
+    QPushButton* openDestination_;
+    QString destination_;
     QTreeWidget* candidates_;
     QLineEdit* filter_;
     QLineEdit* output_;

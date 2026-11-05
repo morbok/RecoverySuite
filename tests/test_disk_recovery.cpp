@@ -171,7 +171,7 @@ private slots:
                 .entryList(QDir::AllEntries | QDir::NoDotAndDotDot)
                 .isEmpty());
     for (int i = 0; i < rows->topLevelItemCount(); ++i)
-      if (rows->topLevelItem(i)->text(0) == "FAT12_32/Existing/HELLO.TXT")
+      if (rows->topLevelItem(i)->data(0,Qt::UserRole).toString() == "FAT12_32/Existing/HELLO.TXT")
         rows->topLevelItem(i)->setCheckState(0, Qt::Checked);
     window.findChild<QLineEdit *>("reviewOutput")
         ->setText(root.filePath("out"));

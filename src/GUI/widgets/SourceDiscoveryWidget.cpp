@@ -61,9 +61,10 @@ void SourceDiscoveryWidget::onRefreshClicked() {
     drives_->clear(); if (!service_) return;
     try {
         for (const auto& drive : service_->enumerateStorageDevices()) {
+            if(!drive.totalBytes)continue;
             auto* row = new QTreeWidgetItem(drives_);
             row->setText(0, QString::fromStdString(drive.modelNumber.empty() ? "Unnamed drive" : drive.modelNumber));
-            row->setText(1, tr("%1 GB").arg(double(drive.totalBytes)/1000000000.0,0,'f',1));
+            row->setText(1, drive.totalBytes>=1000000000 ? tr("%1 GB").arg(double(drive.totalBytes)/1000000000.0,0,'f',1) : tr("%1 MB").arg(double(drive.totalBytes)/1000000.0,0,'f',1));
             row->setText(2, QString::fromStdString(drive.devicePath)); row->setData(0,Qt::UserRole,row->text(2));
         }
         status_->setText(drives_->topLevelItemCount() ? tr("Select a source drive. Recovered files must go to a different drive.") : tr("No drives reported. Refresh after reconnecting the drive, or open an existing image."));
