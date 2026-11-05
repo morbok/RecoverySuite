@@ -7,7 +7,7 @@ class QCheckBox;
 class QComboBox;
 class QGroupBox;
 namespace recoverysuite::gui::widgets {
-/** Configures the supported image-carving operation and validates it through the service. */
+/** Automatic whole-source scan with optional advanced recovery settings. */
 class RecoveryConfigurationWidget : public QWidget {
     Q_OBJECT
 public:

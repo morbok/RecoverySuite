@@ -4,6 +4,7 @@
 #include "fat_root_files.h"
 #include "ntfs_mft.h"
 #include "signature_carver.h"
+#include <algorithm>
 #include <cstring>
 #include <functional>
 #include <limits>

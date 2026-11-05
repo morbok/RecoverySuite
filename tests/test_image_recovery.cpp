@@ -265,6 +265,7 @@ private slots:
 #ifndef _WIN32
         QTemporaryDir root; const auto source=fixture(root); GUIRecoveryService service(nullptr);
         recoverysuite::gui::core::MainWindow window(&service); window.show();
+        window.findChild<QPushButton*>("imageSourceOptions")->click();
         window.findChild<QLineEdit*>("imagePath")->setText(source);
         QTest::mouseClick(window.findChild<QPushButton*>("openImage"),Qt::LeftButton);
         window.findChild<QComboBox*>("scanMode")->setCurrentIndex(1);
@@ -289,6 +290,7 @@ private slots:
 #ifndef _WIN32
         QTemporaryDir root; const auto source=fixture(root); GUIRecoveryService service(nullptr);
         recoverysuite::gui::core::MainWindow window(&service); window.show();
+        window.findChild<QPushButton*>("imageSourceOptions")->click();
         window.findChild<QLineEdit*>("imagePath")->setText(source);
         QTest::mouseClick(window.findChild<QPushButton*>("openImage"),Qt::LeftButton);
         window.findChild<QLineEdit*>("recoveryOutput")->setText(root.path());

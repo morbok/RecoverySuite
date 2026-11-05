@@ -37,6 +37,11 @@ models::RecoveryResult GUIRecoveryService::executeDiskOperation(
       result.failedItemsKnown = true;
   const auto stopping = [&] { return cancelled && cancelled(); };
   std::unique_lock lock(imageMutex_, std::try_to_lock);
+  if (!lock.owns_lock()) {
+    result.errorMessage = "A scan or recovery is already active";
+    result.endTime = std::chrono::system_clock::now();
+    return result;
+  }
   const auto report = [&](const std::string &stage, uint64_t bytes,
                           uint64_t total) {
     result.processedBytes = bytes;

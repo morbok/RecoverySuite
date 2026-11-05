@@ -17,7 +17,7 @@ class OperationProgressWidget;
 class RecoveryResultsWidget;
 }
 namespace recoverysuite::gui::core {
-/** Main image-recovery workflow. Service lifetime must exceed window and worker lifetimes. */
+/** Drive scan/review/recovery workflow. Service outlives window and workers. */
 class MainWindow : public QMainWindow {
     Q_OBJECT
 public:
@@ -57,7 +57,7 @@ private:
     bool running_{};
     bool closeWhenFinished_{};
 };
-/** Executes the configured image operation on a worker thread. cancel() only sets an atomic flag. */
+/** Executes scan/recovery on a worker thread. cancel() only sets an atomic flag. */
 class RecoveryWorker : public QObject {
     Q_OBJECT
 public:

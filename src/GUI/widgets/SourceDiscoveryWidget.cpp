@@ -36,7 +36,7 @@ SourceDiscoveryWidget::SourceDiscoveryWidget(QWidget* parent) : QWidget(parent) 
     });
     auto* access = new QLabel(tr("Source access is read-only. Unmount its volumes on Linux or take the source disk offline on Windows first; system drives cannot be scanned while in use. Device permissions may be required. RecoverySuite never changes this state automatically."), this);
     access->setWordWrap(true); layout->addWidget(access);
-    auto* imageToggle = new QPushButton(tr("Open an existing disk image instead…"), this); layout->addWidget(imageToggle);
+    auto* imageToggle = new QPushButton(tr("Open an existing disk image instead…"), this); imageToggle->setObjectName("imageSourceOptions"); layout->addWidget(imageToggle);
     auto* image = new QGroupBox(tr("Optional image source"), this); auto* imageLayout = new QVBoxLayout(image);
     auto* form = new QFormLayout;
     path_ = new QLineEdit(this); path_->setObjectName("imagePath"); form->addRow(tr("Image file"), path_);
