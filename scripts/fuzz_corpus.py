@@ -70,6 +70,32 @@ def fixtures():
     return {'fat12.img': bytes(fat), 'ntfs.img': bytes(ntfs), 'signature.img': bytes(signature)}
 
 
+def exfat_fixture():
+    image = bytearray(128 * 512)
+    image[3:11] = b'EXFAT   '
+    for offset, value, width in ((72,128,8),(80,24,4),(84,1,4),
+                                  (88,25,4),(92,103,4),(96,2,4),(104,256,2),(510,0xAA55,2)):
+        put(image,offset,value,width)
+    image[108] = 9; image[110] = 1
+    for cluster in (2,3,4): put(image,24*512+cluster*4,0xFFFFFFFF,4)
+    root=25*512; image[root]=0x81
+    put(image,root+20,3,4); put(image,root+24,13,8); image[26*512]=7
+    entry=bytearray(96); entry[0]=0x85; entry[1]=2; put(entry,4,0x20)
+    entry[32]=0xC0; entry[33]=3; entry[35]=9
+    put(entry,40,5,8); put(entry,52,4,4); put(entry,56,5,8)
+    entry[64]=0xC1; entry[66:84]='notes.txt'.encode('utf-16le')
+    checksum=0
+    for i,value in enumerate(entry):
+        if i not in (2,3): checksum=((checksum>>1)+((checksum&1)<<15)+value)&0xFFFF
+    put(entry,2,checksum); image[root+32:root+128]=entry
+    image[27*512:27*512+5]=b'hello'
+    checksum=0
+    for i,value in enumerate(image[:11*512]):
+        if i not in (106,107,112): checksum=((checksum>>1)+((checksum&1)<<31)+value)&0xFFFFFFFF
+    for i in range(11*512,12*512,4): put(image,i,checksum,4)
+    return bytes(image)
+
+
 def gpt_fixture():
     import zlib
     image = bytearray(64 * 512)
@@ -98,7 +124,7 @@ if __name__ == '__main__':
     put(fat4k, 11, 4096)
     zero_cluster = bytearray(corpus['fat12.img'])
     zero_cluster[13] = 0
-    for name, data in {**corpus, "gpt.img": gpt_fixture(),
+    for name, data in {**corpus, "gpt.img": gpt_fixture(), "exfat.img": exfat_fixture(),
                        "fat-4k-boot.img": fat4k,
                        "fat-zero-cluster.img": zero_cluster}.items():
         (target / name).write_bytes(data)

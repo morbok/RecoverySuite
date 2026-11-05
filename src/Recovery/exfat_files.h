@@ -1,6 +1,7 @@
 #pragma once
 #include "source_bytes.h"
 #include <cstring>
+#include <map>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -106,7 +107,7 @@ class Reader {
   std::function<bool()> cancelled_;
   Geometry g_;
   Bytes bitmap_;
-  std::set<uint32_t> metadata_, owned_;
+  std::set<uint32_t> metadata_;
   uint64_t fatPageOffset_ = UINT64_MAX;
   Bytes fatPage_;
 
@@ -254,6 +255,19 @@ public:
     }
     if (bitmap_.empty())
       throw std::runtime_error("Missing exFAT allocation bitmap");
+    // The up-case table is filesystem metadata, never candidate file content.
+    for (size_t at = 0; at + 32 <= root.size() && root[at]; at += 32) {
+      if (root[at] != 0x82)
+        continue;
+      const auto length = le(root.data() + at + 24, 8);
+      if (!length || length > 16 * 1024 * 1024)
+        throw std::runtime_error("Invalid exFAT up-case table size");
+      const auto table =
+          chain(uint32_t(le(root.data() + at + 20, 4)), length, false);
+      for (auto c : table)
+        if (!metadata_.insert(c).second)
+          throw std::runtime_error("Overlapping exFAT metadata");
+    }
     for (auto c : metadata_)
       if (!allocated(c))
         throw std::runtime_error("Unallocated exFAT metadata");
@@ -264,6 +278,14 @@ public:
     };
     std::vector<Directory> pending;
     pending.push_back({std::move(root), "", 0});
+    struct Candidate {
+      File file;
+      std::vector<uint32_t> clusters;
+      uint64_t valid;
+    };
+    std::vector<Candidate> candidates;
+    std::map<uint32_t, unsigned> references;
+    uint64_t retainedClusters = 0;
     size_t directories = 1;
     while (!pending.empty()) {
       auto directory = std::move(pending.back());
@@ -288,6 +310,7 @@ public:
         at += size;
         File file;
         std::vector<uint32_t> clusters;
+        uint64_t initialized = 0;
         try {
           const bool deleted = !(entries[0] & 0x80);
           uint16_t checksum = 0;
@@ -309,6 +332,7 @@ public:
             throw std::runtime_error("Invalid exFAT entry set");
           const bool isDirectory = (le(entries.data() + 4, 2) & 0x10) != 0;
           const auto valid = le(entries.data() + 40, 8);
+          initialized = valid;
           const auto length = le(entries.data() + 56, 8);
           if (valid > length || length > 2ULL * 1024 * 1024 * 1024 ||
               secondary != 1 + (entries[35] + 14) / 15)
@@ -318,8 +342,7 @@ public:
           clusters = chain(uint32_t(le(entries.data() + 52, 4)), length,
                            entries[33] & 2);
           for (auto c : clusters)
-            if (allocated(c) == deleted || metadata_.contains(c) ||
-                owned_.contains(c))
+            if (allocated(c) == deleted || metadata_.contains(c))
               throw std::runtime_error("Conflicting exFAT allocation");
           if (isDirectory) {
             if (deleted)
@@ -333,28 +356,48 @@ public:
                 {std::move(data), path + "/", directory.depth + 1});
             continue;
           }
-          if (!deleted)
-            owned_.insert(clusters.begin(), clusters.end());
+
           file.path = (deleted ? "Deleted/" : "Existing/") + path;
           file.size = length;
           file.confidence = deleted ? "Deleted exFAT metadata and free "
                                       "clusters; contents unproven"
                                     : "exFAT entry checksum and allocation "
                                       "checked; contents unproven";
-          file.read = [&, length, valid](uint64_t offset, size_t n) {
-            return pull(clusters, length, valid, offset, n);
-          };
+
         } catch (const std::runtime_error &) {
           check();
           ++summary.invalid;
           continue;
         }
-        item(file); // Export/candidate-limit exceptions must propagate to
-                    // caller.
-        ++summary.found;
+        if (candidates.size() >= 10000 ||
+            retainedClusters + clusters.size() > 2097152)
+          throw std::runtime_error("exFAT catalog resource limit");
+        retainedClusters += clusters.size();
+        for (auto c : clusters)
+          ++references[c];
+        candidates.push_back(
+            {std::move(file), std::move(clusters), initialized});
         if (progress)
           progress(metadataBytes_);
       }
+    }
+    // Resolve all directory metadata before exposing any data source. Reject
+    // every member of cross-linked files, independent of directory order.
+    for (auto &candidate : candidates) {
+      check();
+      if (std::any_of(candidate.clusters.begin(), candidate.clusters.end(),
+                      [&](auto c) {
+                        return metadata_.contains(c) || references.at(c) != 1;
+                      })) {
+        ++summary.invalid;
+        continue;
+      }
+      candidate.file.read = [&, valid = candidate.valid](uint64_t at,
+                                                         size_t n) {
+        return pull(candidate.clusters, candidate.file.size, valid, at, n);
+      };
+      item(candidate.file); // Callback/export exceptions propagate unchanged.
+      ++summary.found;
     }
     return summary;
   }

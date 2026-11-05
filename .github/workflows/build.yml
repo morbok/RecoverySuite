@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build g++ qt6-base-dev libudev-dev
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build g++ qt6-base-dev libudev-dev exfatprogs
       - name: Configure
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
       - name: Build
@@ -50,6 +50,9 @@ jobs:
       - name: Read-only synthetic block device QA
         if: matrix.build_type == 'Release'
         run: bash scripts/qa_loop_device.sh build/bin/RecoverySuite_CLI
+      - name: Standard-formatted exFAT device recovery
+        if: matrix.build_type == 'Release'
+        run: bash scripts/qa_exfat_device.sh build/bin/RecoverySuite_CLI
       - uses: actions/upload-artifact@v4
         if: matrix.build_type == 'Release'
         with:

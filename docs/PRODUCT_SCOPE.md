@@ -44,7 +44,7 @@ by this change; run validation on CI or a dedicated evaluation machine.
 
 Automatic scanning now recognizes single-FAT exFAT 1.0 volumes independently of
 partition entries. Recovery validates the boot-region checksum, directory entry
-checksums, UTF-16 names, cluster chains and allocation bitmap. Existing files can
+checksums, UTF-16 names, cluster chains and allocation bitmap, rejecting cross-linked files and filesystem metadata aliases. Existing files can
 be contiguous or fragmented; retained deleted entries are offered only when all
 referenced clusters are currently free. Uninitialized logical tails are zero-filled.
 Names and folders are preserved through the existing selected-only export flow.
@@ -63,3 +63,7 @@ creates no output files. Discovery replay runs on the existing cancellable worke
 thread; changing source and concurrent recovery are blocked until it finishes.
 Inspection rejects names outside the current catalog and changed file sizes. It
 is intentionally a partial content view, not a file-format validity assessment.
+
+CI also exercises a standard-formatted exFAT filesystem on a disposable Linux
+loop device, recovering a nested binary file and a document with exact byte and
+source-preservation checks. The fuzz corpus includes a valid exFAT seed.

@@ -262,6 +262,33 @@ private slots:
              QByteArray("nested"));
     QCOMPARE(read(path), original);
   }
+  void exfatRejectsCrossLinkedFilesAndMetadataAliases() {
+    for (bool metadataAlias : {false, true}) {
+      QTemporaryDir root;
+      auto bytes = exfatDisk();
+      const int at = 32 * 512 + 25 * 512 + (metadataAlias ? 32 : 128);
+      put(bytes, at + 52, metadataAlias ? 8 : 4, 4);
+      bytes[at + 33] = 3;
+      put(bytes, at + 40, 5, 8);
+      put(bytes, at + 56, 8, 8);
+      uint16_t checksum = 0;
+      for (int i = 0; i < 96; ++i)
+        if (i != 2 && i != 3)
+          checksum = uint16_t((checksum >> 1) + ((checksum & 1) ? 0x8000 : 0) +
+                              uint8_t(bytes[at + i]));
+      put(bytes, at + 2, checksum);
+      const auto path = root.filePath("alias.img");
+      save(path, bytes);
+      GUIRecoveryService service(nullptr);
+      const auto result =
+          service.executeOperation(scan(service.openImage(path.toStdString())));
+      QVERIFY2(result.success, result.errorMessage.c_str());
+      QCOMPARE(result.recoveredItemsCount, uint64_t(metadataAlias ? 3 : 2));
+      for (const auto &file : result.recoveredItems)
+        QVERIFY(!file.name.ends_with("notes.txt"));
+      QCOMPARE(read(path), bytes);
+    }
+  }
   void exfatRejectsCorruptMetadata_data() {
     QTest::addColumn<int>("offset");
     QTest::addColumn<int>("value");
