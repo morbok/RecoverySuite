@@ -4,8 +4,9 @@
 class QLineEdit;
 class QComboBox;
 class QLabel;
+class QTreeWidget;
 namespace recoverysuite::gui::widgets {
-/** Opens real read-only disk images; no simulated hardware inventory is shown. */
+/** Selects connected drives; disk images are an optional secondary source. */
 class SourceDiscoveryWidget : public QWidget {
     Q_OBJECT
 public:
@@ -18,6 +19,7 @@ signals:
     void sourceSelected(const QString& path);
 private:
     application::service::GUIRecoveryService* service_{};
+    QTreeWidget* drives_;
     QLineEdit* path_;
     QComboBox* sectorSize_;
     QLabel* status_;

@@ -99,6 +99,7 @@ struct RecoveryProgress {
 struct RecoveredItem {
     std::string name;
     uint64_t sizeBytes{};
+    std::string confidence;
 };
 
 struct RecoveryResult {
@@ -111,6 +112,7 @@ struct RecoveryResult {
     bool failedBytesKnown{};
     bool failedItemsKnown{};
     bool outputWritten{};
+    bool scanOnly{};
     std::vector<RecoveredItem> recoveredItems;
     uint64_t processedBytes{};
     uint64_t recoveredBytes{};
@@ -137,6 +139,7 @@ struct RecoveryOperation {
     bool createLogFile{};
     std::string sessionPath;
     bool resumeSession{};
+    std::vector<std::string> selectedPaths;
 };
 
 } // namespace models

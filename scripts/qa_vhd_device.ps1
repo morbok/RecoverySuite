@@ -18,6 +18,9 @@ try {
     try {
         $marker = [System.Text.Encoding]::ASCII.GetBytes('RecoverySuite synthetic acquisition fixture')
         $file.Write($marker, 0, $marker.Length)
+        $file.Position = 16MB
+        $jpeg = [Convert]::FromHexString('FFD8FF68656C6C6FFFD9')
+        $file.Write($jpeg, 0, $jpeg.Length)
         $file.Flush($true)
     } finally { $file.Dispose() }
     Mount-DiskImage -ImagePath $vhd -Access ReadOnly -NoDriveLetter | Out-Null
@@ -37,6 +40,17 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Offline read-only VHD capture failed' }
     & $Cli device capture $device --output $output
     if ($LASTEXITCODE -eq 0) { throw 'Existing destination was incorrectly accepted' }
+    & $Cli device scan $device
+    if ($LASTEXITCODE -ne 0) { throw 'Direct physical source scan failed' }
+    $recovered = Join-Path $fixture 'recovered'
+    New-Item -ItemType Directory $recovered | Out-Null
+    & $Cli device recover $device --output $recovered --select 'Signature matches/carved_0.jpg'
+    if ($LASTEXITCODE -ne 0) { throw 'Selected file recovery from physical source failed' }
+    $jpegPath = Join-Path $recovered 'Signature matches/carved_0.jpg'
+    if ([Convert]::ToHexString([System.IO.File]::ReadAllBytes($jpegPath)) -ne 'FFD8FF68656C6C6FFFD9') {
+        throw 'Direct physical source recovery returned incorrect bytes'
+    }
+    Write-Output 'Direct physical-source scan and selected-file recovery passed'
     Dismount-DiskImage -ImagePath $vhd
     $attached = $false
     $expected = Join-Path $fixture 'expected.img'

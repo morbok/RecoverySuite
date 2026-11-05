@@ -46,8 +46,36 @@ int CLIHandler::run(int argc, char* argv[]) {
                    [](unsigned char c){ return std::tolower(c); });
 
     // Route to appropriate handler
-    if(command=="device") {
-        if(args.size()!=4||args[0]!="capture"||args[2]!="--output"){printError("Use device capture <device-path> --output <new-image-file>");return 2;}
+    if(command=="scan" || (command=="device" && !args.empty() && (args[0]=="scan" || args[0]=="recover"))) {
+        const bool nested=command=="device";
+        const bool recover=nested && args[0]=="recover";
+        const size_t sourceIndex=nested?1:0;
+        if(args.size()<=sourceIndex){printError("Use scan <device> [--image] or device recover <device> --output <folder> --select <candidate-path>");return 2;}
+        std::string output;std::vector<std::string> selection;bool image=false;
+        for(size_t i=sourceIndex+1;i<args.size();++i){
+            if(args[i]=="--image")image=true;
+            else if((args[i]=="--output"||args[i]=="--select")&&i+1<args.size()){
+                const auto key=args[i++];if(key=="--output")output=args[i];else selection.push_back(args[i]);
+            }else{printError("Unknown scan/recovery option");return 2;}
+        }
+        if(recover&&(output.empty()||selection.empty())){printError("Choose --output and at least one --select candidate-path");return 2;}
+        try {
+            application::service::GUIRecoveryService service(nullptr);
+            const auto source=image?service.openImage(args[sourceIndex]):service.openDevice(args[sourceIndex]);
+            application::service::models::RecoveryOperation op{};op.operationType="disk_scan";op.targetDevicePath=source.devicePath;
+            op.numSectors=service.getDiskInfo(source.devicePath).totalSectors;
+            auto result=service.executeOperation(op,{},cancellation_);
+            if(!recover)for(const auto& item:result.recoveredItems)std::cout<<item.name<<"\t"<<item.sizeBytes<<" bytes\t"<<item.confidence<<'\n';
+            if(result.cancelled)return 130;
+            if(!result.success){printError(result.errorMessage);return 1;}
+            if(recover){op.operationType="disk_recovery";op.outputPath=output;op.selectedPaths=selection;op.verifyAfterRecovery=true;result=service.executeOperation(op,{},cancellation_);}
+            std::cout<<(recover?"Recovered files: ":"Scan candidates: ")<<result.recoveredItemsCount<<'\n';
+            for(const auto& [key,value]:result.details)std::cout<<key<<": "<<value<<'\n';
+            if(result.cancelled)return 130;
+            if(!result.success){printError(result.errorMessage);return 1;}return 0;
+        }catch(const std::exception& failure){printError(failure.what());return cancellation_&&cancellation_()?130:1;}
+    } else if(command=="device") {
+        if(args.size()!=4||args[0]!="capture"||args[2]!="--output"){printError("Use device scan <device>, device recover <device> --output <folder> --select <candidate-path>, or device capture <device> --output <image>");return 2;}
         try{const auto captured=application::service::captureDevice(args[1],args[3],{},cancellation_);std::cout<<"Image saved and verified: "<<args[3]<<"\nBytes: "<<captured.bytes<<"\nSector size: "<<captured.sectorSize<<"\nSHA-256: "<<captured.sha256<<'\n';return 0;}catch(const std::exception& failure){printError(failure.what());return cancellation_&&cancellation_()?130:1;}
     } else if(command=="session") {
         if(args.size()!=2||args[0]!="resume"){printError("Use session resume <session.json>");return 2;}
@@ -501,6 +529,8 @@ Usage: RecoverySuite_CLI <command> [arguments]
   image files <image> --output <existing-folder>
   image tree <image> --output <existing-folder>
   image mft <image> --output <existing-folder>
+  scan <device-path> [--image]
+  device recover <device-path> --output <existing-folder> --select <candidate-path>
   device capture <device-path> --output <new-image-file>
   session resume <session.json>
   image <method> <image> --output <folder> --session <session.json>

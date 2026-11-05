@@ -4,6 +4,7 @@
 #include "Recovery/fat_root_files.h"
 #include "Recovery/ntfs_mft.h"
 #include "Recovery/signature_carver.h"
+#include "Recovery/disk_scan.h"
 #include "RecoverySuite/Partition/GPTParser.hpp"
 #include "RecoverySuite/Partition/PartitionManager.hpp"
 #include <algorithm>
@@ -87,6 +88,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size) {
   if (!size || size > 262144)
     return 0;
   MemorySource source(input, size);
+  parse([&] { recovery::findDiskVolumes(source, {}, {}); });
   auto legacy = std::make_shared<LegacySource>(source);
   parse([&] { filesystem::fat::FATMetadata metadata(*legacy); });
   parse([&] {

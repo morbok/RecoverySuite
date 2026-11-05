@@ -12,6 +12,7 @@
 #include "Recovery/ntfs_mft.h"
 #include "Application/Service/safe_file_exporter.h"
 #include <map>
+#include <algorithm>
 #include <limits>
 #include <cstring>
 #include "Filesystem/NTFS/NTFSStructures.h"
@@ -115,6 +116,19 @@ class TestNtfsMft:public QObject {
         auto image=v.image();if(external){image.replace(100*v.geometry.ss,v.geometry.ss,QByteArray(v.geometry.ss,'A'));image.replace(90*v.geometry.ss,v.geometry.ss,QByteArray(v.geometry.ss,'B'));}return image;
     }
 private slots:
+    void automaticNtfsAfterPartitionDeletion() {
+        QTemporaryDir root; ResidentVolume volume; const auto bytes=checkedFixture(volume);
+        const auto path=root.filePath("lost-partition.img");const auto original=QByteArray(32*512,char{0})+bytes;save(path,original);
+        application::service::GUIRecoveryService service(nullptr);const auto source=service.openImage(path.toStdString());
+        application::service::models::RecoveryOperation op{};op.operationType="disk_scan";op.targetDevicePath=source.devicePath;op.numSectors=original.size()/512;
+        const auto catalog=service.executeOperation(op);QVERIFY2(catalog.success,catalog.errorMessage.c_str());QVERIFY(!catalog.outputWritten);
+        const auto name=std::string("NTFS_32/Existing/")+volume.name.toStdString();
+        QVERIFY(std::any_of(catalog.recoveredItems.begin(),catalog.recoveredItems.end(),[&](const auto& file){return file.name==name;}));
+        QVERIFY(QDir().mkdir(root.filePath("out")));op.operationType="disk_recovery";op.outputPath=root.filePath("out").toStdString();op.selectedPaths={name};
+        const auto recovered=service.executeOperation(op);QVERIFY2(recovered.success,recovered.errorMessage.c_str());QCOMPARE(recovered.recoveredItemsCount,uint64_t{1});
+        QCOMPARE(load(root.filePath("out/")+QString::fromStdString(name)),volume.payload);QCOMPARE(load(path),original);
+    }
+
     void snapshots_data(){QTest::addColumn<int>("sector");QTest::addColumn<bool>("cross");QTest::newRow("512-fragmented-negative-delta")<<512<<false;QTest::newRow("attribute-crosses-USA-stride")<<512<<true;QTest::newRow("4K-512-byte-fixup-stride")<<4096<<false;}
     void snapshots(){
 #ifndef _WIN32

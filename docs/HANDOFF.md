@@ -1,9 +1,11 @@
 # RecoverySuite handoff
 
 Current checkout: feat/recovery-results-handoff; PR: https://github.com/morbok/RecoverySuite/pull/1.
-Read README.md, SESSION_STATE.md and MASTER_TODO.md. Older phase-completion notes are historical.
+Read PRODUCT_SCOPE.md first, then README.md, SESSION_STATE.md and MASTER_TODO.md. Older phase-completion notes are historical.
 
-Supported read-only image workflows:
+The primary product is connected-drive recovery; images are optional. New automatic scanning
+separates catalog review from selected-file export and needs its own exact-head CI qualification.
+Existing targeted read-only recovery backends:
 - GUI and CLI signature carving for JPEG/PDF/ZIP candidates.
 - FAT12/16/32 metadata snapshots: boot/FAT copies and FAT12/16 fixed root bytes.
 - Allocated FAT12/16/32 root files using verified Unicode long names or ASCII 8.3 aliases and cluster chains, including

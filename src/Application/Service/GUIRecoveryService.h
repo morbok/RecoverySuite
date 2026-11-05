@@ -10,6 +10,8 @@
 #include <chrono>
 #include <mutex>
 #include "Disk/Access/disk_image_reader.h"
+#include "Disk/Access/read_only_device.h"
+#include "Recovery/disk_scan.h"
 #include "Models/GUIModels.h"
 #include "RecoveryService.h"
 
@@ -46,6 +48,8 @@ public:
      * Source changes are rejected while executeOperation is active.
      */
     models::StorageDevice openImage(const std::string& path, uint32_t sectorSize = 512);
+    models::StorageDevice openDevice(const std::string& path);
+    bool sourceIsPhysical() const { return bool(deviceReader_); }
     /** Return an empty string if valid, otherwise a user-facing validation error. No output is written. */
     std::string validateOperation(const models::RecoveryOperation& operation) const;
     /** Stream signature carving into exclusively created output files. Runs synchronously on caller's thread. */
@@ -145,6 +149,15 @@ public:
 
 private:
     std::shared_ptr<disk::DiskImageReader> imageReader_;
+    std::shared_ptr<disk::ReadOnlyDevice> deviceReader_;
+    std::shared_ptr<disk::IDiskReader> sourceReader_;
+    std::string sourcePath_;
+    std::vector<recovery::FoundVolume> scanVolumes_;
+    std::map<std::string, uint64_t> scanCatalog_;
+    bool scanValid_{};
+    models::RecoveryResult executeDiskOperation(const models::RecoveryOperation& operation,
+        const std::function<void(const models::RecoveryProgress&)>& progress,
+        const std::function<bool()>& cancelled);
     mutable std::mutex imageMutex_;
     std::string validateImageOperation(const models::RecoveryOperation& operation) const;
 

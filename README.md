@@ -1,9 +1,46 @@
 # RecoverySuite
 
-A C++20/Qt6 desktop toolkit for storage analysis and data recovery, with GUI and CLI interfaces.
+A desktop data-recovery application for accidentally deleted files, lost partitions and
+files made inaccessible after an interrupted write or disconnected drive. Connected
+physical disks are the primary source; disk images are an optional source and developer fixture.
+The application is under development and is not yet equivalent in recovery coverage to
+mature tools such as Disk Drill. Passing synthetic CI does not establish that it can recover
+all real-world data-loss cases.
 
-This is an unfinished development project. Architecture documents describe the intended scope;
-phase completion notes are historical and do not establish production readiness.
+## Recover lost data from a connected drive
+
+1. Open RecoverySuite and select the affected drive from the connected-drive list.
+2. Choose **Use selected drive**, then **Search for lost data**. The automatic scan
+   searches for surviving FAT12/16/32 and NTFS volumes, even without partition entries,
+   reconstructs supported existing/deleted-file candidates, and searches JPEG/PDF/ZIP signatures.
+3. Review filenames, paths, sizes and recovery confidence. Filter the list and check the
+   files to recover. Scanning does not save recovered files or require an output folder.
+4. Choose an existing destination folder on a **different physical drive**, then click
+   **Recover selected files**. Only selected candidates are copied and read back for verification.
+   Existing destination files are preserved. The application never repairs partition tables,
+   formats the source, or writes to source sectors.
+
+Linux source volumes must be unmounted; Windows source disks must already be offline.
+Appropriate device-read permissions are required. RecoverySuite does not automatically change
+mount/offline state or grant privileges. An active system drive is not a supported live source.
+The source list comes from actual OS metadata; a listed disk is not a promise that it can be opened.
+
+Deleted-partition recovery currently requires recognizable surviving FAT/NTFS boot metadata.
+Interrupted writes may leave inconsistent filesystem records; metadata recovery and signature
+fallback can find some candidates but cannot recreate unwritten, overwritten or TRIM-discarded bytes.
+Supported scope is FAT12/16/32, bounded NTFS recovery and JPEG/PDF/ZIP carving. exFAT, ext4,
+encrypted/compressed streams, comprehensive file previews, recovery of arbitrarily fragmented
+deleted files, physical-scan persistence and failing-media rescue retries remain open work.
+
+**Optional image source:** choose **Open an existing disk image instead…** on the source page.
+It uses the same automatic scan/review/recover flow. The advanced method controls and the
+CLI image commands below remain available for targeted recovery and inspection.
+
+**CLI:** `RecoverySuite_CLI scan /dev/sdX` lists candidates; use
+`RecoverySuite_CLI device recover /dev/sdX --output /other-drive/folder --select 'candidate/path'`
+to recover chosen paths (repeat `--select` as needed). Windows uses `\\.\PhysicalDriveN`.
+For an existing raw image, `scan disk.img --image` and `device recover disk.img --image ...`
+use the same flow. No capture-to-image step is required for direct device recovery.
 
 ## Build and test on Linux
 

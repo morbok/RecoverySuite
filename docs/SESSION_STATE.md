@@ -453,3 +453,26 @@ now also exercises the legacy FAT inspection path with 4 KiB/zero-cluster seeds.
 This is a scoped audit; remaining legacy analysis/cancellation/orphaned tests and
 broader features are still open. No local builds or tests were run for this work;
 new-head CI must pass before claiming this change is qualified.
+
+
+## 2026-11-05 — Product correction: general disk recovery
+
+User explicitly corrected the product direction: this is a general disk data-recovery
+application for deletion, lost partitions and interrupted writes, not an image-recovery product.
+See PRODUCT_SCOPE.md, which supersedes image-first milestone completion claims.
+
+Added direct read-only native sources to GUIRecoveryService; images remain optional. The main
+source page lists real connected drives. Automatic whole-disk scanning finds bounded surviving
+FAT/NTFS boot volumes without relying on partition entries, then reconstructs metadata candidates
+and searches signatures. Scans only build a catalog; selected-file export is a separate operation
+with verification, source identity, different-physical-disk and no-overwrite guards.
+GUI provides candidate filtering/check selection and a destination chooser; advanced parser/range
+controls remain secondary. CLI scan/device recover share the same service. Scan callbacks are
+not retained; export replays discovery against the still-open source and checks catalog membership.
+
+New Qt fixtures cover erased partition entries, damaged boot/signature fallback, selected files,
+source preservation, no-overwrite, stale scan rejection, cancellation and GUI scan/review/recover.
+CI loop/VHD jobs now recover a chosen file directly from a disposable device. Exact-head results
+are pending. No tests/builds/apps were run on the user's workstation for this transformation.
+Physical hardware, exFAT, richer previews, broader corruption recovery, native scan persistence,
+permissions UX and failing-media retries remain open; do not claim Disk Drill feature parity.

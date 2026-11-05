@@ -4,6 +4,7 @@
 #include <QDir>
 #include "Recovery/CarvingEngine.h"
 #include <QLineEdit>
+#include <QComboBox>
 #include <QPushButton>
 #include <QLabel>
 #include <QCryptographicHash>
@@ -98,9 +99,10 @@ private slots:
         QTemporaryDir root; const auto source=fixture(root);
         const auto before=QCryptographicHash::hash(load(source),QCryptographicHash::Sha256);
         const auto output=root.filePath("output"); QVERIFY(QDir().mkdir(output));
-        GUIRecoveryService service(nullptr); QVERIFY(service.enumerateStorageDevices().empty());
+        GUIRecoveryService service(nullptr);
+        for (const auto& drive : service.enumerateStorageDevices()) QVERIFY(!drive.devicePath.empty());
         const auto opened=service.openImage(source.toStdString());
-        QCOMPARE(service.enumerateStorageDevices().size(),size_t{1});
+        QCOMPARE(service.getDiskInfo(opened.devicePath).totalSectors,uint64_t{300});
         auto op=operation(opened.devicePath,output);
         QVERIFY(service.validateOperation(op).empty());
         uint64_t last=0; bool sawProgress=false, blockedSourceChange=false;
@@ -265,6 +267,7 @@ private slots:
         recoverysuite::gui::core::MainWindow window(&service); window.show();
         window.findChild<QLineEdit*>("imagePath")->setText(source);
         QTest::mouseClick(window.findChild<QPushButton*>("openImage"),Qt::LeftButton);
+        window.findChild<QComboBox*>("scanMode")->setCurrentIndex(1);
         window.findChild<QLineEdit*>("recoveryStart")->setText("1");
         window.findChild<QLineEdit*>("recoveryCount")->setText("299");
         window.findChild<QLineEdit*>("recoveryOutput")->setText(root.path());

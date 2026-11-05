@@ -7,6 +7,7 @@ add_library(RecoverySuite_Application STATIC
     Service/safe_file_exporter.cpp
     Service/recovery_session.cpp
     Service/device_capture.cpp
+    Service/disk_recovery.cpp
 )
 
 target_include_directories(RecoverySuite_Application

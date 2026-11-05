@@ -8,6 +8,18 @@ loop/VHD acquisition, installed/extracted package smoke, parser fuzzing and the
 combined Linux/Windows prototype artifact. Later code needs its own CI result.
 Tests must run on CI or a dedicated evaluation machine, not the user's workstation.
 
+## Primary product acceptance
+
+The target is general disk data recovery (deletion, lost partitions, interrupted writes),
+with physical drives as the primary input. See PRODUCT_SCOPE.md. Earlier completed image
+milestones are backend capabilities, not completion of the requested product.
+
+- [x] Implement direct read-only drive scan, reviewable candidates and selected-file export.
+- [x] Search surviving FAT/NTFS boot volumes without partition-table entries and add signature fallback.
+- [ ] Verify the new workflow on exact-head CI and dedicated physical hardware.
+- [ ] Add exFAT/broader filesystems, richer previews, more damaged-filesystem reconstruction,
+      physical scan persistence and usable privileged-access integration.
+
 ## Completed in the handoff
 
 - [x] Recover Claude's unfinished results interface and restore a buildable Linux checkout.

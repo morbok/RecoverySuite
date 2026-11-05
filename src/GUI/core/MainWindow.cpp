@@ -19,9 +19,10 @@ MainWindow::MainWindow(application::service::GUIRecoveryService* service, QWidge
     : QMainWindow(parent), service_(service) {
     qRegisterMetaType<application::service::models::RecoveryProgress>();
     qRegisterMetaType<application::service::models::RecoveryResult>();
-    setWindowTitle(tr("RecoverySuite — Disk image recovery")); resize(1100, 800); setMinimumSize(800, 600);
+    setWindowTitle(tr("RecoverySuite — Recover lost data")); resize(1100, 800); setMinimumSize(800, 600);
+    setStyleSheet("QPushButton { padding: 7px 14px; } QLineEdit, QComboBox { padding: 5px; } QTreeWidget { alternate-background-color: palette(alternate-base); } QGroupBox { margin-top: 12px; padding-top: 12px; }");
     auto* file = menuBar()->addMenu(tr("File"));
-    file->addAction(tr("Open disk image…"), this, &MainWindow::showSources);
+    file->addAction(tr("Choose source drive…"), this, &MainWindow::showSources);
     file->addAction(tr("Resume session…"),this,[this] {
         if(running_)return;
         const auto path=QFileDialog::getOpenFileName(this,tr("Resume recovery session"),{},tr("Recovery session (*.json);;All files (*)"));if(path.isEmpty())return;
@@ -31,8 +32,8 @@ MainWindow::MainWindow(application::service::GUIRecoveryService* service, QWidge
     file->addAction(tr("Exit"), this, &QWidget::close);
     auto* central = new QWidget(this); auto* layout = new QVBoxLayout(central);
     auto* actions = new QHBoxLayout;
-    chooseImage_ = new QPushButton(tr("Choose image"), central); chooseImage_->setObjectName("chooseImage");
-    settings_ = new QPushButton(tr("Recovery settings"), central); settings_->setObjectName("recoverySettings");
+    chooseImage_ = new QPushButton(tr("Drives"), central); chooseImage_->setObjectName("chooseImage");
+    settings_ = new QPushButton(tr("Scan options"), central); settings_->setObjectName("recoverySettings");
     cancel_ = new QPushButton(tr("Cancel"), central); cancel_->setObjectName("cancelImageRecovery");
     actions->addWidget(chooseImage_); actions->addWidget(settings_); actions->addStretch(); actions->addWidget(cancel_);
     layout->addLayout(actions);
@@ -43,7 +44,7 @@ MainWindow::MainWindow(application::service::GUIRecoveryService* service, QWidge
     results_ = new widgets::RecoveryResultsWidget(pages_);
     pages_->addWidget(source_); pages_->addWidget(configuration_); pages_->addWidget(progress_); pages_->addWidget(results_);
     layout->addWidget(pages_); setCentralWidget(central);
-    status_ = new QLabel(tr("Open a disk image to begin"), this); status_->setTextFormat(Qt::PlainText);
+    status_ = new QLabel(tr("Choose the drive that contained your missing files"), this); status_->setTextFormat(Qt::PlainText);
     statusBar()->addWidget(status_, 1);
     connect(chooseImage_, &QPushButton::clicked, this, &MainWindow::showSources);
     connect(settings_, &QPushButton::clicked, this, [this] {
@@ -52,6 +53,13 @@ MainWindow::MainWindow(application::service::GUIRecoveryService* service, QWidge
     connect(cancel_, &QPushButton::clicked, this, &MainWindow::handleCancelOperation);
     connect(source_, &widgets::SourceDiscoveryWidget::sourceSelected, this, &MainWindow::onSourceSelected);
     connect(configuration_, &widgets::RecoveryConfigurationWidget::configurationReady, this, &MainWindow::onConfigurationReady);
+    connect(results_, &widgets::RecoveryResultsWidget::recoverSelection, this, [this](const QStringList& names,const QString& folder) {
+        if(running_)return;
+        operation_.operationType="disk_recovery";operation_.outputPath=folder.toStdString();operation_.verifyAfterRecovery=true;
+        operation_.sessionPath.clear();operation_.resumeSession=false;operation_.selectedPaths.clear();
+        for(const auto& name:names)operation_.selectedPaths.push_back(name.toStdString());
+        state_.transitionTo(ApplicationState::RECOVERY_CONFIGURATION);handleStartRecovery();
+    });
     state_.transitionTo(ApplicationState::SOURCE_SELECTION); updateControls();
 }
 MainWindow::~MainWindow() {
@@ -73,7 +81,7 @@ void MainWindow::onSourceSelected(const QString& path) {
     configuration_->setSelectedDevice(path);
     state_.transitionTo(ApplicationState::RECOVERY_CONFIGURATION);
     pages_->setCurrentWidget(configuration_); results_->clear();
-    status_->setText(tr("Image opened read-only. Configure the scan and output folder.")); updateControls();
+    status_->setText(tr("Source opened read-only. Start an automatic scan to find lost data.")); updateControls();
 }
 void MainWindow::onConfigurationReady(const application::service::models::RecoveryOperation& operation) {
     if (running_) return;
@@ -87,7 +95,7 @@ void MainWindow::handleStartRecovery() {
         status_->setText(tr("Return to recovery settings before starting another scan")); return;
     }
     running_ = true; updateControls(); results_->clear(); progress_->resetProgress();
-    pages_->setCurrentWidget(progress_); status_->setText(tr("Scanning image…"));
+    pages_->setCurrentWidget(progress_); status_->setText(tr("Scanning source…"));
     thread_ = new QThread(this);
     auto* worker = new RecoveryWorker(service_, operation_); worker->moveToThread(thread_);
     connect(thread_, &QThread::started, worker, &RecoveryWorker::process);
@@ -117,13 +125,13 @@ void MainWindow::handleRecoveryProgress(const application::service::models::Reco
 void MainWindow::handleRecoveryFinished(const application::service::models::RecoveryResult& result) {
     results_->setRecoveryResult(result); state_.transitionTo(ApplicationState::RESULTS);
     pages_->setCurrentWidget(results_);
-    status_->setText(result.cancelled ? tr("Cancelled; review saved items below") : (result.success ? tr("Scan complete") : tr("Scan finished with errors; review results")));
+    status_->setText(result.scanOnly ? tr("Scan finished. Select files and a destination on another drive.") : result.cancelled ? tr("Cancelled; review saved items below") : (result.success ? tr("Scan complete") : tr("Scan finished with errors; review results")));
 }
 void MainWindow::handleWorkflowOperation(const QString& operation) {
     if (operation == "list_sources") showSources();
     else if (operation == "cancel_operation") handleCancelOperation();
     else if (operation == "start_recovery" || operation == "validate_recovery") configuration_->validateConfiguration();
-    else status_->setText(tr("This operation is not available in the disk image workflow"));
+    else status_->setText(tr("Choose a drive, scan for lost data, then select files to recover"));
 }
 void MainWindow::updateOperationProgress(const QString& name, int percent, const QString& text) { progress_->updateProgress(name, percent, text); }
 void MainWindow::handleOperationCompleted(const QString&, bool, const QString& message) { status_->setText(message); }

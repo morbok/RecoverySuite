@@ -1,4 +1,5 @@
 #include "recovery_session.h"
+#include "Disk/DiskEnumerator.h"
 #include "Disk/Access/path_utf8.h"
 #include "GUIRecoveryService.h"
 #include "RecoveryService.h"
@@ -30,8 +31,11 @@ GUIRecoveryService::~GUIRecoveryService() {
 }
 
 std::vector<models::StorageDevice> GUIRecoveryService::enumerateStorageDevices() {
-    if (!imageReader_) return {};
-    return {getStorageDeviceInfo(imageReader_->sourcePath())};
+    std::vector<models::StorageDevice> devices;
+    for (const auto& info : disk::createDiskEnumerator()->enumerateDisks())
+        devices.push_back({info.devicePath, info.modelNumber, info.serialNumber,
+            info.totalSizeBytes, info.bytesPerSector, info.isReadOnly});
+    return devices;
 }
 
 models::StorageDevice GUIRecoveryService::openImage(const std::string& path, uint32_t sectorSize) {
@@ -41,23 +45,33 @@ models::StorageDevice GUIRecoveryService::openImage(const std::string& path, uin
     reader->open(path);
     auto service = std::make_unique<RecoveryService>(reader);
     imageReader_ = std::move(reader);
+    deviceReader_.reset(); sourceReader_ = imageReader_; sourcePath_ = imageReader_->sourcePath();
+    scanValid_ = false; scanVolumes_.clear(); scanCatalog_.clear();
     recoveryService_ = std::move(service);
     return getStorageDeviceInfo(imageReader_->sourcePath());
 }
 
 std::string GUIRecoveryService::validateImageOperation(const models::RecoveryOperation& operation) const {
-    if (!imageReader_ || !imageReader_->isOpen()) return "Open a disk image first";
-    try { imageReader_->validateIdentity(); }
+    if (!sourceReader_ || !sourceReader_->isOpen()) return "Select a drive or open a disk image first";
+    try { if (imageReader_) imageReader_->validateIdentity(); if (deviceReader_) deviceReader_->validateIdentity(); }
     catch (const std::exception& failure) { return failure.what(); }
-    if (operation.operationType != "carving" && operation.operationType != "metadata_recovery" && operation.operationType != "file_recovery" && operation.operationType != "file_tree_recovery" && operation.operationType != "ntfs_mft_snapshot" && operation.operationType != "ntfs_resident_recovery" && operation.operationType != "ntfs_tree_recovery" && operation.operationType != "ntfs_checked_recovery" && operation.operationType != "ntfs_deleted_recovery" && operation.operationType != "fat_deleted_recovery")
+    if (operation.operationType != "disk_scan" && operation.operationType != "disk_recovery" && operation.operationType != "carving" && operation.operationType != "metadata_recovery" && operation.operationType != "file_recovery" && operation.operationType != "file_tree_recovery" && operation.operationType != "ntfs_mft_snapshot" && operation.operationType != "ntfs_resident_recovery" && operation.operationType != "ntfs_tree_recovery" && operation.operationType != "ntfs_checked_recovery" && operation.operationType != "ntfs_deleted_recovery" && operation.operationType != "fat_deleted_recovery")
         return "Choose signature carving, a metadata snapshot or a supported FAT/NTFS file-recovery method";
     std::error_code error;
-    const auto source = std::filesystem::canonical(disk::nativePath(operation.targetDevicePath), error);
-    if (error || disk::utf8Path(source) != imageReader_->sourcePath()) return "The operation source does not match the opened image";
-    if (!operation.numSectors || operation.startSector >= imageReader_->getTotalSectors() ||
-        operation.numSectors > imageReader_->getTotalSectors() - operation.startSector ||
-        operation.numSectors > std::numeric_limits<uint64_t>::max() / imageReader_->getSectorSize())
-        return "The sector range is outside the opened image";
+    if (deviceReader_) {
+        if (operation.targetDevicePath != sourcePath_) return "The operation source does not match the opened drive";
+    } else {
+        const auto source = std::filesystem::canonical(disk::nativePath(operation.targetDevicePath), error);
+        if (error || disk::utf8Path(source) != sourcePath_) return "The operation source does not match the opened image";
+    }
+    if (!operation.numSectors || operation.startSector >= sourceReader_->getTotalSectors() ||
+        operation.numSectors > sourceReader_->getTotalSectors() - operation.startSector ||
+        operation.numSectors > std::numeric_limits<uint64_t>::max() / sourceReader_->getSectorSize())
+        return "The sector range is outside the opened source";
+    if (operation.operationType == "disk_scan") return {};
+    if (deviceReader_ && !operation.sessionPath.empty()) return "Physical-drive sessions are not available yet; leave the session field empty";
+    if (deviceReader_) { try { deviceReader_->validateDestination(operation.outputPath); }
+        catch (const std::exception& failure) { return failure.what(); } }
     if(operation.resumeSession&&operation.sessionPath.empty())return "Choose a saved session to resume";
     if (operation.createLogFile) return "Separate log file output is not available";
     try { SafeFileExporter destination(operation.outputPath); }
@@ -72,6 +86,8 @@ std::string GUIRecoveryService::validateOperation(const models::RecoveryOperatio
 models::RecoveryResult GUIRecoveryService::executeOperation(const models::RecoveryOperation& operation,
     std::function<void(const models::RecoveryProgress&)> progressCallback,
     std::function<bool()> cancellationToken) {
+    if (operation.operationType == "disk_scan" || operation.operationType == "disk_recovery")
+        return executeDiskOperation(operation, progressCallback, cancellationToken);
     models::RecoveryResult result{};
     result.operationType = operation.operationType; result.destination = operation.outputPath;
     result.startTime = std::chrono::system_clock::now();
@@ -87,7 +103,7 @@ models::RecoveryResult GUIRecoveryService::executeOperation(const models::Recove
             SafeFileExporter exporter(operation.outputPath);
             const bool carving = operation.operationType == "carving";
             const bool tree = operation.operationType == "file_tree_recovery";
-            const auto totalBytes = operation.numSectors * imageReader_->getSectorSize();
+            const auto totalBytes = operation.numSectors * sourceReader_->getSectorSize();
             result.processedBytesKnown = true; result.failedBytesKnown = true; result.failedItemsKnown = true;
             const auto report = [&](uint64_t processed) {
                 result.processedBytes = processed;
@@ -102,9 +118,9 @@ models::RecoveryResult GUIRecoveryService::executeOperation(const models::Recove
                 progress.elapsedSeconds = std::chrono::duration_cast<std::chrono::seconds>(progress.timestamp - result.startTime).count();
                 progressCallback(progress);
             };
-            if(!operation.sessionPath.empty())session=std::make_unique<RecoverySession>(operation,*imageReader_,exporter,cancellationToken,[&](uint64_t checked){
+            if(!operation.sessionPath.empty())session=std::make_unique<RecoverySession>(operation,*sourceReader_,exporter,cancellationToken,[&](uint64_t checked){
                 if(!progressCallback)return;
-                models::RecoveryProgress p{};p.operationType=operation.operationType;p.status="running";p.currentStep="Checking source fingerprint for session";p.processedBytes=checked;p.totalBytes=imageReader_->getTotalSectors()*imageReader_->getSectorSize();p.percentage=uint32_t(100.0L*checked/p.totalBytes);p.isCancellable=true;progressCallback(p);
+                models::RecoveryProgress p{};p.operationType=operation.operationType;p.status="running";p.currentStep="Checking source fingerprint for session";p.processedBytes=checked;p.totalBytes=sourceReader_->getTotalSectors()*sourceReader_->getSectorSize();p.percentage=uint32_t(100.0L*checked/p.totalBytes);p.isCancellable=true;progressCallback(p);
             });
             report(0);
             const auto saveStream=[&](const std::string& name,uint64_t size,const SafeFileExporter::ReadAt& read,bool hierarchical,const std::string& confidence=std::string{}) {
@@ -123,7 +139,7 @@ models::RecoveryResult GUIRecoveryService::executeOperation(const models::Recove
             recovery::CarvingSummary summary{};
             if(operation.operationType=="ntfs_checked_recovery"||operation.operationType=="ntfs_deleted_recovery") {
                 recovery::NtfsRecoveryOptions options;options.deleted=operation.operationType=="ntfs_deleted_recovery";
-                const auto files=recovery::recoverNtfsChecked(*imageReader_,operation.startSector,operation.numSectors,options,[&](const auto& file) {
+                const auto files=recovery::recoverNtfsChecked(*sourceReader_,operation.startSector,operation.numSectors,options,[&](const auto& file) {
                     saveStream(file.path,file.size,file.read,true,file.confidence);
                 },report,cancellationToken);
                 summary.processedBytes=files.processedBytes;summary.cancelled=cancelled();summary.skippedCandidates=files.invalidFiles;
@@ -131,10 +147,10 @@ models::RecoveryResult GUIRecoveryService::executeOperation(const models::Recove
                 result.details["NTFS consistency checks"]=options.deleted?"Unused MFT records and free cluster bits checked; retained names/data are recovery candidates":"MFT and cluster allocation bitmaps plus parent directory index membership checked";
                 if(options.deleted)result.details["Deleted NTFS candidates inspected"]=std::to_string(files.deletedCandidates);
             } else if (carving) {
-                summary = recovery::carveSignatures(*imageReader_,operation.startSector,operation.numSectors,
+                summary = recovery::carveSignatures(*sourceReader_,operation.startSector,operation.numSectors,
                     saveItem,report,cancellationToken);
             } else if(operation.operationType=="ntfs_resident_recovery"||operation.operationType=="ntfs_tree_recovery") {
-                const auto files=(operation.operationType=="ntfs_tree_recovery"?recovery::recoverNtfsTreeFiles:recovery::recoverNtfsRootFiles)(*imageReader_,operation.startSector,operation.numSectors,saveItem,report,cancellationToken);
+                const auto files=(operation.operationType=="ntfs_tree_recovery"?recovery::recoverNtfsTreeFiles:recovery::recoverNtfsRootFiles)(*sourceReader_,operation.startSector,operation.numSectors,saveItem,report,cancellationToken);
                 summary.processedBytes=files.processedBytes;summary.cancelled=cancelled();
                 summary.skippedCandidates=files.invalidFiles+files.nonresidentFiles+files.unsupportedFiles;
                 result.details["Nonresident NTFS root files reconstructed"]=std::to_string(files.recoveredNonresidentFiles);
@@ -147,7 +163,7 @@ models::RecoveryResult GUIRecoveryService::executeOperation(const models::Recove
                 result.details["Non-root files skipped"]=std::to_string(files.nonRootFiles);
                 result.details["Other root names not exported"]=std::to_string(files.otherRootNames);
             } else if(operation.operationType=="ntfs_mft_snapshot") {
-                const auto mft=recovery::readNtfsMft(*imageReader_,operation.startSector,operation.numSectors,report,cancellationToken);
+                const auto mft=recovery::readNtfsMft(*sourceReader_,operation.startSector,operation.numSectors,report,cancellationToken);
                 result.details["MFT record bytes"]=std::to_string(mft.recordSize);
                 result.details["MFT in-use record flags"]=std::to_string(mft.inUseRecords);
                 result.details["MFT unused record flags"]=std::to_string(mft.unusedRecords);
@@ -156,7 +172,7 @@ models::RecoveryResult GUIRecoveryService::executeOperation(const models::Recove
                 if(!cancelled())saveItem("NTFS_MFTInitialized",mft.initializedRecords);
                 summary.processedBytes=mft.processedBytes;summary.cancelled=cancelled();
             } else if (operation.operationType == "file_recovery" || tree || operation.operationType=="fat_deleted_recovery") {
-                const auto files=recovery::recoverFatRootFiles(*imageReader_,operation.startSector,operation.numSectors,saveItem,report,cancellationToken,tree||operation.operationType=="fat_deleted_recovery",operation.operationType=="fat_deleted_recovery");
+                const auto files=recovery::recoverFatRootFiles(*sourceReader_,operation.startSector,operation.numSectors,saveItem,report,cancellationToken,tree||operation.operationType=="fat_deleted_recovery",operation.operationType=="fat_deleted_recovery");
                 summary.processedBytes=files.processedBytes;summary.cancelled=files.cancelled;summary.skippedCandidates=files.invalidFiles+files.invalidDirectories;
                 result.details[tree?"Invalid or unsupported files":"Invalid or unsupported root files"]=std::to_string(files.invalidFiles);
                 result.details["Long names rejected (8.3 fallback)"]=std::to_string(files.longNameFallbacks);
@@ -170,7 +186,7 @@ models::RecoveryResult GUIRecoveryService::executeOperation(const models::Recove
                 recovery::RecoveryCapabilityRegistry registry;
                 registry.registerCapability(recovery::RecoveryCapability::METADATA_RECOVERY);
                 recovery::RecoverySafetyPolicy policy;
-                recovery::MetadataRecovery metadata(registry,policy,imageReader_.get(),cancellationToken);
+                recovery::MetadataRecovery metadata(registry,policy,sourceReader_.get(),cancellationToken);
                 std::map<std::string,std::vector<uint8_t>> regions;
                 const bool read = metadata.recoverMetadata(true,true,operation.startSector,operation.numSectors,
                     true,true,true,true,regions);
@@ -524,9 +540,11 @@ uint64_t GUIRecoveryService::extractDiskNumber(const std::string& /*devicePath*/
 }
 
 std::shared_ptr<recoverysuite::disk::IDiskReader> GUIRecoveryService::getDiskReaderForDevice(const std::string& devicePath) const {
+    if (deviceReader_ && devicePath != sourcePath_)
+        throw std::invalid_argument("Source does not match the opened physical drive");
     if (imageReader_) {
         std::error_code error;
-        if (std::filesystem::canonical(devicePath, error).string() != imageReader_->sourcePath() || error)
+        if (disk::utf8Path(std::filesystem::canonical(disk::nativePath(devicePath), error)) != sourcePath_ || error)
             throw std::invalid_argument("Source does not match the opened image");
     }
     if (!recoveryService_) return nullptr;

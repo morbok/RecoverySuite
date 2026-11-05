@@ -8,13 +8,17 @@
 #include <QComboBox>
 #include <QFileDialog>
 #include <charconv>
+#include <QGroupBox>
 namespace recoverysuite::gui::widgets {
 RecoveryConfigurationWidget::RecoveryConfigurationWidget(QWidget* parent) : QWidget(parent) {
     auto* layout = new QVBoxLayout(this);
-    sourceLabel_ = new QLabel(tr("No image selected"), this); sourceLabel_->setWordWrap(true);
+    sourceLabel_ = new QLabel(tr("No drive selected"), this); sourceLabel_->setWordWrap(true);
     sourceLabel_->setTextFormat(Qt::PlainText); layout->addWidget(sourceLabel_);
-    auto* help = new QLabel(tr("Signature carving: JPEG, PDF and ZIP candidates up to 16 MiB each. Candidates may still contain damaged data. Original filenames and fragmented files are not reconstructed."), this);
+    auto* help = new QLabel(tr("Start with an automatic scan. It searches the whole source for surviving FAT/NTFS volumes and deleted-file records, then JPEG/PDF/ZIP signatures. Review the found files before choosing what to recover. Damaged writes, overwritten bytes and SSD TRIM can make some data unrecoverable. Other filesystems and encrypted data are not supported yet."), this);
     help->setWordWrap(true); layout->addWidget(help);
+    mode_ = new QComboBox(this); mode_->setObjectName("scanMode");
+    mode_->addItem(tr("Automatic scan — find lost data")); mode_->addItem(tr("Advanced — choose a specific method")); layout->addWidget(mode_);
+    advanced_ = new QGroupBox(tr("Advanced recovery settings"), this); auto* advancedLayout = new QVBoxLayout(advanced_);
     auto* form = new QFormLayout;
     method_ = new QComboBox(this); method_->setObjectName("recoveryMethod");
     method_->addItem(tr("Signature carving"),"carving");
@@ -28,29 +32,32 @@ RecoveryConfigurationWidget::RecoveryConfigurationWidget(QWidget* parent) : QWid
     method_->addItem(tr("NTFS deleted file candidates"),"ntfs_deleted_recovery");
     method_->addItem(tr("FAT deleted file candidates (contiguous assumption)"),"fat_deleted_recovery");
     form->addRow(tr("Recovery method"),method_);
-    auto* metadataHelp = new QLabel(tr("FAT snapshot saves the boot sector and FAT copies, plus the fixed root directory on FAT12/16. Root-file mode follows allocated FAT12/16/32 chains using verified long names or 8.3 aliases; deleted entries and subdirectories are skipped. Choose files with subfolders for recursive recovery (up to 32 levels and 1023 subdirectories). Empty folders are not exported. Each region/file is limited to 16 MiB. FAT snapshot mode does not repair metadata or reconstruct FAT32 root chains. NTFS MFT snapshot reads up to 16 MiB of initialized records, without file reconstruction, mirror fallback or attribute-list extensions. NTFS root mode copies resident/nonresident files up to 16 MiB. NTFS subfolder mode resolves sequence-checked parent paths, up to 32 levels. Use deleted candidate modes for retained deleted metadata. Candidate bytes may be overwritten; FAT assumes contiguous free clusters and cannot restore lost filename characters."),this);
-    metadataHelp->setWordWrap(true); layout->addWidget(metadataHelp);
     start_ = new QLineEdit("0", this); start_->setObjectName("recoveryStart");
     count_ = new QLineEdit(this); count_->setObjectName("recoveryCount");
     output_ = new QLineEdit(this); output_->setObjectName("recoveryOutput");
     form->addRow(tr("Start sector"), start_); form->addRow(tr("Number of sectors"), count_);
     form->addRow(tr("Existing output folder"), output_);
-    session_=new QLineEdit(this);session_->setObjectName("recoverySession");session_->setPlaceholderText(tr("Optional new session file; use File → Resume session for an existing one"));form->addRow(tr("Session file"),session_); layout->addLayout(form);
-    auto* browse = new QPushButton(tr("Choose output folder…"), this); layout->addWidget(browse);
+    session_=new QLineEdit(this);session_->setObjectName("recoverySession");session_->setPlaceholderText(tr("Optional new session file; use File → Resume session for an existing one"));form->addRow(tr("Session file"),session_); advancedLayout->addLayout(form);
+    auto* browse = new QPushButton(tr("Choose output folder…"), this); advancedLayout->addWidget(browse);
     connect(browse, &QPushButton::clicked, this, [this] {
         const auto directory = QFileDialog::getExistingDirectory(this, tr("Output folder"));
         if (!directory.isEmpty()) output_->setText(directory);
     });
     verify_ = new QCheckBox(tr("Read saved files back and compare their bytes"), this);
-    verify_->setObjectName("verifyOutput"); verify_->setChecked(true); layout->addWidget(verify_);
-    auto* start = new QPushButton(tr("Validate and start recovery"), this); start->setObjectName("startImageRecovery");
+    verify_->setObjectName("verifyOutput"); verify_->setChecked(true); advancedLayout->addWidget(verify_);
+    layout->addWidget(advanced_); advanced_->hide();
+    auto* start = new QPushButton(tr("Search for lost data"), this); start->setObjectName("startImageRecovery");
     layout->addWidget(start); connect(start, &QPushButton::clicked, this, &RecoveryConfigurationWidget::validateConfiguration);
+    connect(mode_, &QComboBox::currentIndexChanged, this, [this,start](int index) {
+        advanced_->setVisible(index == 1); start->setText(index == 0 ? tr("Search for lost data") : tr("Validate and recover"));
+    });
+    connect(method_, &QComboBox::currentIndexChanged, this, [this] { mode_->setCurrentIndex(1); });
     status_ = new QLabel(this); status_->setObjectName("configurationStatus"); status_->setTextFormat(Qt::PlainText);
     status_->setWordWrap(true); layout->addWidget(status_); layout->addStretch();
 }
 void RecoveryConfigurationWidget::setRecoveryService(application::service::GUIRecoveryService* service) { service_ = service; }
 void RecoveryConfigurationWidget::setSelectedDevice(const QString& path) {
-    resumeSession_=false;session_->clear();
+    resumeSession_=false;session_->clear();mode_->setCurrentIndex(0);
     source_ = path; sourceLabel_->setText(path); start_->setText("0"); status_->clear();
     if (service_) count_->setText(QString::number(service_->getDiskInfo(path.toStdString()).totalSectors));
 }
@@ -66,10 +73,11 @@ application::service::models::RecoveryOperation RecoveryConfigurationWidget::get
     operation.startSector = parse(start_->text()); operation.numSectors = parse(count_->text());
     operation.sessionPath=session_->text().toStdString();operation.resumeSession=resumeSession_;
     operation.outputPath = output_->text().toStdString(); operation.verifyAfterRecovery = verify_->isChecked();
+    if (mode_->currentIndex() == 0) { operation.operationType="disk_scan"; operation.outputPath.clear(); operation.sessionPath.clear(); operation.resumeSession=false; operation.startSector=0; if(service_) operation.numSectors=service_->getDiskInfo(operation.targetDevicePath).totalSectors; }
     return operation;
 }
 void RecoveryConfigurationWidget::setOperation(const application::service::models::RecoveryOperation& operation) {
-    source_=QString::fromStdString(operation.targetDevicePath);sourceLabel_->setText(source_);method_->setCurrentIndex(method_->findData(QString::fromStdString(operation.operationType)));start_->setText(QString::number(operation.startSector));count_->setText(QString::number(operation.numSectors));output_->setText(QString::fromStdString(operation.outputPath));verify_->setChecked(operation.verifyAfterRecovery);session_->setText(QString::fromStdString(operation.sessionPath));resumeSession_=operation.resumeSession;status_->setText(tr("Review the saved configuration. Resume rechecks the source and completed outputs, then replays discovery."));
+    mode_->setCurrentIndex(1);source_=QString::fromStdString(operation.targetDevicePath);sourceLabel_->setText(source_);method_->setCurrentIndex(method_->findData(QString::fromStdString(operation.operationType)));start_->setText(QString::number(operation.startSector));count_->setText(QString::number(operation.numSectors));output_->setText(QString::fromStdString(operation.outputPath));verify_->setChecked(operation.verifyAfterRecovery);session_->setText(QString::fromStdString(operation.sessionPath));resumeSession_=operation.resumeSession;status_->setText(tr("Review the saved configuration. Resume rechecks the source and completed outputs, then replays discovery."));
 }
 void RecoveryConfigurationWidget::validateConfiguration() {
     if (!service_) { status_->setText(tr("Recovery service is unavailable")); return; }
@@ -77,7 +85,7 @@ void RecoveryConfigurationWidget::validateConfiguration() {
         const auto operation = getRecoveryOperation();
         const auto error = service_->validateOperation(operation);
         if (!error.empty()) { status_->setText(QString::fromStdString(error)); return; }
-        status_->setText(tr("Source, range and output folder validated. Existing files will not be replaced."));
+        status_->setText(operation.operationType=="disk_scan" ? tr("Scanning finds candidates for review; it does not save any files.") : tr("Source and destination validated. Existing files will not be replaced."));
         emit configurationReady(operation);
     } catch (const std::exception& failure) { status_->setText(QString::fromUtf8(failure.what())); }
 }
