@@ -11,10 +11,11 @@ all real-world data-loss cases.
 
 1. Open RecoverySuite and select the affected drive from the connected-drive list.
 2. Choose **Use selected drive**, then **Search for lost data**. The automatic scan
-   searches for surviving FAT12/16/32 and NTFS volumes, even without partition entries,
+   searches for surviving FAT12/16/32, exFAT and NTFS volumes, even without partition entries,
    reconstructs supported existing/deleted-file candidates, and searches JPEG/PDF/ZIP signatures.
 3. Review filenames, paths, sizes and recovery confidence. Filter the list and check the
-   files to recover. Scanning does not save recovered files or require an output folder.
+   files to recover. Use **Inspect highlighted file…** to read a bounded text/hex preview
+   before export. Scanning and inspection do not save files or require an output folder.
 4. Choose an existing destination folder on a **different physical drive**, then click
    **Recover selected files**. Only selected candidates are copied and read back for verification.
    Existing destination files are preserved. The application never repairs partition tables,
@@ -25,11 +26,14 @@ Appropriate device-read permissions are required. RecoverySuite does not automat
 mount/offline state or grant privileges. An active system drive is not a supported live source.
 The source list comes from actual OS metadata; a listed disk is not a promise that it can be opened.
 
-Deleted-partition recovery currently requires recognizable surviving FAT/NTFS boot metadata.
+Deleted-partition recovery currently requires recognizable surviving FAT/exFAT/NTFS boot metadata.
 Interrupted writes may leave inconsistent filesystem records; metadata recovery and signature
 fallback can find some candidates but cannot recreate unwritten, overwritten or TRIM-discarded bytes.
-Supported scope is FAT12/16/32, bounded NTFS recovery and JPEG/PDF/ZIP carving. exFAT, ext4,
-encrypted/compressed streams, comprehensive file previews, recovery of arbitrarily fragmented
+Supported scope is FAT12/16/32, single-FAT exFAT 1.0, bounded NTFS recovery and JPEG/PDF/ZIP
+carving. Inspection shows up to 64 KiB as plain text or hexadecimal, without executing content.
+exFAT supports bounded contiguous/fragmented files, subfolders and retained deleted entries
+whose clusters remain free; invalid boot/entry checksums and cross-linked allocations are rejected.
+TexFAT, ext4, encrypted/compressed streams, rich media/document previews, arbitrarily fragmented
 deleted files, physical-scan persistence and failing-media rescue retries remain open work.
 
 **Optional image source:** choose **Open an existing disk image instead…** on the source page.

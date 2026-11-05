@@ -490,3 +490,7 @@ Added asynchronous, cancellable candidate inspection in the review screen. The
 service replays current-volume discovery and reads at most 64 KiB; text/hex output
 is inert and writes nothing. CI cases cover content, invalid selection, cancellation
 and the GUI preview-before-recovery flow. Exact-head validation remains pending.
+
+The follow-up revision adds source-identity checks for image previews, a 70,000-byte
+file test proving preview truncation at 65,536 bytes, and a changed-source rejection
+case. Standard-formatted native exFAT QA and cross-link rejection are now in CI.

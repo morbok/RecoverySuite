@@ -12,6 +12,8 @@ GUIRecoveryService::previewCandidate(const std::string &name,
         "Wait for the current operation before previewing a file");
   if (!scanValid_ || !sourceReader_ || !scanCatalog_.contains(name))
     throw std::runtime_error("Choose a file from the current scan first");
+  if (imageReader_)
+    imageReader_->validateIdentity();
   if (deviceReader_)
     deviceReader_->validateIdentity();
   std::vector<uint8_t> bytes;

@@ -231,6 +231,48 @@ private slots:
     op.selectedPaths = {"FAT12_32/Existing/HELLO.TXT"};
     QVERIFY(!service.executeOperation(op).success);
   }
+  void previewIsBoundedAndRejectsChangedSource() {
+    QTemporaryDir root;
+    auto volume = disk().mid(32 * 512, 64 * 512);
+    volume += QByteArray(192 * 512, char{0});
+    put(volume, 19, 256);
+    volume[3 * 512 + 32] = 0;
+    for (int cluster = 2; cluster <= 138; ++cluster) {
+      const uint16_t next = cluster == 138 ? 0xfff : uint16_t(cluster + 1);
+      for (int base : {512, 1024}) {
+        const int at = base + cluster + cluster / 2;
+        uint16_t word =
+            uint8_t(volume[at]) | (uint16_t(uint8_t(volume[at + 1])) << 8);
+        word = cluster & 1 ? uint16_t((word & 0xf) | (next << 4))
+                           : uint16_t((word & 0xf000) | next);
+        put(volume, at, word);
+      }
+    }
+    QByteArray payload(70000, 'x');
+    payload[0] = 'D';
+    payload[65535] = '!';
+    put(volume, 3 * 512 + 28, 70000, 4);
+    volume.replace(4 * 512, payload.size(), payload);
+    const auto original = QByteArray(32 * 512, char{0}) + volume;
+    const auto path = root.filePath("large.img");
+    save(path, original);
+    GUIRecoveryService service(nullptr);
+    const auto result =
+        service.executeOperation(scan(service.openImage(path.toStdString())));
+    QVERIFY2(result.success, result.errorMessage.c_str());
+    const auto preview =
+        service.previewCandidate("FAT12_32/Existing/HELLO.TXT");
+    QCOMPARE(preview.size(), size_t(65536));
+    QCOMPARE(QByteArray(reinterpret_cast<const char *>(preview.data()),
+                        qsizetype(preview.size())),
+             payload.left(65536));
+    QCOMPARE(read(path), original);
+    QCOMPARE(QDir(root.path()).entryList(QDir::Files).size(), 1);
+    save(path, original + QByteArray(512, 'z'));
+    QVERIFY_EXCEPTION_THROWN(
+        service.previewCandidate("FAT12_32/Existing/HELLO.TXT"),
+        std::runtime_error);
+  }
   void exfatLostVolumeAndSelectedRecovery() {
     QTemporaryDir root;
     const auto path = root.filePath("exfat.img");
