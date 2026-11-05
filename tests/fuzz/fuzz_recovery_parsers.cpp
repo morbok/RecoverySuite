@@ -104,6 +104,10 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size) {
       std::shared_ptr<disk::IDiskReader>(&source, [](disk::IDiskReader *) {});
   parse([&] { partition::PartitionManager(borrowed).validatePartitions(); });
   parse([&] { partition::GPTParser(borrowed).parseGPT(); });
+  parse([&] { recovery::recoverExfatFiles(source, 0, count,
+      [](const recovery::exfat::File &file) {
+        if (file.size) file.read(0, static_cast<size_t>(std::min<uint64_t>(file.size, 65536)));
+      }); });
   const auto discard = [](const std::string &, const std::vector<uint8_t> &) {};
   parse([&] { recovery::carveSignatures(source, 0, count, discard); });
   parse([&] {

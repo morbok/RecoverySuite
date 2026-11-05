@@ -1,6 +1,7 @@
 #pragma once
 #include "Disk/IDiskReader.hpp"
 #include "Filesystem/FAT/fat_boot_geometry.h"
+#include "exfat_files.h"
 #include "fat_root_files.h"
 #include "ntfs_mft.h"
 #include "signature_carver.h"
@@ -24,8 +25,8 @@ using DiskScanItem = std::function<void(
     const std::string &)>;
 
 // Search actual boot sectors independently of partition-table entries. No
-// source sectors are modified, and only complete, bounded FAT/NTFS ranges are
-// accepted.
+// source sectors are modified, and only complete, bounded FAT/exFAT/NTFS ranges
+// are accepted.
 inline std::vector<FoundVolume>
 findDiskVolumes(disk::IDiskReader &source, const DiskScanProgress &progress,
                 const std::function<bool()> &cancelled) {
@@ -63,7 +64,14 @@ findDiskVolumes(disk::IDiskReader &source, const DiskScanProgress &progress,
           value |= uint64_t(p[offset + j]) << (8 * j);
         return value;
       };
-      if (!std::memcmp(p + 3, "NTFS    ", 8)) {
+      if (!std::memcmp(p + 3, "EXFAT   ", 8)) {
+        try {
+          length = exfat::geometry(p, sector, total - start).sectors;
+          type = "exFAT";
+        } catch (const std::runtime_error &) {
+          continue;
+        }
+      } else if (!std::memcmp(p + 3, "NTFS    ", 8)) {
         length = le(40, 8);
         const auto clusters = p[13];
         if (le(11, 2) != sector || !clusters || clusters > 128 ||
@@ -136,6 +144,27 @@ scanDiskFiles(disk::IDiskReader &source,
             confidence);
       };
     };
+    if (volume.filesystem == "exFAT") {
+      try {
+        const auto summary = recoverExfatFiles(
+            source, volume.start, volume.count,
+            [&](const exfat::File &file) {
+              item(prefix + file.path, file.size, file.read, file.confidence);
+            },
+            report, cancelled);
+        if (summary.invalid)
+          issues.push_back(prefix +
+                           "Some exFAT entries have invalid metadata, "
+                           "allocation conflicts or unsupported limits");
+      } catch (const DiskCandidateLimit &) {
+        throw;
+      } catch (const std::exception &error) {
+        if (cancelled && cancelled())
+          return issues;
+        issues.push_back(prefix + error.what());
+      }
+      continue;
+    }
     for (bool deleted : {false, true}) {
       if (cancelled && cancelled())
         return issues;

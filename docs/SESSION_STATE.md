@@ -476,3 +476,12 @@ CI loop/VHD jobs now recover a chosen file directly from a disposable device. Ex
 are pending. No tests/builds/apps were run on the user's workstation for this transformation.
 Physical hardware, exFAT, richer previews, broader corruption recovery, native scan persistence,
 permissions UX and failing-media retries remain open; do not claim Disk Drill feature parity.
+
+## 2026-11-06: exFAT recovery milestone
+
+Added bounded read-only single-FAT exFAT 1.0 reconstruction to automatic disk scan
+and selected export: boot and entry-set checksums, contiguous/fragmented chains,
+allocation bitmap checks, retained deleted candidates, UTF-16 paths and zeroed
+uninitialized tails. Added CI-only synthetic erased-partition recovery and corrupt
+metadata cases; parser is included in the sanitizer fuzz target. Validation pending
+for this revision. No local builds, tests or device scans were performed.

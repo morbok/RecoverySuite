@@ -14,7 +14,7 @@ RecoveryConfigurationWidget::RecoveryConfigurationWidget(QWidget* parent) : QWid
     auto* layout = new QVBoxLayout(this);
     sourceLabel_ = new QLabel(tr("No drive selected"), this); sourceLabel_->setWordWrap(true);
     sourceLabel_->setTextFormat(Qt::PlainText); layout->addWidget(sourceLabel_);
-    auto* help = new QLabel(tr("Start with an automatic scan. It searches the whole source for surviving FAT/NTFS volumes and deleted-file records, then JPEG/PDF/ZIP signatures. Review the found files before choosing what to recover. Damaged writes, overwritten bytes and SSD TRIM can make some data unrecoverable. Other filesystems and encrypted data are not supported yet."), this);
+    auto* help = new QLabel(tr("Start with an automatic scan. It searches the whole source for surviving FAT/exFAT/NTFS volumes and deleted-file records, then JPEG/PDF/ZIP signatures. Review the found files before choosing what to recover. Damaged writes, overwritten bytes and SSD TRIM can make some data unrecoverable. Other filesystems and encrypted data are not supported yet."), this);
     help->setWordWrap(true); layout->addWidget(help);
     mode_ = new QComboBox(this); mode_->setObjectName("scanMode");
     mode_->addItem(tr("Automatic scan — find lost data")); mode_->addItem(tr("Advanced — choose a specific method")); layout->addWidget(mode_);
