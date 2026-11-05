@@ -33,6 +33,7 @@ jobs:
             build/test-results.xml
             build/Testing/Temporary/LastTest.log
             build/Testing/Temporary/LastTestsFailed.log
+            build/screenshots/*.png
           if-no-files-found: ignore
       - name: Installed package smoke and Linux packages
         if: matrix.build_type == 'Release'
@@ -92,6 +93,7 @@ jobs:
           path: |
             build/test-results.xml
             build/tests/*.qt.txt
+            build/screenshots/*.png
             build/Testing/Temporary/LastTest.log
             build/Testing/Temporary/LastTestsFailed.log
           if-no-files-found: ignore

@@ -8,6 +8,10 @@ models::StorageDevice GUIRecoveryService::openDevice(const std::string &path) {
   if (!lock.owns_lock())
     throw std::runtime_error(
         "Wait for the current scan before changing drives");
+  if (deviceReader_ && path == sourcePath_) {
+    deviceReader_->validateIdentity();
+    return getStorageDeviceInfo(sourcePath_);
+  }
   auto reader = std::make_shared<disk::ReadOnlyDevice>();
   reader->open(path);
   const auto info = reader->getDiskInfo();

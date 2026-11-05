@@ -68,6 +68,13 @@ class TestDiskRecovery : public QObject {
     op.numSectors = source.totalBytes / source.bytesPerSector;
     return op;
   }
+  static void snapshot(QWidget &widget, const QString &name) {
+    const auto workspace = qEnvironmentVariable("GITHUB_WORKSPACE");
+    if (qEnvironmentVariable("CI") != "true" || workspace.isEmpty()) return;
+    const auto directory = workspace + "/build/screenshots";
+    if (!QDir().mkpath(directory) || !widget.grab().save(directory + "/" + name + ".png"))
+      throw std::runtime_error("Cannot save CI workflow screenshot");
+  }
 private slots:
   void lostPartitionScanAndSelectiveRecovery() {
     QTemporaryDir root;
@@ -149,6 +156,8 @@ private slots:
     GUIRecoveryService service(nullptr);
     gui::core::MainWindow window(&service);
     window.show();
+    QTest::qWait(50);
+    snapshot(window, "01-connected-drives");
     window.findChild<gui::widgets::SourceDiscoveryWidget *>()->openImagePath(
         path);
     window.findChild<QPushButton *>("startImageRecovery")->click();
@@ -157,6 +166,7 @@ private slots:
     QTRY_VERIFY_WITH_TIMEOUT(rows->topLevelItemCount() >= 3, 10000);
     QTRY_VERIFY(
         window.findChild<QPushButton *>("recoverySettings")->isEnabled());
+    snapshot(window, "02-review-candidates");
     QVERIFY(QDir(root.filePath("out"))
                 .entryList(QDir::AllEntries | QDir::NoDotAndDotDot)
                 .isEmpty());
@@ -171,6 +181,7 @@ private slots:
         QString("Completed"), 10000);
     QCOMPARE(read(root.filePath("out/FAT12_32/Existing/HELLO.TXT")),
              QByteArray("hello"));
+    snapshot(window, "03-recovered-selection");
     QTRY_VERIFY(
         window.findChild<QPushButton *>("recoverySettings")->isEnabled());
     window.close();
