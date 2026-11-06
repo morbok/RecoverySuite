@@ -5,6 +5,8 @@ if [[ "${CI:-}" != true || "${GITHUB_ACTIONS:-}" != true ]]; then
     echo 'This fixture is restricted to disposable GitHub Actions runners' >&2; exit 1
 fi
 cli=$(realpath "$1")
+block_size=${2:-1024}
+[[ "$block_size" == 1024 || "$block_size" == 4096 ]] || exit 2
 fixture=$(mktemp -d)
 loop_device=""
 mounted=0
@@ -15,7 +17,7 @@ cleanup() {
 }
 trap cleanup EXIT
 truncate -s 64M "$fixture/source.img"
-mkfs.ext4 -q -F "$fixture/source.img"
+mkfs.ext4 -q -F -b "$block_size" "$fixture/source.img"
 mkdir "$fixture/mount" "$fixture/recovered"
 loop_device=$(sudo losetup --find --show "$fixture/source.img")
 sudo mount "$loop_device" "$fixture/mount"
@@ -46,10 +48,12 @@ loop_device=""
 # Force a real checksummed multi-level htree, rather than assuming mkdir indexed it.
 if sudo e2fsck -f -D -y "$fixture/source.img"; then :; else test "$?" -eq 1; fi
 sudo debugfs -R 'htree_dump /Indexed' "$fixture/source.img" > "$fixture/htree.txt"
-python3 - "$fixture/htree.txt" <<'PYCHECK'
+python3 - "$fixture/htree.txt" "$block_size" <<'PYCHECK'
 from pathlib import Path
 import sys
-assert 'Indirect levels: 1' in Path(sys.argv[1]).read_text(), 'Expected a real multi-level htree fixture'
+text=Path(sys.argv[1]).read_text()
+expected=1 if sys.argv[2]=='1024' else 0
+assert f'Indirect levels: {expected}' in text, 'Unexpected real htree fixture: '+text[:800]
 PYCHECK
 sha256sum "$fixture/source.img" > "$fixture/before.sha256"
 loop_device=$(sudo losetup --find --show --read-only "$fixture/source.img")
