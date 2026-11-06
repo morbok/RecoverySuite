@@ -316,13 +316,15 @@ scanDiskFiles(disk::IDiskReader &source,
           }
         } else {
           const auto summary = recoverFatRootFiles(
-              source, volume.start, volume.count,
-              buffered(deleted ? "Deleted/" : "Existing/",
-                       deleted ? "Low confidence: contiguous free-cluster "
-                                 "assumption; bytes may be overwritten"
-                               : "Reconstructed from allocated FAT chains; "
-                                 "contents unproven"),
-              report, cancelled, true, deleted);
+              source, volume.start, volume.count, {}, report, cancelled, true,
+              deleted, [&](const FatFileSource &file) {
+                item(prefix + (deleted ? "Deleted/" : "Existing/") + file.path,
+                     file.size, file.read,
+                     deleted ? "Low confidence: contiguous free-cluster "
+                               "assumption; bytes may be overwritten"
+                             : "Reconstructed from checked allocated FAT "
+                               "chains; contents unproven");
+              });
           if (summary.invalidFiles || summary.invalidDirectories)
             issues.push_back(
                 prefix +

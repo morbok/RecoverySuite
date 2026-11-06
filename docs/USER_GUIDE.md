@@ -39,7 +39,7 @@ CLI example: `RecoverySuite_CLI device rescue /dev/sdX --output /other-disk/resc
 
 Filesystem recovery works with general file contents, regardless of extension. It supports bounded FAT12/16/32 and NTFS reconstruction, single-FAT exFAT 1.0, and retained allocated ext4 files. Lost partitions require surviving recognizable filesystem metadata. Whole-source signature search supports JPEG/PDF/ZIP candidates only; a signature match is not a validity check.
 
-Current bounds include 10,000 candidates, 128 volumes, up to 2 GiB for supported streamed files, and smaller per-parser metadata/buffer limits. FAT buffered recovery and signature candidates are limited to 16 MiB. See scan details for skipped or unsupported records.
+Current bounds include 10,000 candidates, 128 volumes, up to 2 GiB for supported streamed files, and smaller per-parser metadata/buffer limits. Advanced buffered FAT modes and signature candidates are limited to 16 MiB; automatic FAT recovery streams up to 2 GiB with bounded cluster analysis. See scan details for skipped or unsupported records.
 
 Encrypted/compressed streams, arbitrary fragmented deleted chains, exFAT TexFAT, ext4 deleted records/journal replay and other filesystem families are unsupported. The app never writes source sectors, repairs partitions, formats disks, or restores discarded SSD TRIM data. Unwritten/overwritten bytes cannot be recreated.
 

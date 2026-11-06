@@ -1,10 +1,10 @@
 #include "Filesystem/FAT/FATFilesystem.h"
 #include "Filesystem/FAT/FATMetadata.h"
 #include "Filesystem/FAT/FATVolume.h"
+#include "Recovery/disk_scan.h"
 #include "Recovery/fat_root_files.h"
 #include "Recovery/ntfs_mft.h"
 #include "Recovery/signature_carver.h"
-#include "Recovery/disk_scan.h"
 #include "RecoverySuite/Partition/GPTParser.hpp"
 #include "RecoverySuite/Partition/PartitionManager.hpp"
 #include <algorithm>
@@ -104,12 +104,24 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size) {
       std::shared_ptr<disk::IDiskReader>(&source, [](disk::IDiskReader *) {});
   parse([&] { partition::PartitionManager(borrowed).validatePartitions(); });
   parse([&] { partition::GPTParser(borrowed).parseGPT(); });
-  parse([&] { recovery::recoverExfatFiles(source, 0, count,
-      [](const recovery::exfat::File &file) {
-        if (file.size) file.read(0, static_cast<size_t>(std::min<uint64_t>(file.size, 65536)));
-      }); });
-  parse([&] { recovery::ext4::Reader(source,0,count,{}).scan(
-      [](const recovery::ext4::File& file){if(file.size)file.read(0,static_cast<size_t>(std::min<uint64_t>(file.size,65536)));},{}); });
+  parse([&] {
+    recovery::recoverExfatFiles(
+        source, 0, count, [](const recovery::exfat::File &file) {
+          if (file.size)
+            file.read(
+                0, static_cast<size_t>(std::min<uint64_t>(file.size, 65536)));
+        });
+  });
+  parse([&] {
+    recovery::ext4::Reader(source, 0, count, {})
+        .scan(
+            [](const recovery::ext4::File &file) {
+              if (file.size)
+                file.read(0, static_cast<size_t>(
+                                 std::min<uint64_t>(file.size, 65536)));
+            },
+            {});
+  });
   const auto discard = [](const std::string &, const std::vector<uint8_t> &) {};
   parse([&] { recovery::carveSignatures(source, 0, count, discard); });
   parse([&] {
@@ -120,6 +132,19 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size) {
     recovery::recoverFatRootFiles(source, 0, count, discard, {}, {}, true,
                                   true);
   });
+  for (bool deleted : {false, true})
+    parse([&] {
+      recovery::recoverFatRootFiles(
+          source, 0, count, {}, {}, {}, true, deleted,
+          [](const recovery::FatFileSource &file) {
+            if (file.size) {
+              const auto n =
+                  static_cast<size_t>(std::min<uint64_t>(file.size, 65536));
+              file.read(0, n);
+              file.read(file.size - n, n);
+            }
+          });
+    });
   parse([&] { recovery::readNtfsMft(source, 0, count, {}, {}, 262144); });
   parse([&] { recovery::recoverNtfsRootFiles(source, 0, count, discard); });
   parse([&] { recovery::recoverNtfsTreeFiles(source, 0, count, discard); });
