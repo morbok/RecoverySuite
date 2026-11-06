@@ -491,12 +491,14 @@ private slots:
     service.saveScan(root.filePath("ext4.rscan").toStdString());
     const auto loaded =
         service.loadScan(root.filePath("ext4.rscan").toStdString());
+    QVERIFY(loaded.details.contains("Scan issue 1"));
     QCOMPARE(loaded.details.at("Scan issue 1"),
              result.details.at("Scan issue 1"));
     auto continuedOp = op;
     continuedOp.resumeScan = true;
     const auto continued = service.executeOperation(continuedOp);
     QVERIFY(continued.success);
+    QVERIFY(continued.details.contains("Scan issue 1"));
     QCOMPARE(continued.details.at("Scan issue 1"),
              result.details.at("Scan issue 1"));
     QVERIFY(QDir().mkdir(root.filePath("out")));

@@ -133,6 +133,13 @@ void GUIRecoveryService::saveScan(const std::string &path,
         QJsonObject{{"name", QString::fromStdString(item.name)},
                     {"size", QString::number(item.sizeBytes)},
                     {"confidence", QString::fromStdString(item.confidence)}});
+  QJsonArray issues;
+  for (const auto &[key, value] : savedScan_.details)
+    if (key.starts_with("Scan issue "))
+      issues.append(QString::fromStdString(value).left(4095));
+  if (issues.size() > 1000)
+    throw std::runtime_error("Saved scan issue limit exceeded");
+  obj.insert("issues", issues);
   obj.insert(
       "checkpoint",
       QJsonObject{
