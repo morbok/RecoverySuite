@@ -21,10 +21,12 @@ public:
   void clear();
   void setPreview(const application::service::models::RecoveryResult &result);
 signals:
+  void continueScanRequested();
   void previewRequested(const QString &name);
   void recoverSelection(const QStringList &names, const QString &destination);
 
 private:
+  QPushButton *continueScan_;
   QPushButton *previewButton_;
   QLabel *previewStatus_;
   QLabel *previewImage_;

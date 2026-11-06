@@ -23,25 +23,24 @@ No completion percentage is meaningful without coverage of those user scenarios.
   recovery, no-overwrite, source preservation, cancellation, stale catalog rejection and GUI flow.
 - Disposable Linux loop/Windows VHD jobs exercise direct device scan and selected-file recovery.
 
-## Remaining product work
+## Explicit limits and future coverage
 
 - Other filesystem coverage; broader formats beyond JPEG/PDF/ZIP carving.
 - ext4 deleted records, journal replay and checksummed indexed directory traversal.
 - exFAT TexFAT/two-FAT support and damaged/missing boot-region recovery.
-- Rich media/document previews and corruption/quality assessment; bounded text/hex inspection is available, but does not prove a whole file is intact.
+- Active document previews and whole-file corruption/quality assessment. Bounded raster thumbnails and text/hex inspection are available.
 - More damaged-volume reconstruction, missing boot/MFT metadata, fragmented deleted chains,
   sparse/compressed/encrypted data and larger file-count/file-size limits.
-- Interrupted scan continuation, fast rediscovery and resumable failing-media rescue passes and hardware-aware scheduling.
-- Usable privileged device-access integration; currently native permissions and source state
-  must already permit read-only access. Active system-volume recovery is not implemented.
+- Hardware-aware rescue scheduling and OS-independent read timeouts. Scan discovery and durable rescue capture continuation are implemented.
+- Active system-volume recovery. Linux UDisks2 read-only authorization and Windows UAC launch are implemented; source mount/offline state is still prepared outside the app.
 - Dedicated physical USB/SATA/NVMe and interrupted-write qualification, independent code review,
-  distribution licensing/notices and signing.
+  application licensing and signing. Runtime notices are packaged.
 
 Do not describe this milestone as a complete general recovery product or Disk Drill equivalent.
 Existing tests establish bounded synthetic behavior only. No local device/app tests are authorized
 by this change; run validation on CI or a dedicated evaluation machine.
 
-## exFAT milestone (validation pending)
+## exFAT milestone (see exact-head CI)
 
 Automatic scanning now recognizes single-FAT exFAT 1.0 volumes independently of
 partition entries. Recovery validates the boot-region checksum, directory entry
@@ -56,7 +55,7 @@ TexFAT, missing allocation bitmaps, invalid boot checksums and damaged entry set
 are rejected; signature fallback remains available. Checks do not prove that
 deleted contents are intact. Tests run in GitHub CI, never on the user's PC.
 
-## Candidate inspection milestone (validation pending)
+## Candidate inspection milestone (see exact-head CI)
 
 The results screen can inspect the highlighted file before any export. It reads
 at most 64 KiB from the current scan, displays plain text or hexadecimal, and
@@ -69,15 +68,14 @@ CI also exercises a standard-formatted exFAT filesystem on a disposable Linux
 loop device, recovering a nested binary file and a document with exact byte and
 source-preservation checks. The fuzz corpus includes a valid exFAT seed.
 
-## Saved catalogs and Linux ext4 (validation pending)
+## Saved catalogs and Linux ext4 (see exact-head CI)
 
 Drive scan catalogs can be saved and reopened through File menu actions, using an
 anchored, exclusive new state file on another drive. Restore is transactional and
 validates bounds, duplicate paths, volume overlaps, source geometry and a SHA-256
 fingerprint over identity plus up to 64 evenly spaced 64 KiB samples. This detects
 changes in those samples; it cannot establish equality of unsampled disk bytes.
-Preview/export still replays current-source reconstruction. Interrupted discovery
-cannot yet continue from a cursor. Existing image-operation sessions remain separate.
+Preview/export still replays current-source reconstruction. Paused discovery can be saved and continued from its cursor; a partially scanned filesystem volume is replayed. Existing image-operation sessions remain separate.
 
 Automatic discovery also recognizes surviving primary ext4 superblocks after a
 lost partition table. Bounded retained allocated regular files are reconstructed
@@ -94,7 +92,7 @@ CI adds a standard-formatted ext4 device fixture with nested binary/document byt
 comparisons, parser fuzz seed, corrupt extents/allocation cases and saved-catalog
 round-trip, malformed state, changed-source and GUI save/open/recover cases.
 
-## Explicit rescue capture (validation pending)
+## Explicit rescue capture (see exact-head CI)
 
 File menu/CLI rescue capture copies read-only sources to an exclusively created
 image on a validated different drive. Batch read failures fall back to single
@@ -105,9 +103,7 @@ and compares SHA-256 against the written bytes, avoiding a second media read.
 
 No-gap capture succeeds; capture with gaps is partial (CLI exit 3). The report is
 reserved before capture, includes the output digest and verification state, and
-uses atomic replacement. Cancellation/failure removes the incomplete image and
-retains an incomplete report. Rescue does not resume a partial image, enforce
-a device read timeout, control head scheduling or provide hardware qualification.
+uses atomic replacement. Cancellation/failure retains the partial image and durable checkpoint report. Resume verifies source binding, held output identity and committed prefix SHA-256 before discarding any uncommitted tail and continuing. Rescue does not enforce a device read timeout, control head scheduling or provide hardware qualification.
 Fault injection covers transient/permanent errors, exact gaps, retries, identity
 failure, cancellation, no-overwrite and output verification. CI loop/VHD fixtures
 exercise the healthy native path; actual failing hardware remains unqualified.

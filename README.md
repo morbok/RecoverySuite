@@ -16,7 +16,7 @@ all real-world data-loss cases.
    Turn off **Also run a deep signature search** to review filesystem results sooner.
    Volume discovery skips payload ranges of recognized volumes; unknown gaps still need searching.
 3. Review filenames, paths, sizes and recovery confidence. Filter the list and check the
-   files to recover. Use **Inspect highlighted file…** to read a bounded text/hex preview
+   files to recover. Use **Inspect highlighted file…** to read a bounded raster thumbnail or text/hex preview
    before export. Scanning and inspection do not save files or require an output folder.
 4. Choose an existing destination folder on a **different physical drive**, then click
    **Recover selected files**. Only selected candidates are copied and read back for verification.
@@ -25,27 +25,30 @@ all real-world data-loss cases.
 
 Linux source volumes must be unmounted; Windows source disks must already be offline.
 Appropriate device-read permissions are required. RecoverySuite does not automatically change
-mount/offline state or grant privileges. An active system drive is not a supported live source.
+mount/offline state. Use **Authorize read-only access…** (Linux UDisks2/polkit) or
+**Open administrator window…** (Windows UAC) when device permissions are missing. An active system drive is not a supported live source.
 The source list comes from actual OS metadata; a listed disk is not a promise that it can be opened.
 
-Deleted-partition recovery currently requires recognizable surviving FAT/exFAT/NTFS boot metadata.
+Deleted-partition recovery currently requires recognizable surviving FAT/exFAT/NTFS boot metadata or a valid primary ext4 superblock.
 Interrupted writes may leave inconsistent filesystem records; metadata recovery and signature
 fallback can find some candidates but cannot recreate unwritten, overwritten or TRIM-discarded bytes.
 Supported scope is FAT12/16/32, single-FAT exFAT 1.0, bounded NTFS recovery and JPEG/PDF/ZIP
-carving. Inspection shows up to 64 KiB as plain text or hexadecimal, without executing content.
+carving. Inspection shows bounded raster thumbnails or up to 64 KiB as plain text/hex, without executing content.
 exFAT supports bounded contiguous/fragmented files, subfolders and retained deleted entries
 whose clusters remain free; invalid boot/entry checksums and cross-linked allocations are rejected.
 Retained allocated ext4 files use directory/inode/extent reconstruction, including sparse and
 unwritten ranges. ext4 CRC32C metadata checksums are verified when enabled. Checksummed indexed
 directories, journal replay and deleted ext4 records remain unsupported.
-TexFAT, encrypted/compressed streams, rich media/document previews, arbitrarily fragmented
-deleted files, interrupted scan continuation and resumable failing-media rescue passes remain open work.
+TexFAT, encrypted/compressed streams, active document rendering, arbitrary fragmented
+deleted files and hardware-aware failing-media scheduling remain unsupported.
 
 Use **File → Save scan results…** to save a catalog on another drive and **Open saved scan…**
 to reopen it later. The saved source must still be available at the same path. Reopening checks
 identity, geometry and up to 4 MiB of sampled content; it is not a full-disk comparison.
-Selected files are reconstructed again for inspection/recovery. Saved catalogs do not continue
-a scan that was interrupted before discovery finished.
+Selected files are reconstructed again for inspection/recovery. Paused scans preserve found
+candidates and their continuation point. Choose **File → Continue interrupted scan** after opening
+a saved partial scan. An interrupted filesystem volume is replayed; completed volumes are skipped.
+Deep search resumes at its earliest pending candidate, rereading at most 16 MiB.
 
 **Rescue a source with read errors:** select it, then use **File → Rescue drive to image
 (logs unreadable sectors)…** and choose a new image file on another drive. Healthy
@@ -53,12 +56,13 @@ a scan that was interrupted before discovery finished.
 retries. Sectors that remain unreadable become zeros and are listed in the mandatory
 `<image>.rescue.json` report. The saved image is verified against the bytes actually
 written, without a second read of unstable media. A completed image with gaps is
-reported as partial, not full recovery. Cancelled/failed imaging removes the incomplete
-image and retains an incomplete report; continuing that capture is not supported yet.
+reported as partial, not full recovery. Cancelled/failed imaging keeps the partial image and its durable report. Select the same source,
+then use **File → Continue interrupted rescue…**. The saved output identity and SHA-256 prefix are
+verified before continuing; an uncommitted tail is discarded.
 Open the saved image as an optional source and scan it for files.
 
 CLI: `RecoverySuite_CLI device rescue /dev/sdX --output /other-drive/rescue.img`
-returns 0 with no gaps, 3 if unreadable sectors were zero-filled, and nonzero on failure.
+add `--resume` to continue. It returns 0 with no gaps, 3 if unreadable sectors were zero-filled, and nonzero on failure.
 This is bounded software retrying, not a substitute for dedicated failing-hardware rescue.
 
 **Optional image source:** choose **Open an existing disk image instead…** on the source page.
@@ -73,7 +77,9 @@ use the same flow. No capture-to-image step is required for direct device recove
 
 ## Build and test on Linux
 
-Install a C++20 compiler, CMake 3.20+, Ninja, Qt6 Core/Gui/Widgets/Test development packages,
+See [the user guide](docs/USER_GUIDE.md) for the complete workflow and [completion criteria](docs/RELEASE_ACCEPTANCE.md) for validation boundaries.
+
+Install a C++20 compiler, CMake 3.20+, Ninja, Qt6 Core/Gui/Widgets/DBus/Test development packages,
 and libudev. On Debian/Ubuntu, use `cmake ninja-build g++ qt6-base-dev libudev-dev`.
 
 ```sh

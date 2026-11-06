@@ -6,6 +6,10 @@
 #include <QStackedWidget>
 #include <QBuffer>
 #include <QImageReader>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QTextBrowser>
+#include <QFile>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QMenuBar>
@@ -16,9 +20,11 @@
 #include <QTimer>
 #include <QFileDialog>
 #include "Application/Service/recovery_session.h"
+static void initializeRecoveryHelp() { Q_INIT_RESOURCE(recovery_help); }
 namespace recoverysuite::gui::core {
 MainWindow::MainWindow(application::service::GUIRecoveryService* service, QWidget* parent)
     : QMainWindow(parent), service_(service) {
+    initializeRecoveryHelp();
     qRegisterMetaType<application::service::models::RecoveryProgress>();
     qRegisterMetaType<application::service::models::RecoveryResult>();
     setWindowTitle(tr("RecoverySuite — Recover lost data")); resize(1100, 800); setMinimumSize(800, 600);
@@ -57,6 +63,18 @@ MainWindow::MainWindow(application::service::GUIRecoveryService* service, QWidge
         state_.forceTransitionTo(ApplicationState::RECOVERY_CONFIGURATION);handleStartRecovery();
     });
     file->addAction(tr("Exit"), this, &QWidget::close);
+    auto* help=menuBar()->addMenu(tr("Help"));
+    const auto showHelp=[this](const QString& resource,const QString& title) {
+        QDialog dialog(this);dialog.setWindowTitle(title);dialog.resize(780,600);
+        auto* layout=new QVBoxLayout(&dialog);auto* text=new QTextBrowser(&dialog);
+        text->setObjectName("recoveryHelp");text->setOpenLinks(false);text->setOpenExternalLinks(false);
+        QFile file(resource);
+        text->setMarkdown(file.open(QIODevice::ReadOnly) ? QString::fromUtf8(file.readAll()) : tr("Help resource is unavailable"));
+        layout->addWidget(text);auto* buttons=new QDialogButtonBox(QDialogButtonBox::Close,&dialog);
+        connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);layout->addWidget(buttons);dialog.exec();
+    };
+    help->addAction(tr("How to recover files…"),this,[showHelp,this]{showHelp(":/help/USER_GUIDE.md",tr("RecoverySuite guide"));});
+    help->addAction(tr("Third-party notices…"),this,[showHelp,this]{showHelp(":/help/THIRD_PARTY_NOTICES.md",tr("Runtime notices"));});
     auto* central = new QWidget(this); auto* layout = new QVBoxLayout(central);
     auto* actions = new QHBoxLayout;
     chooseImage_ = new QPushButton(tr("Drives"), central); chooseImage_->setObjectName("chooseImage");
@@ -86,6 +104,10 @@ MainWindow::MainWindow(application::service::GUIRecoveryService* service, QWidge
         operation_.sessionPath.clear();operation_.resumeSession=false;operation_.selectedPaths.clear();
         for(const auto& name:names)operation_.selectedPaths.push_back(name.toStdString());
         state_.transitionTo(ApplicationState::RECOVERY_CONFIGURATION);handleStartRecovery();
+    });
+    connect(results_, &widgets::RecoveryResultsWidget::continueScanRequested, this, [this] {
+        if(running_)return;operation_.operationType="disk_scan";operation_.resumeScan=true;
+        state_.forceTransitionTo(ApplicationState::RECOVERY_CONFIGURATION);handleStartRecovery();
     });
     connect(results_, &widgets::RecoveryResultsWidget::previewRequested, this, [this](const QString& name) {
         if(running_)return;

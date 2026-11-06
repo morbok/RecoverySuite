@@ -552,3 +552,7 @@ Candidate inspection can decode a first-frame PNG/JPEG/BMP/GIF/WebP thumbnail on
 ## User-authorized disk access
 
 Linux GUI has an explicit Authorize read-only access action using UDisks2 Block.OpenDevice(mode=r, O_EXCL|O_CLOEXEC|O_NONBLOCK) over the system bus. The app stays unprivileged; its native reader duplicates and independently checks the returned descriptor, read-only mode, block identity, geometry and mount state. No setuid installation or disk permission changes. Windows provides an explicit UAC administrator-window action; offline-source and no-write guards remain active. CI adds real UDisks2 transport on an owned disposable loop device plus bad-descriptor tests; interactive desktop consent still needs external qualification. API: https://storaged.org/doc/udisks2-api/latest/gdbus-org.freedesktop.UDisks2.Block.html and https://learn.microsoft.com/en-us/windows/win32/secbp/running-with-administrator-privileges .
+
+## Delivery help and notices
+
+Embedded Help and packaged USER_GUIDE.md now describe the same general-drive scan/review/recover, authorization, paused scan continuation and resumable rescue workflows. Runtime packaging excludes SDK headers, includes user/completion guides and runtime notices, and validates every collected upstream notice hash in installed/extracted packages. Windows notice collection runs only in CI and verifies the official Qt source archive against a pinned SHA-256. Application licensing, real hardware qualification, independent review and signing remain explicit external release gates.

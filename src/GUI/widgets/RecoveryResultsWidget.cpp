@@ -75,6 +75,11 @@ RecoveryResultsWidget::RecoveryResultsWidget(QWidget *parent)
   candidates_->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
   candidates_->header()->setSectionResizeMode(1, QHeaderView::Stretch);
   layout->addWidget(candidates_);
+  continueScan_ = new QPushButton(tr("Continue interrupted scan"), this);
+  continueScan_->setObjectName("continueDiskScan");
+  layout->addWidget(continueScan_);
+  connect(continueScan_, &QPushButton::clicked, this,
+          &RecoveryResultsWidget::continueScanRequested);
   previewButton_ = new QPushButton(tr("Inspect highlighted file…"), this);
   previewButton_->setObjectName("previewCandidate");
   layout->addWidget(previewButton_);
@@ -192,6 +197,7 @@ void RecoveryResultsWidget::clear() {
         recoveredBytesLabel_, failedBytesLabel_, recoveredItemsLabel_,
         failedItemsLabel_, timeTakenLabel_, destinationLabel_, exportLabel_})
     label->setText(tr("Not reported"));
+  continueScan_->hide();
   previewImage_->clear();
   previewImage_->hide();
   previewButton_->hide();
@@ -311,6 +317,9 @@ void RecoveryResultsWidget::setRecoveryResult(
     }
   }
   if (result.scanOnly) {
+    const auto continuation = result.details.find("Scan continuation");
+    continueScan_->setVisible(continuation != result.details.end() &&
+                              continuation->second.starts_with("Partial scan"));
     statusLabel_->setText(
         result.cancelled ? tr("Scan cancelled")
         : result.success ? tr("Scan complete — review candidates")

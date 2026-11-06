@@ -79,6 +79,8 @@ jobs:
           arch: win64_msvc2022_64
           cache: true
           setup-python: false
+      - name: Collect pinned Qt runtime notices
+        run: python scripts/collect_qt_notices.py build/runtime-notices
       - name: Configure
         run: cmake -S . -B build -A x64
       - name: Build

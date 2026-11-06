@@ -83,3 +83,9 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 elseif(WIN32)
     target_link_libraries(RecoverySuite_GUI PUBLIC shell32)
 endif()
+
+qt_add_resources(RecoverySuite_GUI recovery_help
+    PREFIX "/help"
+    BASE "${CMAKE_SOURCE_DIR}/docs"
+    FILES "${CMAKE_SOURCE_DIR}/docs/USER_GUIDE.md" "${CMAKE_SOURCE_DIR}/docs/THIRD_PARTY_NOTICES.md"
+)

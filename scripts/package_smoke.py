@@ -9,6 +9,21 @@ import sys
 from fuzz_corpus import fixtures
 
 cli = str(Path(sys.argv[1]).resolve())
+package_root = Path(cli).parent.parent
+docs = package_root / "share/doc/recoverysuite"
+for name in ("USER_GUIDE.md", "THIRD_PARTY_NOTICES.md", "RELEASE_ACCEPTANCE.md"):
+    assert (docs / name).is_file() and (docs / name).stat().st_size, f"Missing runtime guide/notice: {name}"
+assert not (package_root / "include").exists(), "Runtime package contains SDK headers"
+if os.name == 'nt':
+    notice_root = docs / "third-party"
+    manifest = json.loads((notice_root / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest['qtVersion'] == '6.8.3' and manifest['notices']
+    for record in manifest['notices']:
+        relative = Path(record['path'])
+        assert not relative.is_absolute() and '..' not in relative.parts
+        content = (notice_root / relative).read_bytes()
+        assert len(content) == record['bytes'] and hashlib.sha256(content).hexdigest() == record['sha256']
+print('Runtime package guide, notices and content checks passed')
 runtime_env = dict(os.environ)
 for key in ('QT_PLUGIN_PATH', 'QML2_IMPORT_PATH', 'QML_IMPORT_PATH'):
     runtime_env.pop(key, None)
