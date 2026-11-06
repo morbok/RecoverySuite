@@ -4,9 +4,12 @@
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QStatusBar>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTreeWidget>
@@ -370,6 +373,72 @@ private slots:
     QVERIFY(!result.outputWritten);
     QCOMPARE(read(path), bytes);
   }
+  void savedScanRoundTripAndValidation() {
+    QTemporaryDir root;
+    const auto path = root.filePath("source.img"),
+               snapshot = root.filePath("saved.rscan");
+    save(path, exfatDisk());
+    {
+      GUIRecoveryService service(nullptr);
+      auto op = scan(service.openImage(path.toStdString()));
+      QVERIFY(service.executeOperation(op).success);
+      service.saveScan(snapshot.toStdString());
+      QVERIFY_EXCEPTION_THROWN(service.saveScan(snapshot.toStdString()),
+                               std::runtime_error);
+      QVERIFY_EXCEPTION_THROWN(
+          service.saveScan(root.filePath("cancelled.rscan").toStdString(),
+                           [] { return true; }),
+          std::runtime_error);
+      QVERIFY(!QFile::exists(root.filePath("cancelled.rscan")));
+    }
+    GUIRecoveryService restored(nullptr);
+    const auto result = restored.loadScan(snapshot.toStdString());
+    QVERIFY(result.success);
+    QVERIFY(result.scanOnly);
+    QVERIFY(!result.outputWritten);
+    QCOMPARE(result.recoveredItemsCount, uint64_t(4));
+    QCOMPARE(restored.previewCandidate("exFAT_32/Deleted/gone.txt"),
+             std::vector<uint8_t>({'l', 'a', 't', 'e', 'r'}));
+    auto obj = QJsonDocument::fromJson(read(snapshot)).object();
+    obj["sectors"] = "999999";
+    save(root.filePath("bad.rscan"), QJsonDocument(obj).toJson());
+    QVERIFY_EXCEPTION_THROWN(
+        restored.loadScan(root.filePath("bad.rscan").toStdString()),
+        std::runtime_error);
+    QCOMPARE(restored.previewCandidate("exFAT_32/Deleted/gone.txt").size(),
+             size_t(5));
+    QVERIFY(QDir().mkdir(root.filePath("out")));
+    auto op = scan(restored.getStorageDeviceInfo(path.toStdString()));
+    op.operationType = "disk_recovery";
+    op.outputPath = root.filePath("out").toStdString();
+    op.selectedPaths = {"exFAT_32/Deleted/gone.txt"};
+    QVERIFY(restored.executeOperation(op).success);
+    QCOMPARE(read(root.filePath("out/exFAT_32/Deleted/gone.txt")),
+             QByteArray("later"));
+  }
+  void savedScanRejectsChangedSource() {
+    QTemporaryDir root;
+    const auto path = root.filePath("disk.img"),
+               snapshot = root.filePath("saved.rscan");
+    save(path, disk());
+    {
+      GUIRecoveryService service(nullptr);
+      QVERIFY(
+          service.executeOperation(scan(service.openImage(path.toStdString())))
+              .success);
+      service.saveScan(snapshot.toStdString());
+    }
+    auto changed = disk();
+    changed[32 * 512 + 4 * 512] = 'X';
+    save(path, changed);
+    GUIRecoveryService service(nullptr);
+    QVERIFY_EXCEPTION_THROWN(service.loadScan(snapshot.toStdString()),
+                             std::runtime_error);
+    save(root.filePath("invalid.rscan"), QByteArray(16 * 1024 * 1024 + 1, ' '));
+    QVERIFY_EXCEPTION_THROWN(
+        service.loadScan(root.filePath("invalid.rscan").toStdString()),
+        std::runtime_error);
+  }
   void scanReviewRecoverGui() {
     QTemporaryDir root;
     const auto path = root.filePath("disk.img");
@@ -396,6 +465,14 @@ private slots:
                              10000);
     QTRY_VERIFY(
         window.findChild<QPushButton *>("recoverySettings")->isEnabled());
+    window.saveScanAs(root.filePath("gui.rscan"));
+    QTRY_VERIFY_WITH_TIMEOUT(QFile::exists(root.filePath("gui.rscan")), 10000);
+    QTRY_VERIFY(
+        window.findChild<QPushButton *>("recoverySettings")->isEnabled());
+    window.openSavedScan(root.filePath("gui.rscan"));
+    QTRY_VERIFY(
+        window.findChild<QPushButton *>("recoverySettings")->isEnabled());
+    QTRY_VERIFY(rows->topLevelItemCount() >= 3);
     snapshot(window, "02-review-candidates");
     QVERIFY(QDir(root.filePath("out"))
                 .entryList(QDir::AllEntries | QDir::NoDotAndDotDot)

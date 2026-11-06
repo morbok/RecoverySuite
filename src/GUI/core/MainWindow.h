@@ -24,6 +24,8 @@ public:
     explicit MainWindow(application::service::GUIRecoveryService* service, QWidget* parent = nullptr);
     ~MainWindow() override;
 public slots:
+    void saveScanAs(const QString& path);
+    void openSavedScan(const QString& path);
     void handleWorkflowOperation(const QString& operation);
     void onSourceSelected(const QString& path);
     void onConfigurationReady(const application::service::models::RecoveryOperation& operation);

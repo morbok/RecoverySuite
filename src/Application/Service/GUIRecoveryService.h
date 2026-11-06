@@ -54,6 +54,8 @@ public:
      */
     std::vector<uint8_t> previewCandidate(const std::string& name,
         const std::function<bool()>& cancelled = {});
+    void saveScan(const std::string& path, const std::function<bool()>& cancelled = {});
+    models::RecoveryResult loadScan(const std::string& path, const std::function<bool()>& cancelled = {});
     bool sourceIsPhysical() const { return bool(deviceReader_); }
     /** Return an empty string if valid, otherwise a user-facing validation error. No output is written. */
     std::string validateOperation(const models::RecoveryOperation& operation) const;
@@ -160,6 +162,10 @@ private:
     std::vector<recovery::FoundVolume> scanVolumes_;
     std::map<std::string, uint64_t> scanCatalog_;
     bool scanValid_{};
+    std::string scanFingerprint_;
+    models::RecoveryResult savedScan_;
+    static std::string fingerprintSource(disk::IDiskReader& source,
+        const std::function<bool()>& cancelled);
     models::RecoveryResult executeDiskOperation(const models::RecoveryOperation& operation,
         const std::function<void(const models::RecoveryProgress&)>& progress,
         const std::function<bool()>& cancelled);

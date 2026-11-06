@@ -29,6 +29,16 @@ MainWindow::MainWindow(application::service::GUIRecoveryService* service, QWidge
         try{const auto saved=application::service::RecoverySession::inspect(path.toStdString());service_->openImage(saved.operation.targetDevicePath,saved.sectorSize);onSourceSelected(QString::fromStdString(saved.operation.targetDevicePath));operation_=saved.operation;configuration_->setOperation(saved.operation);updateControls();}
         catch(const std::exception& failure){status_->setText(QString::fromUtf8(failure.what()));}
     });
+    file->addAction(tr("Save scan results…"),this,[this] {
+        if(running_)return;
+        const auto path=QFileDialog::getSaveFileName(this,tr("Save scan on another drive"),{},tr("Saved drive scan (*.rscan)"));
+        if(!path.isEmpty())saveScanAs(path);
+    });
+    file->addAction(tr("Open saved scan…"),this,[this] {
+        if(running_)return;
+        const auto path=QFileDialog::getOpenFileName(this,tr("Open saved drive scan"),{},tr("Saved drive scan (*.rscan);;All files (*)"));
+        if(!path.isEmpty())openSavedScan(path);
+    });
     file->addAction(tr("Exit"), this, &QWidget::close);
     auto* central = new QWidget(this); auto* layout = new QVBoxLayout(central);
     auto* actions = new QHBoxLayout;
@@ -70,6 +80,16 @@ MainWindow::MainWindow(application::service::GUIRecoveryService* service, QWidge
 MainWindow::~MainWindow() {
     if (thread_ && thread_->isRunning()) { emit cancelRecovery(); thread_->quit(); thread_->wait(); }
 }
+void MainWindow::saveScanAs(const QString& path) {
+    if(running_||path.isEmpty())return;
+    operation_.operationType="disk_save_scan";operation_.sessionPath=path.toStdString();
+    state_.forceTransitionTo(ApplicationState::RECOVERY_CONFIGURATION);handleStartRecovery();
+}
+void MainWindow::openSavedScan(const QString& path) {
+    if(running_||path.isEmpty())return;
+    operation_.operationType="disk_load_scan";operation_.sessionPath=path.toStdString();
+    state_.forceTransitionTo(ApplicationState::RECOVERY_CONFIGURATION);handleStartRecovery();
+}
 void MainWindow::showSources() {
     if (running_) { status_->setText(tr("Cancel or wait for recovery before changing the source")); return; }
     state_.forceTransitionTo(ApplicationState::SOURCE_SELECTION);
@@ -94,8 +114,9 @@ void MainWindow::onConfigurationReady(const application::service::models::Recove
 }
 void MainWindow::handleStartRecovery() {
     if (running_ || !service_) return;
-    const bool preview=operation_.operationType=="disk_preview";
-    const auto error = preview ? std::string{} : service_->validateOperation(operation_);
+    const bool preview=operation_.operationType=="disk_preview" || operation_.operationType=="disk_save_scan";
+    const bool special=preview || operation_.operationType=="disk_load_scan";
+    const auto error = special ? std::string{} : service_->validateOperation(operation_);
     if (!error.empty()) { status_->setText(QString::fromStdString(error)); return; }
     if (!state_.transitionTo(ApplicationState::VALIDATION) || !state_.transitionTo(ApplicationState::RECOVERY)) {
         status_->setText(tr("Return to recovery settings before starting another scan")); return;
@@ -130,6 +151,15 @@ void MainWindow::handleRecoveryProgress(const application::service::models::Reco
     status_->setText(QString::fromStdString(progress.currentStep));
 }
 void MainWindow::handleRecoveryFinished(const application::service::models::RecoveryResult& result) {
+    if(result.operationType=="disk_save_scan") {
+        state_.transitionTo(ApplicationState::RESULTS);
+        status_->setText(result.success ? tr("Scan saved; recoverable file contents were not copied") : QString::fromStdString(result.errorMessage));return;
+    }
+    if(result.operationType=="disk_load_scan" && result.success) {
+        operation_={};operation_.targetDevicePath=result.details.at("Source");operation_.operationType="disk_scan";
+        operation_.numSectors=service_->getDiskInfo(operation_.targetDevicePath).totalSectors;
+        configuration_->setSelectedDevice(QString::fromStdString(operation_.targetDevicePath));
+    }
     if(result.operationType=="disk_preview") {
         results_->setPreview(result);state_.transitionTo(ApplicationState::RESULTS);
         status_->setText(result.success ? tr("Preview ready; no files saved") : QString::fromStdString(result.errorMessage));return;
@@ -162,7 +192,13 @@ void RecoveryWorker::process() {
     application::service::models::RecoveryResult result{};
     try {
         if (!service_) throw std::runtime_error("Recovery service is unavailable");
-        if(operation_.operationType=="disk_preview") {
+        if(operation_.operationType=="disk_save_scan") {
+            result.operationType=operation_.operationType;
+            service_->saveScan(operation_.sessionPath,[this]{return cancelled_.load();});result.success=true;
+        } else if(operation_.operationType=="disk_load_scan") {
+            result.operationType=operation_.operationType;
+            result=service_->loadScan(operation_.sessionPath,[this]{return cancelled_.load();});result.operationType="disk_load_scan";
+        } else if(operation_.operationType=="disk_preview") {
             result.operationType="disk_preview";
             if(operation_.selectedPaths.size()!=1)throw std::runtime_error("Choose one file to inspect");
             result.previewBytes=service_->previewCandidate(operation_.selectedPaths.front(),[this]{return cancelled_.load();});

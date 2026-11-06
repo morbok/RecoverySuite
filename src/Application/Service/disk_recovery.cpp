@@ -130,6 +130,7 @@ models::RecoveryResult GUIRecoveryService::executeDiskOperation(
       scanValid_ = false;
       scanCatalog_.clear();
       scanVolumes_.clear();
+      scanFingerprint_ = fingerprintSource(*sourceReader_, cancelled);
       scanVolumes_ =
           recovery::findDiskVolumes(*sourceReader_, report, cancelled);
     } else {
@@ -225,6 +226,8 @@ models::RecoveryResult GUIRecoveryService::executeDiskOperation(
          : result.scanOnly ? "Review found files"
                            : "Recovery finished",
          result.processedBytes, 0);
+  if (result.scanOnly && scanValid_ && !result.cancelled)
+    savedScan_ = result;
   return result;
 }
 } // namespace recoverysuite::application::service
