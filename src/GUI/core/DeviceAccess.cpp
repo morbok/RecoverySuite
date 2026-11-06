@@ -37,7 +37,7 @@ authorizeReadOnlyDevice(const QString &device,
   // No writable mode, unmount, format, repair, or permission changes are
   // offered.
   message << QString("r")
-          << QVariantMap{{"flags", O_EXCL | O_CLOEXEC | O_NONBLOCK}};
+          << QVariantMap{{"flags", O_EXCL | O_CLOEXEC | O_NONBLOCK | O_DIRECT}};
   QDBusReply<QDBusUnixFileDescriptor> reply =
       connection.call(message, QDBus::BlockWithGui, 120000);
   if (!reply.isValid() || !reply.value().isValid())

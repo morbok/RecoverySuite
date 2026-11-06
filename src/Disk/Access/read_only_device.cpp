@@ -1,6 +1,7 @@
 #include "read_only_device.h"
 #include "path_utf8.h"
 #include <algorithm>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <limits>
@@ -194,6 +195,13 @@ void ReadOnlyDevice::openImpl(const std::string &path,
 #ifdef BLKGETDISKSEQ
   (void)::ioctl(candidate->handle, BLKGETDISKSEQ, &candidate->sequence);
 #endif
+  // Buffered block reads can lose a whole cache page when only one sector is
+  // bad. Direct reads let the rescue fallback isolate individual logical
+  // sectors.
+  const auto flags = ::fcntl(candidate->handle, F_GETFL);
+  if (flags < 0 || ::fcntl(candidate->handle, F_SETFL, flags | O_DIRECT))
+    throw AccessDeniedException(
+        "Cannot enable uncached read-only device access", errno);
 #else
   throw DiskException(
       "Native device capture is supported on Linux and Windows only");
@@ -331,16 +339,23 @@ bool ReadOnlyDevice::readSectors(uint64_t start, uint64_t count,
       got != length)
     throw MediaException("Physical source read failed or was short");
 #elif defined(__linux__)
+  void *storage = nullptr;
+  if (::posix_memalign(&storage, 4096, length))
+    throw DiskException("Cannot allocate aligned device-read buffer");
+  const std::unique_ptr<void, decltype(&std::free)> aligned(storage,
+                                                            &std::free);
+  auto *data = static_cast<std::byte *>(storage);
   size_t received = 0;
   while (received < length) {
-    const auto n = ::pread(impl_->handle, result.data() + received,
-                           length - received, off_t(offset + received));
+    const auto n = ::pread(impl_->handle, data + received, length - received,
+                           off_t(offset + received));
     if (n < 0 && errno == EINTR)
       continue;
-    if (n <= 0)
+    if (n <= 0 || uint64_t(n) % impl_->sector)
       throw MediaException("Physical source read failed or was short");
     received += size_t(n);
   }
+  std::copy_n(data, length, result.begin());
 #else
   return false;
 #endif

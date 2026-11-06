@@ -586,3 +586,7 @@ Native exFAT CI additionally erases the main boot region only on its newly forma
 ## Native kernel read-fault validation
 
 Add a CI-only fresh read-only loop plus owned device-mapper error target: exactly sectors 8–9 return kernel EIO. Plain capture must fail and remove partial output; explicit rescue must return partial status, zero-fill exactly those sectors, verify its image/report digest, and leave the backing source hash unchanged. Cleanup removes a mapping only after this script successfully created it; no existing host device or mapping is selected, reloaded or offlined. This supplements in-process fault injection without claiming physical failing-hardware qualification.
+
+## Native fault test finding: cached neighboring sectors
+
+The first kernel-EIO run found that buffered Linux block I/O reported eight unreadable sectors for an error target covering only sectors 8–9: the shared 4 KiB page cache contaminated healthy neighbors. Keep the exact-two-sector test unchanged. Native Linux source access now sets O_DIRECT on its held read-only descriptor (including UDisks handoff), with 4 KiB-aligned bounded buffers and logical-sector-aligned read validation. This avoids cached-page false gaps and stale cached disk content. No source writes or device-state changes; validation remains CI-only. Final exact-head native EIO test must prove that healthy neighbors are recovered.
