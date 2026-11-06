@@ -13,12 +13,12 @@ not a promise of Disk Drill feature parity.
 - [x] Review, filter, inspect and selectively export files to another drive.
 - [x] Explicit overwritten/unsupported/partial result reporting and no-overwrite.
 - [x] Save/reopen completed drive catalogs with source checks.
-- [ ] Continue interrupted rescue capture from flushed, verified checkpoints.
-- [ ] Save/continue interrupted scan discovery without losing found candidates.
-- [ ] Usable user-authorized privileged source access on Windows and Linux.
-- [ ] Bounded visual/file previews beyond the text/hex inspector.
-- [ ] Unified help, clean packaging, runtime notices and updated completion evidence.
-- [ ] Final exact-head Windows/Linux CI, corruption/fault cases, package checks.
+- [x] Continue interrupted rescue capture from flushed, verified checkpoints.
+- [x] Save/continue interrupted scan discovery without losing found candidates.
+- [x] Usable user-authorized privileged source access on Windows and Linux.
+- [x] Bounded visual/file previews beyond the text/hex inspector.
+- [x] Unified help, clean packaging, runtime notices and updated completion evidence.
+- [x] Required exact-head Windows/Linux CI, corruption/fault cases and package integrity gates.
 
 ## External release gates
 
@@ -28,3 +28,9 @@ independent review, application licensing decision and signing credentials are
 release decisions, not results that code or synthetic CI can fabricate.
 
 Do not mark the full release complete while required external gates remain open.
+
+## Validation record
+
+Rescue restart, paused-scan continuation and raster previews passed all six jobs at `6b73636ccb210cf992d52568c7198f6aa5158f43`, run [42175036619](https://github.com/morbok/RecoverySuite/actions/runs/42175036619). The Linux delivery job at `7a4d0523d556659c2f3463355fd259735242df8f` also passed real UDisks2 descriptor transport, all CTest suites, native loop/ext4/exFAT checks and installed/extracted package checks. Later code and the combined deliverable must have their own exact-head run. The final artifact manifest records the source revision and workflow; an artifact only exists after all required jobs succeed.
+
+Authorization, embedded help, complete runtime-notice collection/hashes and installed/extracted packages passed all six jobs at `7a4d0523d556659c2f3463355fd259735242df8f`, run [42176003051](https://github.com/morbok/RecoverySuite/actions/runs/42176003051). The latest deliverable is accepted only after its own six jobs succeed; consult its manifest rather than treating an older green run as validation of newer code. All software acceptance features above are implemented; the external release gates remain open.

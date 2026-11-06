@@ -285,9 +285,12 @@ Session files use atomic replacement; do not select the source image as the sess
 
 ## Current state
 
-- GUI and CLI build on Linux and Windows x64. All 30 registered CTest executables passed
-  Linux Debug/Release and Windows Release CI at `8de6f93` (run `41905828702`).
-  Newer revisions require their own CI results; no application tests run on the user's workstation.
+- The general-drive software prototype meets [the software acceptance checklist](docs/RELEASE_ACCEPTANCE.md).
+  At `7a4d052`, all six CI jobs passed, including 31 CTest executables on Windows/Linux,
+  disposable devices, source-preservation checks and installed/extracted package validation.
+  Later revisions require their own exact-head result; the combined artifact records that revision/run.
+  Hardware qualification, independent review, application-license choice and signing remain external gates.
+  No application tests run on the user's workstation.
 - The GUI connects real image selection, range/output validation, worker scanning, safe file export
   and results. Progress and cancellation reach the streaming scan and output loops.
 - POSIX output export rejects traversal, symlink components, unsafe names and existing files. It

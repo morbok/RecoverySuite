@@ -564,3 +564,7 @@ A later access run failed before compilation in Linux Release/fuzz: the Azure Ub
 ## Final continuation review
 
 Preserve bounded filesystem issue messages across saved-catalog restore and continued scans, so completed-volume skipping cannot hide earlier unsupported/corrupt-record warnings. Added ext4 save/open/continue regression coverage. The final source-revision artifact and exact-head CI remain the acceptance evidence.
+
+## Software acceptance closure
+
+All six required jobs passed on `7a4d0523d556659c2f3463355fd259735242df8f`, run https://github.com/morbok/RecoverySuite/actions/runs/42176003051, including 31 CTest suites per OS, native read-only UDisks2/loop/VHD operations, standard ext4/exFAT exact bytes, 5,000 ASan/UBSan fuzz runs, installed/extracted packages and all runtime notice hashes. The final warning-preservation change and acceptance documentation require the final head's own green run and manifest before delivery. The software feature checklist is implemented; physical/interactive-consent qualification, independent review, application-license choice and signing remain external release gates. No automatic merge or public release.

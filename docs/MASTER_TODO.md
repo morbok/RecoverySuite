@@ -1,3 +1,5 @@
+> Current general-drive software acceptance is tracked in [RELEASE_ACCEPTANCE.md](RELEASE_ACCEPTANCE.md). The phase list below is historical; diagnostics/plugins are future scope, not requirements for the recovery prototype.
+
 # RecoverySuite active roadmap
 
 Updated: 2026-11-05. Historical phase summaries are not the release checklist.
@@ -71,7 +73,8 @@ milestones are backend capabilities, not completion of the requested product.
         [x] Add development Linux TGZ/Ubuntu DEB and Windows ZIP with checksums.
         [x] Add installed/extracted CLI and GUI smoke tests and instrumented parser fuzzing.
         [x] Produce a combined, checksum-verified prototype only after all required CI jobs pass.
-        [ ] Complete hardware matrix, signing, application license and third-party notices, and code review.
+        [x] Package pinned Qt runtime license/attribution notices with hash checks.
+        [ ] Complete hardware matrix, signing, application license and independent code review.
 
 ## Git workflow
 
