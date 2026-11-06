@@ -10,4 +10,4 @@ Linux packages link the distribution's Qt, D-Bus and libudev libraries, whose li
 
 Windows additionally needs the Microsoft Visual C++ 2015–2022 x64 Redistributable, installed separately from Microsoft: https://aka.ms/vs/17/release/vc_redist.x64.exe . No compiler runtime installer is redistributed here.
 
-This notice inventory does not choose a license for RecoverySuite or certify a distribution's legal compliance. The application owner must decide its license and complete independent release review before public distribution. Qt license alternatives and all applicable third-party terms must be evaluated for the chosen distribution. The application is not code signed.
+RecoverySuite’s own code is licensed under the MIT License, selected by the application owner on 2026-11-06; see the packaged LICENSE. This does not change any dependency’s license or certify a distribution’s legal compliance. Independent release review remains required before public distribution. Qt license alternatives and all applicable third-party terms must be evaluated for the chosen distribution. The application is not code signed.

@@ -1,5 +1,7 @@
 # RecoverySuite
 
+RecoverySuite’s own code is licensed under the [MIT License](LICENSE). Bundled dependencies retain their respective licenses; see [third-party notices](docs/THIRD_PARTY_NOTICES.md).
+
 A desktop data-recovery application for accidentally deleted files, lost partitions and
 files made inaccessible after an interrupted write or disconnected drive. Connected
 physical disks are the primary source; disk images are an optional source and developer fixture.
@@ -290,7 +292,7 @@ Session files use atomic replacement; do not select the source image as the sess
   At `7a4d052`, all six CI jobs passed, including 31 CTest executables on Windows/Linux,
   disposable devices, source-preservation checks and installed/extracted package validation.
   Later revisions require their own exact-head result; the combined artifact records that revision/run.
-  Hardware qualification, independent review, application-license choice and signing remain external gates.
+  Hardware qualification, independent review and signing remain external gates. The owner selected MIT for the application code on 2026-11-06.
   No application tests run on the user's workstation.
 - The GUI connects real image selection, range/output validation, worker scanning, safe file export
   and results. Progress and cancellation reach the streaming scan and output loops.

@@ -92,8 +92,11 @@ def assemble(directory, source_revision, workflow_url):
         "Use `SHA256SUMS` or `manifest.json` to verify package integrity before use.\n\n"
         "No application tests or device acquisition were run on the user's workstation\n"
         "as part of this prototype delivery. CI uses disposable synthetic fixtures.\n"
-        "Physical USB/SATA/NVMe, failing-media QA, signing, application licensing and\n"
-        "review remain release gates. No public release or automatic merge occurs.\n",
+        "RecoverySuite's own code is MIT licensed; each package includes LICENSE.\n"
+        "Bundled dependencies retain their respective licenses and notices.\n"
+        "Physical USB/SATA/NVMe, failing-media QA, signing and independent\n"
+        "review remain release gates. No separate hardware test machine is currently available.\n"
+        "No public release or automatic merge occurs.\n",
         encoding="utf-8",
     )
     return manifest

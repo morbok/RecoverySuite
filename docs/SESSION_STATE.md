@@ -590,3 +590,7 @@ Add a CI-only fresh read-only loop plus owned device-mapper error target: exactl
 ## Native fault test finding: cached neighboring sectors
 
 The first kernel-EIO run found that buffered Linux block I/O reported eight unreadable sectors for an error target covering only sectors 8–9: the shared 4 KiB page cache contaminated healthy neighbors. Keep the exact-two-sector test unchanged. Native Linux source access now sets O_DIRECT on its held read-only descriptor (including UDisks handoff), with 4 KiB-aligned bounded buffers and logical-sector-aligned read validation. This avoids cached-page false gaps and stale cached disk content. No source writes or device-state changes; validation remains CI-only. Final exact-head native EIO test must prove that healthy neighbors are recovered.
+
+## 2026-11-06 — Owner licensing and hardware decisions
+
+The owner selected MIT for RecoverySuite’s own code. Added LICENSE, runtime-package installation and exact license-content checks in the existing CI package smoke gate; dependency notices retain their original terms. Prototype delivery notes and release documents now record this decision. The owner confirmed no separate test computer/runner is currently available. Physical-hardware and interactive-consent qualification remains open; no tests are authorized on the user’s PC. Independent review and signing remain open. All execution validation for this change must use its new exact-head GitHub run.

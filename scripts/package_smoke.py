@@ -11,8 +11,9 @@ from fuzz_corpus import fixtures
 cli = str(Path(sys.argv[1]).resolve())
 package_root = Path(cli).parent.parent
 docs = package_root / "share/doc/recoverysuite"
-for name in ("USER_GUIDE.md", "THIRD_PARTY_NOTICES.md", "RELEASE_ACCEPTANCE.md"):
+for name in ("LICENSE", "USER_GUIDE.md", "THIRD_PARTY_NOTICES.md", "RELEASE_ACCEPTANCE.md"):
     assert (docs / name).is_file() and (docs / name).stat().st_size, f"Missing runtime guide/notice: {name}"
+assert (docs / "LICENSE").read_bytes() == (Path(__file__).resolve().parent.parent / "LICENSE").read_bytes(), "Packaged application license differs from source"
 assert not (package_root / "include").exists(), "Runtime package contains SDK headers"
 if os.name == 'nt':
     notice_root = docs / "third-party"

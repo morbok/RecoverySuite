@@ -24,8 +24,13 @@ not a promise of Disk Drill feature parity.
 
 Physical USB/SATA/NVMe and interrupted-write/failing-media qualification must use
 a separate evaluation machine. No testing on the user's PC is authorized. An
-independent review, application licensing decision and signing credentials are
-release decisions, not results that code or synthetic CI can fabricate.
+independent review and signing credentials are release decisions, not results
+that code or synthetic CI can fabricate.
+
+- [x] Application owner selected MIT on 2026-11-06; LICENSE is included in runtime packages.
+- [ ] Separate physical-hardware and interactive authorization validation. The owner confirmed
+  on 2026-11-06 that no separate test computer or dedicated runner is currently available.
+- [ ] Independent review and signing arrangements.
 
 Do not mark the full release complete while required external gates remain open.
 

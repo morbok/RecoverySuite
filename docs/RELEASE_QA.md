@@ -13,8 +13,8 @@ reviewed build job; no automatic tag, public release or merge is performed.
   Qt libraries/plugins are bundled with windeployqt. Install the official Microsoft Visual C++
   2015–2022 x64 Redistributable if needed: https://aka.ms/vs/17/release/vc_redist.x64.exe
 - SHA256 files accompany generated packages. Verify before installation. Development packages
-  are unsigned. Repository/application licensing and bundled third-party notices need an explicit
-  release review before redistribution; no application license has been invented by packaging.
+  are unsigned. RecoverySuite’s own code is MIT licensed; LICENSE is included in each package.
+  Bundled dependencies retain their respective terms and notices; independent release review remains open.
 
 ## Repeatable checks
 
