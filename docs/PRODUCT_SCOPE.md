@@ -26,7 +26,7 @@ No completion percentage is meaningful without coverage of those user scenarios.
 ## Remaining product work
 
 - Other filesystem coverage; broader formats beyond JPEG/PDF/ZIP carving.
-- ext4 deleted records, journal replay and metadata checksum verification.
+- ext4 deleted records, journal replay and checksummed indexed directory traversal.
 - exFAT TexFAT/two-FAT support and damaged/missing boot-region recovery.
 - Rich media/document previews and corruption/quality assessment; bounded text/hex inspection is available, but does not prove a whole file is intact.
 - More damaged-volume reconstruction, missing boot/MFT metadata, fragmented deleted chains,
@@ -84,8 +84,9 @@ lost partition table. Bounded retained allocated regular files are reconstructed
 from directory entries, inode/block allocation bitmaps and extent trees. Sparse
 and unwritten ranges become zero bytes. Symlinks/special files, non-UTF8 names,
 legacy indirect maps, inline/encrypted/verity/bigalloc layouts, deleted records
-and journal replay are unsupported. Metadata checksums are not verified; that
-limitation accompanies every ext4 result. Cross-linked and known-metadata-alias
+and journal replay are unsupported. CRC32C checksums are verified when the filesystem enables them, including the
+superblock, group descriptors, allocation bitmaps, inodes, extent nodes and linear
+directory leaf blocks. Checksummed indexed directories are rejected. Cross-linked and known-metadata-alias
 ranges are excluded. Limits: 4,096 groups, 2 GiB/file, 16 MiB/directory, 1,024
 directories/32 levels, 10,000 candidates, 100,000 extents and 64 MiB metadata reads.
 
@@ -117,3 +118,8 @@ instead of rereading every sector within them. Unknown gaps still require search
 The chosen depth is retained by saved catalogs and used again for preview/export.
 CI verifies that discovery actually reads fewer sectors and that a filesystem-only
 catalog stays filesystem-only after save/open/recover.
+
+Ext4 checksum hardening adds known CRC32C test-vector coverage and independent
+checksummed fixtures with corruption injected into each supported metadata type.
+The normal mkfs.ext4 fixture exercises its standard metadata checksums. Unsupported
+checksummed indexed directories remain explicit, rather than bypassing validation.

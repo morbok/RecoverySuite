@@ -177,6 +177,51 @@ class TestDiskRecovery : public QObject {
     v.replace(8 * 1024, 5, "hello");
     return QByteArray(32 * 512, char{0}) + v;
   }
+  static uint32_t crc(uint32_t c, const char *bytes, int n) {
+    for (int i = 0; i < n; ++i) {
+      c ^= uint8_t(bytes[i]);
+      for (int b = 0; b < 8; ++b)
+        c = (c >> 1) ^ ((c & 1) ? 0x82f63b78u : 0);
+    }
+    return c;
+  }
+  static QByteArray checksummedExt4Disk() {
+    auto image = ext4Disk();
+    const int base = 32 * 512, sb = base + 1024;
+    put(image, sb + 100, 0x400, 4);
+    image[sb + 373] = 1;
+    const auto seed = crc(0xffffffffu, image.constData() + sb + 104, 16);
+    const auto inodeSeed = [&](int number) {
+      QByteArray n(8, char{0});
+      put(n, 0, number, 4);
+      return crc(seed, n.constData(), 8);
+    };
+    // Leave room for ext4_dir_entry_tail, then checksum the directory payload.
+    const int dir = base + 7 * 1024;
+    put(image, dir + 28, 988);
+    put(image, dir + 1012, 0, 4);
+    put(image, dir + 1016, 12);
+    image[dir + 1018] = 0;
+    image[dir + 1019] = char(0xde);
+    put(image, dir + 1020, crc(inodeSeed(2), image.constData() + dir, 1012), 4);
+    for (int number : {2, 11}) {
+      const int at = base + 5 * 1024 + (number - 1) * 128;
+      put(image, at + 124,
+          crc(inodeSeed(number), image.constData() + at, 128) & 0xffff);
+    }
+    const int descriptor = base + 2048;
+    put(image, descriptor + 24,
+        crc(seed, image.constData() + base + 3 * 1024, 16) & 0xffff);
+    put(image, descriptor + 26,
+        crc(seed, image.constData() + base + 4 * 1024, 2) & 0xffff);
+    QByteArray group(4, char{0});
+    put(image, descriptor + 30,
+        crc(crc(seed, group.constData(), 4), image.constData() + descriptor,
+            32) &
+            0xffff);
+    put(image, sb + 1020, crc(0xffffffffu, image.constData() + sb, 1020), 4);
+    return image;
+  }
   static void save(const QString &path, const QByteArray &bytes) {
     QFile f(path);
     if (!f.open(QIODevice::WriteOnly) || f.write(bytes) != bytes.size())
@@ -447,6 +492,33 @@ private slots:
     QCOMPARE(read(root.filePath("out/ext4_32/Existing/notes.txt")),
              QByteArray("hello"));
     QCOMPARE(read(path), original);
+  }
+  void ext4MetadataChecksumsRejectCorruption() {
+    QCOMPARE(
+        recovery::ext4::crc32c(
+            0xffffffffu, reinterpret_cast<const uint8_t *>("123456789"), 9) ^
+            0xffffffffu,
+        uint32_t(0xe3069283));
+    for (const int offset :
+         {-1, 1024 + 1020, 2048 + 30, 3 * 1024 + 5, 4 * 1024 + 1,
+          5 * 1024 + 10 * 128 + 10, 7 * 1024 + 33}) {
+      QTemporaryDir root;
+      auto bytes = checksummedExt4Disk();
+      if (offset >= 0)
+        bytes[32 * 512 + offset] = char(uint8_t(bytes[32 * 512 + offset]) ^ 1);
+      const auto path = root.filePath("checksum.img");
+      save(path, bytes);
+      GUIRecoveryService service(nullptr);
+      auto op = scan(service.openImage(path.toStdString()));
+      op.deepSearch = false;
+      const auto result = service.executeOperation(op);
+      QVERIFY2(result.success, result.errorMessage.c_str());
+      QCOMPARE(result.recoveredItemsCount, uint64_t(offset < 0 ? 1 : 0));
+      if (offset < 0)
+        QVERIFY(result.recoveredItems[0].confidence.find(
+                    "checksums and allocation checked") != std::string::npos);
+      QCOMPARE(read(path), bytes);
+    }
   }
   void ext4RejectsInvalidExtentsAndAllocation_data() {
     QTest::addColumn<int>("offset");

@@ -191,8 +191,8 @@ scanDiskFiles(disk::IDiskReader &source,
             report);
         issues.push_back(
             prefix +
-            "ext4 metadata checksums and journal replay are not validated; "
-            "only retained allocated files are reconstructed");
+            "ext4 journal replay and deleted inode recovery are unsupported; "
+            "checksummed indexed directories are skipped");
         if (summary.invalid)
           issues.push_back(prefix + "Some ext4 files/directories have invalid "
                                     "or unsupported records");

@@ -1,5 +1,6 @@
 #pragma once
 #include "source_bytes.h"
+#include <array>
 #include <map>
 #include <set>
 #include <stdexcept>
@@ -11,6 +12,27 @@ inline uint64_t le(const uint8_t *p, size_t n) {
   for (size_t i = 0; i < n; ++i)
     v |= uint64_t(p[i]) << (8 * i);
   return v;
+}
+inline uint32_t crc32c(uint32_t crc, const uint8_t *data, size_t n) {
+  static const auto table = [] {
+    std::array<uint32_t, 256> t{};
+    for (uint32_t i = 0; i < 256; ++i) {
+      uint32_t c = i;
+      for (int b = 0; b < 8; ++b)
+        c = (c >> 1) ^ ((c & 1) ? 0x82f63b78u : 0);
+      t[i] = c;
+    }
+    return t;
+  }();
+  for (size_t i = 0; i < n; ++i)
+    crc = table[(crc ^ data[i]) & 255] ^ (crc >> 8);
+  return crc;
+}
+inline uint32_t crcNumber(uint32_t crc, uint32_t number) {
+  uint8_t b[4];
+  for (size_t i = 0; i < 4; ++i)
+    b[i] = uint8_t(number >> (8 * i));
+  return crc32c(crc, b, 4);
 }
 struct Geometry {
   uint64_t blocks{}, blockSize{}, first{}, perGroup{}, inodes{},
@@ -65,9 +87,13 @@ class Reader {
   uint64_t start_, count_, readBytes_{};
   std::function<bool()> cancelled_;
   Geometry g_;
+  bool checksums_{};
+  uint32_t seed_{};
   struct Group {
     uint64_t blockBitmap, inodeBitmap, table;
     Bytes blocks, inodes;
+    uint32_t blockChecksum{}, inodeChecksum{};
+    uint16_t flags{};
   };
   std::vector<Group> groups_;
   std::vector<std::pair<uint64_t, uint64_t>> metadata_;
@@ -99,10 +125,18 @@ class Reader {
     blockRange(block, 1);
     const auto group = (block - g_.first) / g_.perGroup,
                bit = (block - g_.first) % g_.perGroup;
-    auto &b = groups_.at(size_t(group)).blocks;
-    if (b.empty())
-      b = bytes(groups_[size_t(group)].blockBitmap * g_.blockSize, g_.blockSize,
-                true);
+    auto &record = groups_.at(size_t(group));
+    auto &b = record.blocks;
+    if (record.flags & 2)
+      throw std::runtime_error("Uninitialized ext4 block bitmap");
+    if (b.empty()) {
+      b = bytes(record.blockBitmap * g_.blockSize, g_.blockSize, true);
+      const auto digest =
+          crc32c(seed_, b.data(), size_t((g_.perGroup + 7) / 8));
+      if (checksums_ && (g_.descSize == 64 ? digest : digest & 0xffff) !=
+                            record.blockChecksum)
+        throw std::runtime_error("ext4 block bitmap checksum mismatch");
+    }
     return (b.at(size_t(bit / 8)) & (1 << (bit % 8))) != 0;
   }
   Bytes inode(uint64_t number) {
@@ -110,17 +144,46 @@ class Reader {
       throw std::runtime_error("Invalid ext4 inode");
     auto &group = groups_.at(size_t((number - 1) / g_.inodesPerGroup));
     const auto index = (number - 1) % g_.inodesPerGroup;
-    if (group.inodes.empty())
+    if (group.flags & 1)
+      throw std::runtime_error("Uninitialized ext4 inode bitmap");
+    if (group.inodes.empty()) {
       group.inodes =
           bytes(group.inodeBitmap * g_.blockSize, g_.blockSize, true);
+      const auto digest = crc32c(seed_, group.inodes.data(),
+                                 size_t((g_.inodesPerGroup + 7) / 8));
+      if (checksums_ &&
+          (g_.descSize == 64 ? digest : digest & 0xffff) != group.inodeChecksum)
+        throw std::runtime_error("ext4 inode bitmap checksum mismatch");
+    }
     if (!(group.inodes.at(size_t(index / 8)) & (1 << (index % 8))))
       throw std::runtime_error("Unallocated ext4 inode");
-    return bytes(group.table * g_.blockSize + index * g_.inodeSize,
-                 g_.inodeSize, true);
+    auto record = bytes(group.table * g_.blockSize + index * g_.inodeSize,
+                        g_.inodeSize, true);
+    if (checksums_) {
+      const bool high = record.size() >= 132 && le(record.data() + 128, 2) >= 4;
+      const auto expected = le(record.data() + 124, 2) |
+                            (high ? le(record.data() + 130, 2) << 16 : 0);
+      const auto seed = crcNumber(crcNumber(seed_, uint32_t(number)),
+                                  uint32_t(le(record.data() + 100, 4)));
+      record[124] = record[125] = 0;
+      if (high)
+        record[130] = record[131] = 0;
+      const auto digest = crc32c(seed, record.data(), record.size());
+      if ((high ? digest : digest & 0xffff) != expected)
+        throw std::runtime_error("ext4 inode checksum mismatch");
+    }
+    const auto attributes =
+        le(record.data() + 104, 4) |
+        (g_.descSize == 64 ? le(record.data() + 118, 2) << 32 : 0);
+    if (attributes)
+      protect(attributes,
+              1); // Extended attributes are metadata, not file data.
+    return record;
   }
   void extents(const Bytes &node, unsigned expected,
                std::vector<Extent> &result, std::set<uint64_t> &visited,
-               uint64_t lower = 0, uint64_t upper = 0x100000000ULL) {
+               uint64_t lower = 0, uint64_t upper = 0x100000000ULL,
+               uint32_t checksumSeed = 0) {
     if (node.size() < 12 || le(node.data(), 2) != 0xf30a ||
         le(node.data() + 6, 2) != expected || expected > 5)
       throw std::runtime_error("Invalid ext4 extent header");
@@ -128,6 +191,12 @@ class Reader {
                capacity = le(node.data() + 4, 2);
     if (!capacity || entries > capacity || capacity > (node.size() - 12) / 12)
       throw std::runtime_error("Invalid ext4 extent count");
+    if (checksums_ && node.size() != 60) {
+      const auto tail = 12 + size_t(capacity) * 12;
+      if (tail + 4 > node.size() ||
+          crc32c(checksumSeed, node.data(), tail) != le(node.data() + tail, 4))
+        throw std::runtime_error("ext4 extent block checksum mismatch");
+    }
     uint64_t prior = lower;
     for (uint64_t i = 0; i < entries; ++i) {
       check();
@@ -147,7 +216,7 @@ class Reader {
         protect(child, 1);
         extentNodes_.insert(child);
         extents(bytes(child * g_.blockSize, g_.blockSize, true), expected - 1,
-                result, visited, logical, next);
+                result, visited, logical, next, checksumSeed);
         prior = next;
       } else {
         const auto raw = le(p + 4, 2);
@@ -172,7 +241,7 @@ class Reader {
     uint64_t size;
     std::vector<Extent> extents;
   };
-  Stream stream(const Bytes &ino) {
+  Stream stream(const Bytes &ino, uint64_t number) {
     const auto flags = le(ino.data() + 32, 4);
     if (le(ino.data() + 20, 4) || !(flags & 0x80000) ||
         (flags & (0x4 | 0x800 | 0x100000 | 0x10000000)))
@@ -182,7 +251,10 @@ class Reader {
       throw std::runtime_error("ext4 file exceeds 2 GiB");
     Bytes root(ino.begin() + 40, ino.begin() + 100);
     std::set<uint64_t> visited;
-    extents(root, unsigned(le(root.data() + 6, 2)), s.extents, visited);
+    const auto seed = crcNumber(crcNumber(seed_, uint32_t(number)),
+                                uint32_t(le(ino.data() + 100, 4)));
+    extents(root, unsigned(le(root.data() + 6, 2)), s.extents, visited, 0,
+            0x100000000ULL, seed);
     return s;
   }
   Bytes pull(const Stream &s, uint64_t at, size_t n) {
@@ -258,6 +330,13 @@ public:
         cancelled_(std::move(cancelled)) {
     const auto sb = bytes(1024, 1024, true);
     g_ = geometry(sb.data(), count * uint64_t(source.getSectorSize()));
+    checksums_ = (le(sb.data() + 100, 4) & 0x400) != 0;
+    seed_ = (le(sb.data() + 96, 4) & 0x2000)
+                ? uint32_t(le(sb.data() + 624, 4))
+                : crc32c(0xffffffffu, sb.data() + 104, 16);
+    if (checksums_ && (sb[373] != 1 || crc32c(0xffffffffu, sb.data(), 1020) !=
+                                           le(sb.data() + 1020, 4)))
+      throw std::runtime_error("ext4 superblock checksum mismatch");
     const auto descriptorStart = g_.first + 1;
     const auto descriptorBytes = g_.groups * g_.descSize;
     const auto descriptors =
@@ -268,7 +347,25 @@ public:
       const auto high = [&](size_t lo, size_t hi) {
         return le(p + lo, 4) | (g_.descSize == 64 ? le(p + hi, 4) << 32 : 0);
       };
-      Group group{high(0, 32), high(4, 36), high(8, 40), {}, {}};
+      Bytes descriptor(p, p + g_.descSize);
+      if (checksums_) {
+        const auto expected = le(p + 30, 2);
+        descriptor[30] = descriptor[31] = 0;
+        if ((crc32c(crcNumber(seed_, uint32_t(i)), descriptor.data(),
+                    descriptor.size()) &
+             0xffff) != expected)
+          throw std::runtime_error("ext4 group descriptor checksum mismatch");
+      }
+      Group group{high(0, 32),
+                  high(4, 36),
+                  high(8, 40),
+                  {},
+                  {},
+                  uint32_t(le(p + 24, 2) |
+                           (g_.descSize == 64 ? le(p + 56, 2) << 16 : 0)),
+                  uint32_t(le(p + 26, 2) |
+                           (g_.descSize == 64 ? le(p + 58, 2) << 16 : 0)),
+                  uint16_t(le(p + 18, 2))};
       protect(group.blockBitmap, 1);
       protect(group.inodeBitmap, 1);
       protect(group.table,
@@ -298,7 +395,7 @@ public:
       if (n != 2) {
         try {
           const auto ino = inode(n);
-          const auto s = stream(ino);
+          const auto s = stream(ino, n);
           for (const auto &e : s.extents)
             protect(e.physical, e.count);
         } catch (const std::runtime_error &) {
@@ -313,7 +410,10 @@ public:
         const auto ino = inode(directory.inode);
         if ((le(ino.data(), 2) & 0xf000) != 0x4000)
           throw std::runtime_error("ext4 directory type mismatch");
-        const auto data = stream(ino);
+        if (checksums_ && (le(ino.data() + 32, 4) & 0x1000))
+          throw std::runtime_error(
+              "Checksummed ext4 indexed directories are unsupported");
+        const auto data = stream(ino, directory.inode);
         if (!data.size || data.size > 16 * 1024 * 1024 ||
             data.size % g_.blockSize)
           throw std::runtime_error("ext4 directory size unsupported");
@@ -321,6 +421,18 @@ public:
           protect(e.physical, e.count);
         for (uint64_t at = 0; at < data.size; at += g_.blockSize) {
           const auto block = pull(data, at, size_t(g_.blockSize));
+          if (checksums_) {
+            const auto tail = block.data() + block.size() - 12;
+            const auto seed =
+                crcNumber(crcNumber(seed_, uint32_t(directory.inode)),
+                          uint32_t(le(ino.data() + 100, 4)));
+            if (le(tail, 4) || le(tail + 4, 2) != 12 || tail[6] ||
+                tail[7] != 0xde ||
+                crc32c(seed, block.data(), block.size() - 12) !=
+                    le(tail + 8, 4))
+              throw std::runtime_error(
+                  "ext4 directory block checksum mismatch");
+          }
           for (size_t pos = 0; pos + 8 <= block.size();) {
             const auto *p = block.data() + pos;
             const auto number = le(p, 4), length = le(p + 4, 2);
@@ -345,13 +457,15 @@ public:
                       "Cyclic or excessive ext4 directory tree");
                 pending.push_back({number, path + "/", directory.depth + 1});
               } else if (mode == 0x8000 && files.insert(number).second) {
-                auto content = stream(child);
+                auto content = stream(child, number);
                 extentCount += content.extents.size();
                 if (candidates.size() >= 10000 || extentCount > 100000)
                   throw std::runtime_error("ext4 catalog limit");
                 File file{"Existing/" + path,
-                          "ext4 directory, inode and allocation records; "
-                          "metadata checksums and contents unverified",
+                          checksums_ ? "ext4 metadata checksums and allocation "
+                                       "checked; contents unproven"
+                                     : "ext4 allocation records; no metadata "
+                                       "checksums; contents unproven",
                           content.size,
                           {}};
                 candidates.push_back({std::move(file), std::move(content)});

@@ -520,3 +520,9 @@ No local tests or source scans; exact-head CI pending.
 Added filesystem-only search (GUI checkbox / CLI --quick), retained in saved scan
 catalogs. Discovery now skips recognized volume payloads; a counted-read CI test
 proves that optimization instead of asserting an implementation-specific result.
+
+Ext4 now verifies CRC32C metadata checksums (when enabled) for superblocks, group
+descriptors, bitmaps, inodes, external extent nodes and linear directory blocks.
+Unsupported checksummed indexed directories are rejected. Added a known vector
+and independent checksummed/corruption fixtures; native mkfs.ext4 CI validates
+interoperability. This supersedes the earlier unverified-checksum limitation.
