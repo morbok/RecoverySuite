@@ -49,6 +49,11 @@ MainWindow::MainWindow(application::service::GUIRecoveryService* service, QWidge
         const auto path=QFileDialog::getOpenFileName(this,tr("Open saved drive scan"),{},tr("Saved drive scan (*.rscan);;All files (*)"));
         if(!path.isEmpty())openSavedScan(path);
     });
+    file->addAction(tr("Continue interrupted scan"),this,[this] {
+        if(running_)return;
+        operation_.operationType="disk_scan";operation_.resumeScan=true;
+        state_.forceTransitionTo(ApplicationState::RECOVERY_CONFIGURATION);handleStartRecovery();
+    });
     file->addAction(tr("Exit"), this, &QWidget::close);
     auto* central = new QWidget(this); auto* layout = new QVBoxLayout(central);
     auto* actions = new QHBoxLayout;
@@ -181,7 +186,7 @@ void MainWindow::handleRecoveryFinished(const application::service::models::Reco
     }
     results_->setRecoveryResult(result); state_.transitionTo(ApplicationState::RESULTS);
     pages_->setCurrentWidget(results_);
-    status_->setText(result.scanOnly ? tr("Scan finished. Select files and a destination on another drive.") : result.cancelled ? tr("Cancelled; review saved items below") : (result.success ? tr("Scan complete") : tr("Scan finished with errors; review results")));
+    status_->setText(result.cancelled && result.scanOnly ? tr("Scan paused. Save scan results to continue later, or select found files to recover.") : result.scanOnly ? tr("Review found files, or continue a partial scan from the File menu.") : result.cancelled ? tr("Cancelled; review saved items below") : (result.success ? tr("Scan complete") : tr("Scan finished with errors; review results")));
 }
 void MainWindow::handleWorkflowOperation(const QString& operation) {
     if (operation == "list_sources") showSources();

@@ -139,6 +139,7 @@ struct RecoveryOperation {
     bool verifyAfterRecovery{};
     bool deepSearch{true};
     bool resumeRescue{};
+    bool resumeScan{};
     bool createLogFile{};
     std::string sessionPath;
     bool resumeSession{};

@@ -18,6 +18,11 @@ struct FoundVolume {
   uint64_t start{}, count{};
   std::string filesystem;
 };
+struct DiskScanCheckpoint {
+  uint64_t volumeSector{}, filesVolume{};
+  bool volumesDone{}, filesDone{};
+  CarvingCheckpoint carving;
+};
 using DiskScanProgress =
     std::function<void(const std::string &, uint64_t, uint64_t)>;
 using DiskScanItem = std::function<void(
@@ -30,14 +35,15 @@ using DiskScanItem = std::function<void(
 // are accepted.
 inline std::vector<FoundVolume>
 findDiskVolumes(disk::IDiskReader &source, const DiskScanProgress &progress,
-                const std::function<bool()> &cancelled) {
-  std::vector<FoundVolume> result;
+                const std::function<bool()> &cancelled,
+                DiskScanCheckpoint *checkpoint = nullptr,
+                std::vector<FoundVolume> result = {}) {
   const auto sector = source.getSectorSize();
   const auto total = source.getTotalSectors();
   if (!filesystem::fat::supportedFatSectorSize(sector) || !total ||
       total > uint64_t(std::numeric_limits<int64_t>::max()) / sector)
     throw std::runtime_error("Unsupported source geometry for disk search");
-  for (uint64_t at = 0; at < total;) {
+  for (uint64_t at = checkpoint ? checkpoint->volumeSector : 0; at < total;) {
     if (cancelled && cancelled())
       break;
     const auto count = std::min<uint64_t>(65536 / sector, total - at);
@@ -135,10 +141,14 @@ findDiskVolumes(disk::IDiskReader &source, const DiskScanProgress &progress,
       advance = std::max(advance, start + length);
     }
     at = advance;
+    if (checkpoint)
+      checkpoint->volumeSector = at;
     if (progress)
       progress("Searching for surviving and lost volumes", at * sector,
                total * sector);
   }
+  if (checkpoint && checkpoint->volumeSector == total)
+    checkpoint->volumesDone = true;
   return result;
 }
 
@@ -155,9 +165,14 @@ inline std::vector<std::string>
 scanDiskFiles(disk::IDiskReader &source,
               const std::vector<FoundVolume> &volumes, const DiskScanItem &item,
               const DiskScanProgress &progress,
-              const std::function<bool()> &cancelled, bool deepSearch = true) {
+              const std::function<bool()> &cancelled, bool deepSearch = true,
+              DiskScanCheckpoint *checkpoint = nullptr) {
   std::vector<std::string> issues;
-  for (const auto &volume : volumes) {
+  for (size_t index = checkpoint ? size_t(checkpoint->filesVolume) : 0;
+       index < volumes.size(); ++index) {
+    if (checkpoint)
+      checkpoint->filesVolume = index;
+    const auto &volume = volumes[index];
     if (cancelled && cancelled())
       return issues;
     const auto prefix =
@@ -305,8 +320,18 @@ scanDiskFiles(disk::IDiskReader &source,
   }
   if (cancelled && cancelled())
     return issues;
-  if (!deepSearch)
+  if (checkpoint)
+    checkpoint->filesVolume = volumes.size();
+  if (!deepSearch) {
+    if (checkpoint)
+      checkpoint->filesDone = true;
     return issues;
+  }
+  if (checkpoint && checkpoint->carving.offset ==
+                        source.getTotalSectors() * source.getSectorSize()) {
+    checkpoint->filesDone = true;
+    return issues;
+  }
   const auto summary = carveSignatures(
       source, 0, source.getTotalSectors(),
       [&](const std::string &name, const std::vector<uint8_t> &data) {
@@ -324,7 +349,9 @@ scanDiskFiles(disk::IDiskReader &source,
           progress("Deep search for file signatures", bytes,
                    source.getTotalSectors() * source.getSectorSize());
       },
-      cancelled);
+      cancelled, {}, checkpoint ? &checkpoint->carving : nullptr);
+  if (checkpoint && !summary.cancelled)
+    checkpoint->filesDone = true;
   if (summary.skippedCandidates)
     issues.push_back(
         "Some signature matches were incomplete or exceeded the 16 MiB limit");

@@ -103,7 +103,7 @@ void GUIRecoveryService::saveScan(const std::string &path,
   std::unique_lock lock(imageMutex_, std::try_to_lock);
   if (!lock.owns_lock() || !scanValid_ || !sourceReader_ ||
       scanFingerprint_.empty())
-    throw std::runtime_error("Finish a drive scan before saving it");
+    throw std::runtime_error("Start a drive scan before saving it");
   if (imageReader_)
     imageReader_->validateIdentity();
   if (deviceReader_)
@@ -133,6 +133,16 @@ void GUIRecoveryService::saveScan(const std::string &path,
         QJsonObject{{"name", QString::fromStdString(item.name)},
                     {"size", QString::number(item.sizeBytes)},
                     {"confidence", QString::fromStdString(item.confidence)}});
+  obj.insert(
+      "checkpoint",
+      QJsonObject{
+          {"volumeSector", QString::number(scanCheckpoint_.volumeSector)},
+          {"volumesDone", scanCheckpoint_.volumesDone},
+          {"filesVolume", QString::number(scanCheckpoint_.filesVolume)},
+          {"filesDone", scanCheckpoint_.filesDone},
+          {"signatureOffset", QString::number(scanCheckpoint_.carving.offset)},
+          {"signatureItems",
+           QString::number(scanCheckpoint_.carving.foundItems)}});
   obj.insert("volumes", volumes);
   obj.insert("items", items);
   const auto bytes = QJsonDocument(obj).toJson(QJsonDocument::Compact);
@@ -188,6 +198,33 @@ GUIRecoveryService::loadScan(const std::string &path,
         throw std::runtime_error("Overlapping saved volumes");
     volumes.push_back({start, count, type});
   }
+  recovery::DiskScanCheckpoint checkpoint;
+  if (obj.contains("checkpoint")) {
+    const auto c = obj.value("checkpoint").toObject();
+    if (!c.value("volumesDone").isBool() || !c.value("filesDone").isBool())
+      throw std::runtime_error("Invalid saved scan checkpoint");
+    checkpoint.volumeSector = integer(c.value("volumeSector"));
+    checkpoint.filesVolume = integer(c.value("filesVolume"));
+    checkpoint.volumesDone = c.value("volumesDone").toBool();
+    checkpoint.filesDone = c.value("filesDone").toBool();
+    checkpoint.carving = {integer(c.value("signatureOffset")),
+                          integer(c.value("signatureItems"))};
+    if (!total || total > uint64_t(INT64_MAX) / sector ||
+        checkpoint.volumeSector > total ||
+        checkpoint.filesVolume > volumes.size() ||
+        checkpoint.carving.offset > total * sector ||
+        checkpoint.carving.foundItems > 10000 ||
+        (checkpoint.volumesDone && checkpoint.volumeSector != total) ||
+        (!checkpoint.volumesDone &&
+         (checkpoint.filesVolume || checkpoint.carving.offset ||
+          checkpoint.filesDone)) ||
+        (checkpoint.filesDone && checkpoint.filesVolume != volumes.size()))
+      throw std::runtime_error("Saved scan checkpoint is out of range");
+  } else {
+    // Original v1 files were completed catalogs without continuation state.
+    checkpoint = {
+        total, uint64_t(volumes.size()), true, true, {total * sector, 0}};
+  }
   for (const auto &value : obj.value("items").toArray()) {
     const auto i = value.toObject();
     const auto name = text(i.value("name")),
@@ -239,6 +276,10 @@ GUIRecoveryService::loadScan(const std::string &path,
   deviceReader_ = std::move(device);
   imageReader_ = std::move(image);
   sourcePath_ = source;
+  scanCheckpoint_ = checkpoint;
+  result.details["Scan continuation"] =
+      checkpoint.filesDone ? "Completed scan"
+                           : "Partial scan: choose Continue interrupted scan";
   scanVolumes_ = std::move(volumes);
   scanCatalog_ = std::move(catalog);
   scanFingerprint_ = fingerprint;

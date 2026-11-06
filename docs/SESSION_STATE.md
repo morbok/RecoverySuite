@@ -540,3 +540,7 @@ Resume validates source identity/samples and the stored prefix before truncating
 only uncommitted tail bytes. Source data before the checkpoint is not reread.
 Added cancellation, tampered prefix, identity and real process-crash/restart CI
 cases, including stale-lock recovery. Validation pending; no local tests run.
+
+## Interrupted drive scans
+
+Partial drive scans can now be saved to `.rscan`, opened after restart and continued from File → Continue interrupted scan. Volume discovery keeps its next sector; completed filesystem volumes are skipped; an interrupted filesystem volume is replayed with candidate deduplication. Signature discovery keeps the earliest unconsumed byte and naming counter, rereading at most the bounded pending candidate rather than the whole source. Saved source binding is checked before continuation. Added CI-only cross-service cancellation/resume and malformed cursor coverage. No local build/test execution.

@@ -632,6 +632,90 @@ private slots:
              QString("completed"));
     window.close();
   }
+  void interruptedScanPersistsAndContinuesAcrossServices() {
+    QTemporaryDir root;
+    const auto path = root.filePath("source.img"),
+               snapshot = root.filePath("partial.rscan");
+    auto bytes = disk();
+    bytes.resize(1024 * 1024);
+    bytes.fill(0, bytes.size());
+    const auto original = disk();
+    bytes.replace(0, original.size(), original);
+    bytes.replace(100000, 5, "%PDF-");
+    bytes.replace(200000, 5, "%%EOF");
+    save(path, bytes);
+    {
+      GUIRecoveryService service(nullptr);
+      auto op = scan(service.openImage(path.toStdString()));
+      bool cancel = false;
+      const auto partial = service.executeOperation(
+          op,
+          [&](const auto &p) {
+            if (p.currentStep == "Searching for surviving and lost volumes")
+              cancel = true;
+          },
+          [&] { return cancel; });
+      QVERIFY(partial.cancelled);
+      service.saveScan(snapshot.toStdString());
+      const auto c = QJsonDocument::fromJson(read(snapshot))
+                         .object()["checkpoint"]
+                         .toObject();
+      QVERIFY(c["volumeSector"].toString().toULongLong() > 0);
+      QVERIFY(!c["volumesDone"].toBool());
+    }
+    const auto second = root.filePath("deep-partial.rscan");
+    {
+      GUIRecoveryService service(nullptr);
+      QVERIFY(service.loadScan(snapshot.toStdString()).success);
+      auto op = scan(service.getStorageDeviceInfo(path.toStdString()));
+      op.resumeScan = true;
+      bool cancel = false;
+      const auto partial = service.executeOperation(
+          op,
+          [&](const auto &p) {
+            if (p.currentStep == "Deep search for file signatures" &&
+                p.processedBytes >= 131072)
+              cancel = true;
+          },
+          [&] { return cancel; });
+      QVERIFY(partial.cancelled);
+      QVERIFY(partial.recoveredItemsCount >= 3);
+      service.saveScan(second.toStdString());
+      const auto c = QJsonDocument::fromJson(read(second))
+                         .object()["checkpoint"]
+                         .toObject();
+      QVERIFY(c["volumesDone"].toBool());
+      QCOMPARE(c["signatureOffset"].toString().toULongLong(), quint64(100000));
+      QCOMPARE(c["signatureItems"].toString().toULongLong(), quint64(1));
+    }
+    GUIRecoveryService resumed(nullptr), fresh(nullptr);
+    const auto partial = resumed.loadScan(second.toStdString());
+    auto op = scan(resumed.getStorageDeviceInfo(path.toStdString()));
+    op.resumeScan = true;
+    const auto completed = resumed.executeOperation(op);
+    QVERIFY2(completed.success, completed.errorMessage.c_str());
+    const auto reference =
+        fresh.executeOperation(scan(fresh.openImage(path.toStdString())));
+    QVERIFY(reference.success);
+    QCOMPARE(completed.recoveredItems.size(), reference.recoveredItems.size());
+    for (size_t i = 0; i < reference.recoveredItems.size(); ++i) {
+      QCOMPARE(completed.recoveredItems[i].name,
+               reference.recoveredItems[i].name);
+      QCOMPARE(completed.recoveredItems[i].sizeBytes,
+               reference.recoveredItems[i].sizeBytes);
+    }
+    QCOMPARE(completed.recoveredItemsCount, partial.recoveredItemsCount + 1);
+    QVERIFY(!completed.outputWritten);
+    resumed.saveScan(root.filePath("completed.rscan").toStdString());
+    auto bad = QJsonDocument::fromJson(read(second)).object();
+    auto c = bad["checkpoint"].toObject();
+    c["signatureOffset"] = "999999999";
+    bad["checkpoint"] = c;
+    save(root.filePath("bad-cursor.rscan"), QJsonDocument(bad).toJson());
+    QVERIFY_EXCEPTION_THROWN(
+        resumed.loadScan(root.filePath("bad-cursor.rscan").toStdString()),
+        std::runtime_error);
+  }
   void savedScanRoundTripAndValidation() {
     QTemporaryDir root;
     const auto path = root.filePath("source.img"),

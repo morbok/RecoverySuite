@@ -337,9 +337,8 @@ void RecoveryResultsWidget::setRecoveryResult(
       row->setFlags(row->flags() | Qt::ItemIsUserCheckable);
       row->setCheckState(0, Qt::Unchecked);
     }
-    previewButton_->setVisible(!result.cancelled &&
-                               !result.recoveredItems.empty());
-    recover_->setEnabled(!result.recoveredItems.empty() && !result.cancelled);
+    previewButton_->setVisible(!result.recoveredItems.empty());
+    recover_->setEnabled(!result.recoveredItems.empty());
   }
 }
 } // namespace recoverysuite::gui::widgets

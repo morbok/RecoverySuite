@@ -125,6 +125,7 @@ models::RecoveryResult GUIRecoveryService::executeDiskOperation(
   result.startTime = std::chrono::system_clock::now();
   result.processedBytesKnown = result.failedBytesKnown =
       result.failedItemsKnown = true;
+  bool updatingCatalog = false;
   const auto stopping = [&] { return cancelled && cancelled(); };
   std::unique_lock lock(imageMutex_, std::try_to_lock);
   if (!lock.owns_lock()) {
@@ -169,13 +170,35 @@ models::RecoveryResult GUIRecoveryService::executeDiskOperation(
                                    operation.selectedPaths.end());
     std::unique_ptr<SafeFileExporter> exporter;
     if (result.scanOnly) {
-      scanValid_ = false;
-      scanDeepSearch_ = operation.deepSearch;
-      scanCatalog_.clear();
-      scanVolumes_.clear();
-      scanFingerprint_ = fingerprintSource(*sourceReader_, cancelled);
-      scanVolumes_ =
-          recovery::findDiskVolumes(*sourceReader_, report, cancelled);
+      if (operation.resumeScan) {
+        if (!scanValid_ || scanFingerprint_.empty())
+          throw std::runtime_error(
+              "Open a saved partial scan before continuing");
+        if (fingerprintSource(*sourceReader_, cancelled) != scanFingerprint_)
+          throw std::runtime_error("Source changed since the partial scan");
+        result.recoveredItems = savedScan_.recoveredItems;
+        result.recoveredItemsCount = savedScan_.recoveredItemsCount;
+        result.recoveredBytes = savedScan_.recoveredBytes;
+      } else {
+        scanValid_ = false;
+        scanDeepSearch_ = operation.deepSearch;
+        scanCatalog_.clear();
+        scanVolumes_.clear();
+        scanCheckpoint_ = {};
+        scanFingerprint_.clear();
+        scanFingerprint_ = fingerprintSource(*sourceReader_, cancelled);
+      }
+      updatingCatalog = true;
+      if (!scanCheckpoint_.volumesDone) {
+        auto discovery = scanCheckpoint_;
+        scanVolumes_ = recovery::findDiskVolumes(
+            *sourceReader_, report, cancelled, &discovery, scanVolumes_);
+        scanCheckpoint_ = discovery;
+      }
+      // Discovery cancellation must not mark file stages as completed.
+      if (!scanCheckpoint_.volumesDone)
+        throw std::runtime_error(
+            "Volume search paused; save this scan to continue later");
     } else {
       if (!scanValid_ || selected.empty())
         throw std::runtime_error(
@@ -194,6 +217,8 @@ models::RecoveryResult GUIRecoveryService::executeDiskOperation(
           if (stopping())
             return;
           if (result.scanOnly) {
+            if (scanCatalog_.contains(name))
+              return;
             if (scanCatalog_.size() >= 10000)
               throw recovery::DiskCandidateLimit();
             if (!scanCatalog_.emplace(name, size).second)
@@ -222,7 +247,8 @@ models::RecoveryResult GUIRecoveryService::executeDiskOperation(
             }
           }
         },
-        report, cancelled, scanDeepSearch_);
+        report, cancelled, scanDeepSearch_,
+        result.scanOnly ? &scanCheckpoint_ : nullptr);
     for (size_t i = 0; i < issues.size(); ++i)
       result.details["Scan issue " + std::to_string(i + 1)] = issues[i];
     if (!result.scanOnly && !stopping()) {
@@ -246,6 +272,8 @@ models::RecoveryResult GUIRecoveryService::executeDiskOperation(
     result.errorMessage = failure.what();
   } catch (const std::exception &failure) {
     result.errorMessage = failure.what();
+    if (updatingCatalog)
+      scanValid_ = true;
   }
   result.cancelled = stopping();
   if (result.cancelled)
@@ -273,8 +301,13 @@ models::RecoveryResult GUIRecoveryService::executeDiskOperation(
          : result.scanOnly ? "Review found files"
                            : "Recovery finished",
          result.processedBytes, 0);
-  if (result.scanOnly && scanValid_ && !result.cancelled)
+  if (result.scanOnly && scanValid_ && updatingCatalog) {
+    result.details["Scan continuation"] =
+        scanCheckpoint_.filesDone ? "Completed scan"
+                                  : "Partial scan: save results, reopen and "
+                                    "choose Continue interrupted scan";
     savedScan_ = result;
+  }
   return result;
 }
 } // namespace recoverysuite::application::service
