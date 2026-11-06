@@ -27,7 +27,7 @@ done
 if [[ "${1:-}" == fuzz ]]; then
     command -v clang++ >/dev/null || packages+=(clang)
 else
-    packages+=(exfatprogs udisks2)
+    packages+=(exfatprogs udisks2 dmsetup)
 fi
 sudo apt-get "${options[@]}" update
 sudo apt-get "${options[@]}" install --no-install-recommends -y "${packages[@]}"

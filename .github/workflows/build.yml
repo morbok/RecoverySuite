@@ -51,6 +51,9 @@ jobs:
       - name: Read-only synthetic block device QA
         if: matrix.build_type == 'Release'
         run: bash scripts/qa_loop_device.sh build/bin/RecoverySuite_CLI build/bin/test_disk_recovery
+      - name: Native kernel read-error rescue
+        if: matrix.build_type == 'Release'
+        run: bash scripts/qa_fault_device.sh build/bin/RecoverySuite_CLI
       - name: Standard-formatted ext4 device recovery
         if: matrix.build_type == 'Release'
         run: |
