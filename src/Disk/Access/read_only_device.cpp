@@ -310,7 +310,7 @@ bool ReadOnlyDevice::readSectors(uint64_t start, uint64_t count,
   if (!SetFilePointerEx(impl_->handle, position, nullptr, FILE_BEGIN) ||
       !ReadFile(impl_->handle, result.data(), DWORD(length), &got, nullptr) ||
       got != length)
-    throw DiskException("Physical source read failed or was short");
+    throw MediaException("Physical source read failed or was short");
 #elif defined(__linux__)
   size_t received = 0;
   while (received < length) {
@@ -319,7 +319,7 @@ bool ReadOnlyDevice::readSectors(uint64_t start, uint64_t count,
     if (n < 0 && errno == EINTR)
       continue;
     if (n <= 0)
-      throw DiskException("Physical source read failed or was short");
+      throw MediaException("Physical source read failed or was short");
     received += size_t(n);
   }
 #else

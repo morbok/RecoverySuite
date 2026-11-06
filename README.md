@@ -37,13 +37,27 @@ Retained allocated ext4 files use directory/inode/extent reconstruction, includi
 unwritten ranges. ext4 metadata checksums and journal replay remain unverified, and deleted
 ext4 files are not reconstructed from erased records.
 TexFAT, encrypted/compressed streams, rich media/document previews, arbitrarily fragmented
-deleted files, interrupted scan continuation and failing-media rescue retries remain open work.
+deleted files, interrupted scan continuation and resumable failing-media rescue passes remain open work.
 
 Use **File → Save scan results…** to save a catalog on another drive and **Open saved scan…**
 to reopen it later. The saved source must still be available at the same path. Reopening checks
 identity, geometry and up to 4 MiB of sampled content; it is not a full-disk comparison.
 Selected files are reconstructed again for inspection/recovery. Saved catalogs do not continue
 a scan that was interrupted before discovery finished.
+
+**Rescue a source with read errors:** select it, then use **File → Rescue drive to image
+(logs unreadable sectors)…** and choose a new image file on another drive. Healthy
+64 KiB ranges are copied once; failed ranges fall back to single sectors with two
+retries. Sectors that remain unreadable become zeros and are listed in the mandatory
+`<image>.rescue.json` report. The saved image is verified against the bytes actually
+written, without a second read of unstable media. A completed image with gaps is
+reported as partial, not full recovery. Cancelled/failed imaging removes the incomplete
+image and retains an incomplete report; continuing that capture is not supported yet.
+Open the saved image as an optional source and scan it for files.
+
+CLI: `RecoverySuite_CLI device rescue /dev/sdX --output /other-drive/rescue.img`
+returns 0 with no gaps, 3 if unreadable sectors were zero-filled, and nonzero on failure.
+This is bounded software retrying, not a substitute for dedicated failing-hardware rescue.
 
 **Optional image source:** choose **Open an existing disk image instead…** on the source page.
 It uses the same automatic scan/review/recover flow. The advanced method controls and the

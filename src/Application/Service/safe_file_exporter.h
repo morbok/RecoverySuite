@@ -7,7 +7,7 @@
 namespace recoverysuite::application::service {
 /** Anchors an existing destination directory and creates recovered files exclusively.
  * POSIX directory handles reject symlinks in every component, including races after validation.
- * Windows export fails closed until equivalent handle-based protection is implemented.
+ * Windows uses handle-relative opens and rejects reparse points.
  * Not thread-safe; own one instance for an operation. Existing files are never replaced.
  */
 class SafeFileExporter {
@@ -19,7 +19,9 @@ public:
     using ReadAt = std::function<std::vector<uint8_t>(uint64_t,size_t)>;
     // Pulls <=64 KiB at a time; exact-length chunks required. Cleanup and no-overwrite match write().
     void writeStream(const std::string& path,uint64_t size,const ReadAt& read,bool verify,bool tree,
-                     const std::function<bool()>& cancelled = {});
+                     const std::function<bool()>& cancelled = {}, bool verifyStoredDigest = false);
+    // verifyStoredDigest verifies the stored bytes against the written SHA-256,
+    // without requesting source chunks a second time (for unstable media).
     // Verify an existing anchored regular output without changing it.
     void verifyStream(const std::string& path,uint64_t size,const ReadAt& read,bool tree,
                       const std::function<bool()>& cancelled = {});

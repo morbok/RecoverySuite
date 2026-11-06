@@ -1,5 +1,6 @@
 #include "safe_file_exporter.h"
 #include "Disk/Access/path_utf8.h"
+#include <QCryptographicHash>
 #include <algorithm>
 #include <atomic>
 #include <cctype>
@@ -77,7 +78,9 @@ SafeFileExporter::~SafeFileExporter() = default;
 namespace {
 void writeAt(int directory, const std::string &name, uint64_t size,
              const SafeFileExporter::ReadAt &read, bool verify,
-             const std::function<bool()> &cancelled) {
+             const std::function<bool()> &cancelled, bool snapshot = false) {
+  QCryptographicHash writtenHash(QCryptographicHash::Sha256),
+      storedHash(QCryptographicHash::Sha256);
   if (name.empty() || name.size() > 255 || name == "." || name == ".." ||
       name.find_first_of("/\\:") != std::string::npos ||
       std::any_of(name.begin(), name.end(),
@@ -109,6 +112,10 @@ void writeAt(int directory, const std::string &name, uint64_t size,
       const auto chunk = read(offset, length);
       if (chunk.size() != length)
         throw std::runtime_error("Incomplete output source chunk");
+      if (snapshot)
+        writtenHash.addData(
+            QByteArrayView(reinterpret_cast<const char *>(chunk.data()),
+                           qsizetype(chunk.size())));
       for (size_t written = 0; written < length;) {
         checkCancel(cancelled);
         const auto n =
@@ -128,8 +135,9 @@ void writeAt(int directory, const std::string &name, uint64_t size,
         checkCancel(cancelled);
         const auto length =
             static_cast<size_t>(std::min<uint64_t>(65536, size - offset));
-        const auto expected = read(offset, length);
-        if (expected.size() != length)
+        const auto expected =
+            snapshot ? std::vector<uint8_t>{} : read(offset, length);
+        if (!snapshot && expected.size() != length)
           throw std::runtime_error("Incomplete verification source chunk");
         std::vector<uint8_t> actual(length);
         size_t received = 0;
@@ -144,10 +152,16 @@ void writeAt(int directory, const std::string &name, uint64_t size,
             throw std::runtime_error("Output verification read failed");
           received += static_cast<size_t>(n);
         }
-        if (actual != expected)
+        if (snapshot)
+          storedHash.addData(
+              QByteArrayView(reinterpret_cast<const char *>(actual.data()),
+                             qsizetype(actual.size())));
+        else if (actual != expected)
           throw std::runtime_error("Output verification failed");
         offset += length;
       }
+    if (snapshot && verify && writtenHash.result() != storedHash.result())
+      throw std::runtime_error("Written output SHA-256 verification failed");
     checkCancel(cancelled);
     struct stat opened{}, named{};
     if (::fstat(output.get(), &opened) ||
@@ -188,9 +202,11 @@ void SafeFileExporter::writeTree(const std::string &path,
 }
 void SafeFileExporter::writeStream(const std::string &path, uint64_t size,
                                    const ReadAt &read, bool verify, bool tree,
-                                   const std::function<bool()> &cancelled) {
+                                   const std::function<bool()> &cancelled,
+                                   bool verifyStoredDigest) {
   if (!tree) {
-    writeAt(impl_->directory.get(), path, size, read, verify, cancelled);
+    writeAt(impl_->directory.get(), path, size, read, verify, cancelled,
+            verifyStoredDigest);
     return;
   }
   if (path.empty() || path.size() > 4095)
@@ -232,7 +248,8 @@ void SafeFileExporter::writeStream(const std::string &path, uint64_t size,
     if (parent.get() < 0)
       throw std::runtime_error("Cannot anchor recovered child directory");
   }
-  writeAt(parent.get(), components.back(), size, read, verify, cancelled);
+  writeAt(parent.get(), components.back(), size, read, verify, cancelled,
+          verifyStoredDigest);
 }
 void SafeFileExporter::verifyStream(const std::string &path, uint64_t size,
                                     const ReadAt &read, bool tree,
@@ -490,7 +507,10 @@ void compare(HANDLE file, uint64_t size, const SafeFileExporter::ReadAt &read,
 }
 WinHandle output(HANDLE parent, const std::string &name, uint64_t size,
                  const SafeFileExporter::ReadAt &read, bool verify,
-                 const std::function<bool()> &cancelled) {
+                 const std::function<bool()> &cancelled,
+                 bool snapshot = false) {
+  QCryptographicHash writtenHash(QCryptographicHash::Sha256),
+      storedHash(QCryptographicHash::Sha256);
   winCancel(cancelled);
   if (size > uint64_t(std::numeric_limits<LONGLONG>::max()))
     throw std::runtime_error("Output exceeds platform offset limit");
@@ -504,6 +524,10 @@ WinHandle output(HANDLE parent, const std::string &name, uint64_t size,
       const auto bytes = read(offset, n);
       if (bytes.size() != n)
         throw std::runtime_error("Incomplete source chunk");
+      if (snapshot)
+        writtenHash.addData(
+            QByteArrayView(reinterpret_cast<const char *>(bytes.data()),
+                           qsizetype(bytes.size())));
       DWORD written = 0;
       if (!WriteFile(file.value, bytes.data(), DWORD(n), &written, nullptr) ||
           written != n)
@@ -512,7 +536,24 @@ WinHandle output(HANDLE parent, const std::string &name, uint64_t size,
     }
     if (!FlushFileBuffers(file.value))
       throw std::runtime_error("Output flush failed");
-    if (verify)
+    if (verify && snapshot) {
+      seek(file.value, 0);
+      for (uint64_t at = 0; at < size;) {
+        winCancel(cancelled);
+        const auto n = size_t(std::min<uint64_t>(65536, size - at));
+        std::vector<uint8_t> bytes(n);
+        DWORD got = 0;
+        if (!ReadFile(file.value, bytes.data(), DWORD(n), &got, nullptr) ||
+            got != n)
+          throw std::runtime_error("Stored image verification read failed");
+        storedHash.addData(
+            QByteArrayView(reinterpret_cast<const char *>(bytes.data()),
+                           qsizetype(bytes.size())));
+        at += n;
+      }
+      if (writtenHash.result() != storedHash.result())
+        throw std::runtime_error("Written output SHA-256 verification failed");
+    } else if (verify)
       compare(file.value, size, read, cancelled);
     winCancel(cancelled);
     inspectHandle(file.value, false);
@@ -592,7 +633,8 @@ void SafeFileExporter::writeTree(const std::string &name,
 }
 void SafeFileExporter::writeStream(const std::string &path, uint64_t size,
                                    const ReadAt &read, bool verify, bool tree,
-                                   const std::function<bool()> &cancelled) {
+                                   const std::function<bool()> &cancelled,
+                                   bool verifyStoredDigest) {
   const auto names = parts(path, tree);
   HANDLE parent = impl_->parents.back().value;
   std::vector<WinHandle> children;
@@ -603,7 +645,8 @@ void SafeFileExporter::writeStream(const std::string &path, uint64_t size,
         FILE_LIST_DIRECTORY | FILE_TRAVERSE | FILE_READ_ATTRIBUTES, 3, true));
     parent = children.back().value;
   }
-  auto file = output(parent, names.back(), size, read, verify, cancelled);
+  auto file = output(parent, names.back(), size, read, verify, cancelled,
+                     verifyStoredDigest);
 }
 void SafeFileExporter::verifyStream(const std::string &path, uint64_t size,
                                     const ReadAt &read, bool tree,

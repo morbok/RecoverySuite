@@ -31,7 +31,7 @@ No completion percentage is meaningful without coverage of those user scenarios.
 - Rich media/document previews and corruption/quality assessment; bounded text/hex inspection is available, but does not prove a whole file is intact.
 - More damaged-volume reconstruction, missing boot/MFT metadata, fragmented deleted chains,
   sparse/compressed/encrypted data and larger file-count/file-size limits.
-- Interrupted scan continuation, fast rediscovery and robust failing-media rescue acquisition/retries.
+- Interrupted scan continuation, fast rediscovery and resumable failing-media rescue passes and hardware-aware scheduling.
 - Usable privileged device-access integration; currently native permissions and source state
   must already permit read-only access. Active system-volume recovery is not implemented.
 - Dedicated physical USB/SATA/NVMe and interrupted-write qualification, independent code review,
@@ -92,3 +92,21 @@ directories/32 levels, 10,000 candidates, 100,000 extents and 64 MiB metadata re
 CI adds a standard-formatted ext4 device fixture with nested binary/document byte
 comparisons, parser fuzz seed, corrupt extents/allocation cases and saved-catalog
 round-trip, malformed state, changed-source and GUI save/open/recover cases.
+
+## Explicit rescue capture (validation pending)
+
+File menu/CLI rescue capture copies read-only sources to an exclusively created
+image on a validated different drive. Batch read failures fall back to single
+sectors with two retries (API bound five); unrecoverable sectors are explicitly
+zero-filled and listed as sector ranges in a mandatory `.rescue.json` sidecar.
+Identity/access errors remain fatal. Verification reads the held output handle
+and compares SHA-256 against the written bytes, avoiding a second media read.
+
+No-gap capture succeeds; capture with gaps is partial (CLI exit 3). The report is
+reserved before capture, includes the output digest and verification state, and
+uses atomic replacement. Cancellation/failure removes the incomplete image and
+retains an incomplete report. Rescue does not resume a partial image, enforce
+a device read timeout, control head scheduling or provide hardware qualification.
+Fault injection covers transient/permanent errors, exact gaps, retries, identity
+failure, cancellation, no-overwrite and output verification. CI loop/VHD fixtures
+exercise the healthy native path; actual failing hardware remains unqualified.

@@ -29,6 +29,11 @@ MainWindow::MainWindow(application::service::GUIRecoveryService* service, QWidge
         try{const auto saved=application::service::RecoverySession::inspect(path.toStdString());service_->openImage(saved.operation.targetDevicePath,saved.sectorSize);onSourceSelected(QString::fromStdString(saved.operation.targetDevicePath));operation_=saved.operation;configuration_->setOperation(saved.operation);updateControls();}
         catch(const std::exception& failure){status_->setText(QString::fromUtf8(failure.what()));}
     });
+    file->addAction(tr("Rescue drive to image (logs unreadable sectors)…"),this,[this] {
+        if(running_)return;
+        const auto path=QFileDialog::getSaveFileName(this,tr("Rescue to another drive; unreadable sectors will be zero-filled and logged"),{},tr("Rescue image (*.img)"));
+        if(!path.isEmpty())rescueImageAs(path);
+    });
     file->addAction(tr("Save scan results…"),this,[this] {
         if(running_)return;
         const auto path=QFileDialog::getSaveFileName(this,tr("Save scan on another drive"),{},tr("Saved drive scan (*.rscan)"));
@@ -80,6 +85,11 @@ MainWindow::MainWindow(application::service::GUIRecoveryService* service, QWidge
 MainWindow::~MainWindow() {
     if (thread_ && thread_->isRunning()) { emit cancelRecovery(); thread_->quit(); thread_->wait(); }
 }
+void MainWindow::rescueImageAs(const QString& path) {
+    if(running_||path.isEmpty())return;
+    operation_.operationType="disk_rescue";operation_.outputPath=path.toStdString();
+    state_.forceTransitionTo(ApplicationState::RECOVERY_CONFIGURATION);handleStartRecovery();
+}
 void MainWindow::saveScanAs(const QString& path) {
     if(running_||path.isEmpty())return;
     operation_.operationType="disk_save_scan";operation_.sessionPath=path.toStdString();
@@ -115,7 +125,7 @@ void MainWindow::onConfigurationReady(const application::service::models::Recove
 void MainWindow::handleStartRecovery() {
     if (running_ || !service_) return;
     const bool preview=operation_.operationType=="disk_preview" || operation_.operationType=="disk_save_scan";
-    const bool special=preview || operation_.operationType=="disk_load_scan";
+    const bool special=preview || operation_.operationType=="disk_load_scan" || operation_.operationType=="disk_rescue";
     const auto error = special ? std::string{} : service_->validateOperation(operation_);
     if (!error.empty()) { status_->setText(QString::fromStdString(error)); return; }
     if (!state_.transitionTo(ApplicationState::VALIDATION) || !state_.transitionTo(ApplicationState::RECOVERY)) {
@@ -192,7 +202,12 @@ void RecoveryWorker::process() {
     application::service::models::RecoveryResult result{};
     try {
         if (!service_) throw std::runtime_error("Recovery service is unavailable");
-        if(operation_.operationType=="disk_save_scan") {
+        if(operation_.operationType=="disk_rescue") {
+            result.operationType=operation_.operationType;
+            result=service_->rescueToImage(operation_.outputPath,[this](uint64_t bytes){
+                application::service::models::RecoveryProgress p{};p.operationType="disk_rescue";p.currentStep="Copying readable sectors; gaps are logged";p.processedBytes=bytes;p.isCancellable=true;emit progressUpdated(p);
+            },[this]{return cancelled_.load();});
+        } else if(operation_.operationType=="disk_save_scan") {
             result.operationType=operation_.operationType;
             service_->saveScan(operation_.sessionPath,[this]{return cancelled_.load();});result.success=true;
         } else if(operation_.operationType=="disk_load_scan") {

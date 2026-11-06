@@ -510,3 +510,9 @@ Added retained allocated ext4 file recovery with extent trees, allocation checks
 sparse/unwritten zeroing and lost-volume discovery. This is explicitly not ext4
 undelete/journal replay or metadata-checksum verification. Synthetic, standard-
 formatted disposable device and fuzz cases run only in CI. Validation pending.
+
+Added explicit rescue capture via File menu and CLI: bounded sector retries,
+zero-filled unreadable ranges, mandatory report, SHA-256 verification of stored
+bytes without rereading unstable source media, and partial-result reporting.
+Normal capture still fails on read errors. CI fault/loop/VHD/GUI cases added.
+No local tests or source scans; exact-head CI pending.

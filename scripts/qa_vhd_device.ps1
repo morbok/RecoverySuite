@@ -51,6 +51,15 @@ try {
         throw 'Direct physical source recovery returned incorrect bytes'
     }
     Write-Output 'Direct physical-source scan and selected-file recovery passed'
+    $rescue = Join-Path $fixture 'rescue.img'
+    & $Cli device rescue $device --output $rescue
+    if ($LASTEXITCODE -ne 0) { throw 'Native rescue image failed' }
+    if ((Get-FileHash $rescue).Hash -ne (Get-FileHash $output).Hash) { throw 'Rescue differs from captured bytes' }
+    $report = Get-Content -Raw ($rescue + '.rescue.json') | ConvertFrom-Json
+    if ($report.status -ne 'completed' -or -not $report.storedBytesVerified -or $report.unreadableSectors -ne '0') {
+        throw 'Invalid native rescue report'
+    }
+    Write-Output 'Read-only Windows rescue capture passed with mandatory gap report'
     Dismount-DiskImage -ImagePath $vhd
     $attached = $false
     $expected = Join-Path $fixture 'expected.img'

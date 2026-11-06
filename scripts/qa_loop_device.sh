@@ -45,3 +45,14 @@ assert Path(sys.argv[1]).read_bytes() == bytes.fromhex('ffd8ff68656c6c6fffd9')
 PY
 sudo cmp "$fixture/source.img" "$fixture/output/captured.img"
 echo 'Direct physical-source scan and selected-file recovery passed without source changes'
+
+sudo "$cli" device rescue "$loop_device" --output "$fixture/output/rescue.img"
+sudo cmp "$fixture/source.img" "$fixture/output/rescue.img"
+sudo python3 - "$fixture/output/rescue.img.rescue.json" <<'PYREPORT'
+import json,sys
+from pathlib import Path
+report=json.loads(Path(sys.argv[1]).read_text())
+assert report['status']=='completed' and report['storedBytesVerified'] is True
+assert report['unreadableSectors']=='0'
+PYREPORT
+echo 'Read-only native rescue capture passed with stored-image verification and mandatory report'

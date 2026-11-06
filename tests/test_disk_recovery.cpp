@@ -473,6 +473,27 @@ private slots:
     QVERIFY(!result.outputWritten);
     QCOMPARE(read(path), bytes);
   }
+  void rescueImageGuiFlow() {
+    QTemporaryDir root;
+    const auto source = root.filePath("source.img"),
+               target = root.filePath("rescue.img");
+    save(source, disk());
+    GUIRecoveryService service(nullptr);
+    gui::core::MainWindow window(&service);
+    window.show();
+    window.findChild<gui::widgets::SourceDiscoveryWidget *>()->openImagePath(
+        source);
+    window.rescueImageAs(target);
+    QTRY_VERIFY_WITH_TIMEOUT(QFile::exists(target + ".rescue.json"), 10000);
+    QTRY_VERIFY(
+        window.findChild<QPushButton *>("recoverySettings")->isEnabled());
+    QCOMPARE(read(target), disk());
+    QCOMPARE(QJsonDocument::fromJson(read(target + ".rescue.json"))
+                 .object()["status"]
+                 .toString(),
+             QString("completed"));
+    window.close();
+  }
   void savedScanRoundTripAndValidation() {
     QTemporaryDir root;
     const auto path = root.filePath("source.img"),

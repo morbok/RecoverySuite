@@ -257,6 +257,27 @@ void RecoveryResultsWidget::setRecoveryResult(
     recoveredItemsListWidget_->addItem(
         hasData ? tr("Item details were not provided by the backend.")
                 : tr("No recovered items."));
+  if (result.operationType == "disk_rescue" && result.outputWritten) {
+    summaryPanel_->hide();
+    detailsTextEdit_->hide();
+    detailsToggle_->show();
+    scanBanner_->show();
+    heading_->setText(tr("Rescue image saved"));
+    scanBanner_->setText(
+        tr("Image created. Unreadable bytes replaced with zeros: %1. Review "
+           "the rescue report, then open the image to scan for files.")
+            .arg(result.failedBytes));
+    if (!result.errorMessage.empty())
+      scanBanner_->setText(scanBanner_->text() + "\n" +
+                           QString::fromStdString(result.errorMessage));
+    recoveredItemsListWidget_->clear();
+    for (const auto &key : {"Rescue image", "Rescue report"})
+      if (result.details.contains(key))
+        recoveredItemsListWidget_->addItem(
+            QString::fromStdString(result.details.at(key)));
+    destination_ = QString::fromStdString(result.destination);
+    openDestination_->show();
+  }
   if (result.scanOnly || result.operationType == "disk_recovery") {
     summaryPanel_->hide();
     detailsTextEdit_->hide();

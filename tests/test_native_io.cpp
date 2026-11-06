@@ -6,9 +6,14 @@
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QTemporaryDir>
 #include <QTest>
 #include <limits>
+#include <map>
+#include <set>
 #ifdef __linux__
 #include "Platform/Linux/Disk/LinuxDiskEnumerator.h"
 #endif
@@ -26,6 +31,46 @@ class TestNativeIo : public QObject {
       throw std::runtime_error("Fixture read failed");
     return f.readAll();
   }
+  class FaultSource : public disk::IDiskReader {
+  public:
+    std::map<uint64_t, unsigned> attempts;
+    bool fatal = false;
+    void open(const std::string &) override {}
+    void close() override {}
+    bool isOpen() const noexcept override { return true; }
+    uint32_t getSectorSize() const noexcept override { return 512; }
+    uint64_t getTotalSectors() const noexcept override { return 256; }
+    disk::DeviceInformation getDiskInfo() const override {
+      disk::DeviceInformation i;
+      i.isReadOnly = true;
+      i.devicePath = "synthetic-fault-source";
+      return i;
+    }
+    bool writeSectors(uint64_t, uint64_t,
+                      const std::vector<std::byte> &) override {
+      throw std::logic_error("source write attempted");
+    }
+    bool readSectors(uint64_t start, uint64_t count,
+                     std::vector<std::byte> &bytes) override {
+      if (fatal)
+        throw disk::DiskException("Source identity changed");
+      if (start > 256 || count > 256 - start)
+        return false;
+      if (count > 1 && start < 6 && start + count > 3)
+        throw disk::MediaException("Synthetic batch media error");
+      if (count == 1) {
+        const auto attempt = ++attempts[start];
+        if (start == 4 || start == 5 || (start == 3 && attempt < 2))
+          throw disk::BadSectorException("Synthetic unreadable sector");
+      }
+      bytes.resize(size_t(count * 512));
+      for (uint64_t i = 0; i < count; ++i)
+        std::fill(bytes.begin() + ptrdiff_t(i * 512),
+                  bytes.begin() + ptrdiff_t((i + 1) * 512),
+                  std::byte((start + i) % 251));
+      return true;
+    }
+  };
 private slots:
   void unicodeImageAndCapture() {
     QTemporaryDir root;
@@ -164,6 +209,80 @@ private slots:
                                  [&] { return cancel; }),
                              std::runtime_error);
     QVERIFY(!QFileInfo::exists(output));
+  }
+  void rescueRetriesAndReportsGapsWithoutRereadingMedia() {
+    QTemporaryDir root;
+    FaultSource source;
+    const auto path = root.filePath("rescue.img");
+    const auto result =
+        application::service::rescueSourceImage(source, path.toStdString());
+    QCOMPARE(result.bytes, uint64_t(131072));
+    QCOMPARE(result.unreadableSectors, uint64_t(2));
+    QCOMPARE(source.attempts[3], 2u);
+    QCOMPARE(source.attempts[4], 3u);
+    QCOMPARE(source.attempts[5], 3u);
+    QCOMPARE(result.unreadable.size(), size_t(1));
+    QCOMPARE(result.unreadable[0].sector, uint64_t(4));
+    QCOMPARE(result.unreadable[0].count, uint64_t(2));
+    QByteArray expected(131072, char{0});
+    for (int sector = 0; sector < 256; ++sector)
+      if (sector != 4 && sector != 5)
+        expected.replace(sector * 512, 512,
+                         QByteArray(512, char(sector % 251)));
+    QCOMPARE(read(path), expected);
+    QCOMPARE(result.sha256,
+             QCryptographicHash::hash(expected, QCryptographicHash::Sha256)
+                 .toHex()
+                 .toStdString());
+    const auto report =
+        QJsonDocument::fromJson(read(QString::fromStdString(result.report)))
+            .object();
+    QCOMPARE(report["status"].toString(), QString("completed-with-gaps"));
+    QVERIFY(report["storedBytesVerified"].toBool());
+    QCOMPARE(report["unreadableRanges"].toArray().size(), 1);
+    QVERIFY_EXCEPTION_THROWN(
+        application::service::rescueSourceImage(source, path.toStdString()),
+        std::runtime_error);
+    QCOMPARE(read(path), expected);
+  }
+  void rescueStopsOnIdentityErrorsAndCancellation() {
+    QTemporaryDir root;
+    FaultSource source;
+    source.fatal = true;
+    const auto path = root.filePath("fatal.img");
+    QVERIFY_EXCEPTION_THROWN(
+        application::service::rescueSourceImage(source, path.toStdString()),
+        disk::DiskException);
+    QVERIFY(!QFile::exists(path));
+    QCOMPARE(QJsonDocument::fromJson(read(path + ".rescue.json"))
+                 .object()["status"]
+                 .toString(),
+             QString("incomplete"));
+    source.fatal = false;
+    bool cancelled = false;
+    const auto cancel = root.filePath("cancel.img");
+    QVERIFY_EXCEPTION_THROWN(application::service::rescueSourceImage(
+                                 source, cancel.toStdString(), 2,
+                                 [&](uint64_t) { cancelled = true; },
+                                 [&] { return cancelled; }),
+                             std::runtime_error);
+    QVERIFY(!QFile::exists(cancel));
+    QVERIFY(QFile::exists(cancel + ".rescue.json"));
+  }
+  void storedDigestVerificationNeverRequestsSourceTwice() {
+    QTemporaryDir root;
+    application::service::SafeFileExporter writer(root.path().toStdString());
+    std::set<uint64_t> requested;
+    writer.writeStream(
+        "once.bin", 131072,
+        [&](uint64_t at, size_t n) {
+          if (!requested.insert(at).second)
+            throw std::runtime_error("Source was reread");
+          return std::vector<uint8_t>(n, 7);
+        },
+        true, false, {}, true);
+    QCOMPARE(requested.size(), size_t(2));
+    QCOMPARE(read(root.filePath("once.bin")), QByteArray(131072, char(7)));
   }
   void observedSysfsInventory() {
 #ifdef __linux__

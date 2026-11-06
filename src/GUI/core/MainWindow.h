@@ -24,6 +24,7 @@ public:
     explicit MainWindow(application::service::GUIRecoveryService* service, QWidget* parent = nullptr);
     ~MainWindow() override;
 public slots:
+    void rescueImageAs(const QString& path);
     void saveScanAs(const QString& path);
     void openSavedScan(const QString& path);
     void handleWorkflowOperation(const QString& operation);

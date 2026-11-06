@@ -75,6 +75,11 @@ int CLIHandler::run(int argc, char* argv[]) {
             if(!result.success){printError(result.errorMessage);return 1;}return 0;
         }catch(const std::exception& failure){printError(failure.what());return cancellation_&&cancellation_()?130:1;}
     } else if(command=="device") {
+        if(args.size()==4 && args[0]=="rescue" && args[2]=="--output") {
+            try {const auto r=application::service::rescueDevice(args[1],args[3],2,{},cancellation_);
+                std::cout<<"Rescue image saved: "<<args[3]<<"\nUnreadable sectors zero-filled: "<<r.unreadableSectors<<"\nReport: "<<r.report<<"\nSHA-256: "<<r.sha256<<'\n';return r.unreadableSectors ? 3 : 0;
+            }catch(const std::exception& failure){printError(failure.what());return cancellation_&&cancellation_()?130:1;}
+        }
         if(args.size()!=4||args[0]!="capture"||args[2]!="--output"){printError("Use device scan <device>, device recover <device> --output <folder> --select <candidate-path>, or device capture <device> --output <image>");return 2;}
         try{const auto captured=application::service::captureDevice(args[1],args[3],{},cancellation_);std::cout<<"Image saved and verified: "<<args[3]<<"\nBytes: "<<captured.bytes<<"\nSector size: "<<captured.sectorSize<<"\nSHA-256: "<<captured.sha256<<'\n';return 0;}catch(const std::exception& failure){printError(failure.what());return cancellation_&&cancellation_()?130:1;}
     } else if(command=="session") {
@@ -532,6 +537,7 @@ Usage: RecoverySuite_CLI <command> [arguments]
   scan <device-path> [--image]
   device recover <device-path> --output <existing-folder> --select <candidate-path>
   device capture <device-path> --output <new-image-file>
+  device rescue <device-path> --output <new-image-file>  (2 sector retries; gaps logged/zero-filled; exit 3 if gaps)
   session resume <session.json>
   image <method> <image> --output <folder> --session <session.json>
   image ntfs-deleted <image> --output <existing-folder>

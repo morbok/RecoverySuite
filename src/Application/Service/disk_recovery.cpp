@@ -1,8 +1,51 @@
+#include "Disk/Access/path_utf8.h"
 #include "GUIRecoveryService.h"
+#include "device_capture.h"
 #include "safe_file_exporter.h"
 #include <set>
 
 namespace recoverysuite::application::service {
+models::RecoveryResult
+GUIRecoveryService::rescueToImage(const std::string &path,
+                                  const std::function<void(uint64_t)> &progress,
+                                  const std::function<bool()> &cancelled) {
+  std::unique_lock lock(imageMutex_, std::try_to_lock);
+  if (!lock.owns_lock() || !sourceReader_)
+    throw std::runtime_error(
+        "Choose a source and finish the current operation first");
+  if (imageReader_)
+    imageReader_->validateIdentity();
+  const auto directory = disk::utf8Path(
+      std::filesystem::absolute(disk::nativePath(path)).parent_path());
+  if (deviceReader_) {
+    deviceReader_->validateIdentity();
+    deviceReader_->validateDestination(directory);
+  }
+  const auto rescued =
+      rescueSourceImage(*sourceReader_, path, 2, progress, cancelled);
+  models::RecoveryResult result{};
+  result.operationType = "disk_rescue";
+  result.success = !rescued.unreadableSectors;
+  result.outputWritten = true;
+  result.destination = directory;
+  result.processedBytesKnown = result.failedBytesKnown = true;
+  result.processedBytes = rescued.bytes;
+  result.failedBytes = rescued.unreadableSectors * rescued.sectorSize;
+  result.recoveredBytes = rescued.bytes - result.failedBytes;
+  result.recoveredItemsCount = 1;
+  result.details["Rescue image"] = path;
+  result.details["Rescue report"] = rescued.report;
+  result.details["Image SHA-256"] = rescued.sha256;
+  result.details["Unreadable sectors zero-filled"] =
+      std::to_string(rescued.unreadableSectors);
+  result.details["Next step"] =
+      "Open this rescue image as an optional source to scan it. Zero-filled "
+      "sectors are missing data, not recovered bytes.";
+  if (rescued.unreadableSectors)
+    result.errorMessage = "Rescue finished with unreadable sectors; review the "
+                          "mandatory report before using the image";
+  return result;
+}
 std::vector<uint8_t>
 GUIRecoveryService::previewCandidate(const std::string &name,
                                      const std::function<bool()> &cancelled) {
@@ -212,7 +255,8 @@ models::RecoveryResult GUIRecoveryService::executeDiskOperation(
   result.details["Filesystem volumes found"] =
       std::to_string(scanVolumes_.size());
   result.details["Supported recovery"] =
-      "FAT12/16/32, exFAT 1.0 (single FAT), NTFS, retained ext4 files and JPEG/PDF/ZIP signatures. "
+      "FAT12/16/32, exFAT 1.0 (single FAT), NTFS, retained ext4 files and "
+      "JPEG/PDF/ZIP signatures. "
       "Encrypted "
       "and compressed filesystem data are not supported yet.";
   result.details["Recovery limits"] =
