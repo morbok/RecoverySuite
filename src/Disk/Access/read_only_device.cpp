@@ -111,12 +111,22 @@ void unmounted(uint64_t device) {
 #endif
 ReadOnlyDevice::ReadOnlyDevice() : impl_(std::make_unique<Impl>()) {}
 ReadOnlyDevice::~ReadOnlyDevice() = default;
-void ReadOnlyDevice::open(const std::string &path) {
+void ReadOnlyDevice::open(const std::string &path) { openImpl(path, -1); }
+void ReadOnlyDevice::openAuthorized(const std::string &path, int descriptor) {
+  if (descriptor < 0)
+    throw InvalidParameterException("Invalid authorized descriptor");
+  openImpl(path, descriptor);
+}
+void ReadOnlyDevice::openImpl(const std::string &path,
+                              int authorizedDescriptor) {
   if (path.empty() || path.find(char{0}) != std::string::npos)
     throw InvalidParameterException("Invalid device path");
   auto candidate = std::make_unique<Impl>();
   candidate->path = path;
 #ifdef _WIN32
+  if (authorizedDescriptor >= 0)
+    throw InvalidParameterException(
+        "Unix descriptors are unavailable on Windows");
   const std::string prefix = "\\\\.\\PhysicalDrive";
   if (!path.starts_with(prefix) || path.size() == prefix.size() ||
       path.substr(prefix.size()).find_first_not_of("0123456789") !=
@@ -155,15 +165,24 @@ void ReadOnlyDevice::open(const std::string &path) {
   candidate->sector = geometry.BytesPerSector;
   candidate->size = uint64_t(length.Length.QuadPart);
 #elif defined(__linux__)
-  candidate->handle = ::open(path.c_str(), O_RDONLY | O_EXCL | O_NOFOLLOW |
-                                               O_NONBLOCK | O_CLOEXEC);
+  if (authorizedDescriptor >= 0) {
+    const auto flags = ::fcntl(authorizedDescriptor, F_GETFL);
+    if (flags < 0 || (flags & O_ACCMODE) != O_RDONLY)
+      throw AccessDeniedException("Authorized source handle must be read-only");
+    candidate->handle = ::fcntl(authorizedDescriptor, F_DUPFD_CLOEXEC, 0);
+  } else {
+    candidate->handle = ::open(path.c_str(), O_RDONLY | O_EXCL | O_NOFOLLOW |
+                                                 O_NONBLOCK | O_CLOEXEC);
+  }
   if (candidate->handle < 0)
     throw AccessDeniedException("Cannot open block device read-only (missing, "
                                 "busy, or permission denied)",
                                 errno);
-  struct stat info{};
+  struct stat info{}, named{};
   int sector = 0;
   if (::fstat(candidate->handle, &info) || !S_ISBLK(info.st_mode) ||
+      ::lstat(path.c_str(), &named) || !S_ISBLK(named.st_mode) ||
+      named.st_rdev != info.st_rdev ||
       ::ioctl(candidate->handle, BLKSSZGET, &sector) ||
       ::ioctl(candidate->handle, BLKGETSIZE64, &candidate->size))
     throw DiskException(

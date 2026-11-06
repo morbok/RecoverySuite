@@ -10,6 +10,10 @@ public:
   ReadOnlyDevice();
   ~ReadOnlyDevice() override;
   void open(const std::string &path) override;
+  // Duplicates a read-only, exclusively opened descriptor supplied by the OS
+  // authorization service. Geometry, mount state and named identity are
+  // rechecked.
+  void openAuthorized(const std::string &path, int descriptor);
   void close() override;
   bool isOpen() const noexcept override;
   uint32_t getSectorSize() const noexcept override;
@@ -23,6 +27,7 @@ public:
   void validateIdentity() const;
 
 private:
+  void openImpl(const std::string &path, int authorizedDescriptor);
   struct Impl;
   std::unique_ptr<Impl> impl_;
 };

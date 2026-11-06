@@ -29,6 +29,15 @@ fi
 test ! -e "$fixture/output/mounted.img"
 sudo umount "$fixture/mount"
 mounted=0
+if [[ -n "${2:-}" ]]; then
+    sudo systemctl start udisks2
+    sudo udevadm settle
+    for attempt in {1..20}; do
+        if udisksctl info --block-device "$loop_device" >/dev/null 2>&1; then break; fi
+        sleep 1
+    done
+    sudo env QT_QPA_PLATFORM=offscreen RS_AUTHORIZED_DEVICE="$loop_device" "$(realpath "$2")" authorizedDeviceIntegration
+fi
 sudo "$cli" device capture "$loop_device" --output "$fixture/output/captured.img"
 sudo cmp "$fixture/source.img" "$fixture/output/captured.img"
 if sudo "$cli" device capture "$loop_device" --output "$fixture/output/captured.img"; then

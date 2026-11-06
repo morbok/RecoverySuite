@@ -6,6 +6,7 @@ find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
 
 # Static library (without main.cpp)
 add_library(RecoverySuite_GUI STATIC
+    core/DeviceAccess.cpp
     core/Application.cpp
     core/ApplicationState.cpp
     core/StateManager.cpp
@@ -76,3 +77,9 @@ install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/ DESTINATION include/RecoverySuite
 
 # Install the executable
 install(TARGETS RecoverySuite_GUI_Exe RUNTIME DESTINATION bin COMPONENT Runtime)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    find_package(Qt6 REQUIRED COMPONENTS DBus)
+    target_link_libraries(RecoverySuite_GUI PUBLIC Qt6::DBus)
+elseif(WIN32)
+    target_link_libraries(RecoverySuite_GUI PUBLIC shell32)
+endif()

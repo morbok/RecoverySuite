@@ -548,3 +548,7 @@ Partial drive scans can now be saved to `.rscan`, opened after restart and conti
 ## Bounded raster previews
 
 Candidate inspection can decode a first-frame PNG/JPEG/BMP/GIF/WebP thumbnail on the worker thread. Input is capped at 16 MiB, dimensions at 16 million pixels and decoder allocation at 64 MiB; the UI receives a re-encoded PNG no larger than 800×450. Text/hex remains capped at 64 KiB. No external viewer, active markup or source writes. CI covers byte-exact source preservation and a real raster thumbnail.
+
+## User-authorized disk access
+
+Linux GUI has an explicit Authorize read-only access action using UDisks2 Block.OpenDevice(mode=r, O_EXCL|O_CLOEXEC|O_NONBLOCK) over the system bus. The app stays unprivileged; its native reader duplicates and independently checks the returned descriptor, read-only mode, block identity, geometry and mount state. No setuid installation or disk permission changes. Windows provides an explicit UAC administrator-window action; offline-source and no-write guards remain active. CI adds real UDisks2 transport on an owned disposable loop device plus bad-descriptor tests; interactive desktop consent still needs external qualification. API: https://storaged.org/doc/udisks2-api/latest/gdbus-org.freedesktop.UDisks2.Block.html and https://learn.microsoft.com/en-us/windows/win32/secbp/running-with-administrator-privileges .

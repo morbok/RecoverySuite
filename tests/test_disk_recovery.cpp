@@ -1,4 +1,5 @@
 #include "Application/Service/GUIRecoveryService.h"
+#include "GUI/core/DeviceAccess.h"
 #include "GUI/core/MainWindow.h"
 #include "GUI/widgets/RecoveryResultsWidget.h"
 #include "GUI/widgets/SourceDiscoveryWidget.h"
@@ -634,6 +635,33 @@ private slots:
                  .toString(),
              QString("completed"));
     window.close();
+  }
+  void authorizedDeviceIntegration() {
+#ifdef __linux__
+    const auto path = qEnvironmentVariable("RS_AUTHORIZED_DEVICE");
+    if (path.isEmpty())
+      QSKIP("Dedicated CI loop-device authorization fixture only");
+    const auto descriptor = gui::core::authorizeReadOnlyDevice(path);
+    QVERIFY(descriptor.isValid());
+    disk::ReadOnlyDevice source;
+    source.openAuthorized(path.toStdString(), descriptor.fileDescriptor());
+    QVERIFY(source.isOpen());
+    QVERIFY(source.getDiskInfo().isReadOnly);
+    std::vector<std::byte> bytes;
+    QVERIFY(source.readSectors(0, 1, bytes));
+    QCOMPARE(bytes.size(), size_t(source.getSectorSize()));
+    QVERIFY_EXCEPTION_THROWN(source.writeSectors(0, 1, bytes),
+                             disk::AccessDeniedException);
+    QTemporaryDir root;
+    save(root.filePath("fake"), QByteArray(512, 0));
+    QVERIFY_EXCEPTION_THROWN(
+        source.openAuthorized(root.filePath("fake").toStdString(),
+                              descriptor.fileDescriptor()),
+        disk::DiskException);
+    QVERIFY(source.isOpen());
+#else
+    QSKIP("UDisks2 descriptor transport is Linux-only");
+#endif
   }
   void rasterPreviewDecodesOffscreenAndRemainsReadOnly() {
     QTemporaryDir root;

@@ -1,4 +1,5 @@
 #include "SourceDiscoveryWidget.h"
+#include "GUI/core/DeviceAccess.h"
 #include <QVBoxLayout>
 #include <QFormLayout>
 #include <QHBoxLayout>
@@ -33,6 +34,32 @@ SourceDiscoveryWidget::SourceDiscoveryWidget(QWidget* parent) : QWidget(parent) 
             const auto source = service_->openDevice(row->data(0, Qt::UserRole).toString().toStdString());
             status_->setText(tr("Drive opened read-only.")); emit sourceSelected(QString::fromStdString(source.devicePath));
         } catch (const std::exception& error) { status_->setText(QString::fromUtf8(error.what())); }
+    });
+    auto* authorize=new QPushButton(this);authorize->setObjectName("authorizeSourceAccess");
+#ifdef _WIN32
+    authorize->setText(tr("Open administrator window…"));
+#else
+    authorize->setText(tr("Authorize read-only access…"));
+#endif
+    layout->addWidget(authorize);
+    connect(authorize,&QPushButton::clicked,this,[this] {
+        const auto* row=drives_->currentItem();
+        if(!row || !service_) {status_->setText(tr("Select a connected drive first."));return;}
+        const auto path=row->data(0,Qt::UserRole).toString();
+        window()->setEnabled(false);
+        try {
+#ifdef __linux__
+            const auto descriptor=core::authorizeReadOnlyDevice(path);
+            const auto source=service_->openDevice(path.toStdString(),descriptor.fileDescriptor());
+            window()->setEnabled(true);status_->setText(tr("Authorized read-only access. Source state was not changed."));
+            emit sourceSelected(QString::fromStdString(source.devicePath));
+#elif defined(_WIN32)
+            core::requestAdministratorWindow();window()->setEnabled(true);
+            status_->setText(tr("Use the new administrator window and select this drive again. The source must still be offline."));
+#else
+            throw std::runtime_error("Device authorization is available on Windows and Linux");
+#endif
+        } catch(const std::exception& error) {window()->setEnabled(true);status_->setText(QString::fromUtf8(error.what()));}
     });
     auto* access = new QLabel(tr("Source access is read-only. Unmount its volumes on Linux or take the source disk offline on Windows first; system drives cannot be scanned while in use. Device permissions may be required. RecoverySuite never changes this state automatically."), this);
     access->setWordWrap(true); layout->addWidget(access);

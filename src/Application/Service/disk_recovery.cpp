@@ -89,7 +89,8 @@ GUIRecoveryService::previewCandidate(const std::string &name,
   return bytes;
 }
 
-models::StorageDevice GUIRecoveryService::openDevice(const std::string &path) {
+models::StorageDevice GUIRecoveryService::openDevice(const std::string &path,
+                                                     int authorizedDescriptor) {
   std::unique_lock lock(imageMutex_, std::try_to_lock);
   if (!lock.owns_lock())
     throw std::runtime_error(
@@ -99,7 +100,10 @@ models::StorageDevice GUIRecoveryService::openDevice(const std::string &path) {
     return getStorageDeviceInfo(sourcePath_);
   }
   auto reader = std::make_shared<disk::ReadOnlyDevice>();
-  reader->open(path);
+  if (authorizedDescriptor >= 0)
+    reader->openAuthorized(path, authorizedDescriptor);
+  else
+    reader->open(path);
   const auto info = reader->getDiskInfo();
   auto backend = std::make_unique<RecoveryService>(reader);
   sourceReader_ = reader;

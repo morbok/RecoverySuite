@@ -88,6 +88,29 @@ public:
         {}, false, 65536);
   }
 private slots:
+  void authorizedDescriptorRejectsRegularAndWritableHandles() {
+#ifdef __linux__
+    QTemporaryDir root;
+    const auto path = root.filePath("regular.img");
+    save(path, QByteArray(512, 0));
+    QFile input(path);
+    QVERIFY(input.open(QIODevice::ReadOnly));
+    disk::ReadOnlyDevice source;
+    QVERIFY_EXCEPTION_THROWN(
+        source.openAuthorized(path.toStdString(), input.handle()),
+        disk::DiskException);
+    QVERIFY(!source.isOpen());
+    input.close();
+    QVERIFY(input.open(QIODevice::ReadWrite));
+    QVERIFY_EXCEPTION_THROWN(
+        source.openAuthorized(path.toStdString(), input.handle()),
+        disk::AccessDeniedException);
+    QVERIFY(!source.isOpen());
+    QVERIFY_EXCEPTION_THROWN(source.openAuthorized(path.toStdString(), -1),
+                             disk::InvalidParameterException);
+#endif
+  }
+
   void unicodeImageAndCapture() {
     QTemporaryDir root;
     const auto path = root.filePath(QString::fromUtf8("İmaj 📷.img"));

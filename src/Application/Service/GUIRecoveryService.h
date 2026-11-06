@@ -48,7 +48,7 @@ public:
      * Source changes are rejected while executeOperation is active.
      */
     models::StorageDevice openImage(const std::string& path, uint32_t sectorSize = 512);
-    models::StorageDevice openDevice(const std::string& path);
+    models::StorageDevice openDevice(const std::string& path, int authorizedDescriptor = -1);
     /** Read a bounded prefix (default 64 KiB, maximum 16 MiB); no files written.
      * Call off the GUI thread. Cancellation also stops discovery replay.
      */
