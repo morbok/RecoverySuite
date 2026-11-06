@@ -2,6 +2,7 @@
 #include "Disk/IDiskReader.hpp"
 #include "Filesystem/FAT/fat_boot_geometry.h"
 #include "exfat_files.h"
+#include "ext4_files.h"
 #include "fat_root_files.h"
 #include "ntfs_mft.h"
 #include "signature_carver.h"
@@ -54,6 +55,39 @@ findDiskVolumes(disk::IDiskReader &source, const DiskScanProgress &progress,
         continue;
       const auto *p =
           reinterpret_cast<const uint8_t *>(bytes.data()) + i * sector;
+      bool ext4Found = false;
+      for (size_t offset : {size_t(0), size_t(1024)}) {
+        if (offset && sector < 2048)
+          continue;
+        if (p[offset + 56] != 0x53 || p[offset + 57] != 0xef)
+          continue;
+        if (!offset && start < 1024 / sector)
+          continue;
+        const auto origin = offset ? start : start - 1024 / sector;
+        std::vector<uint8_t> sb;
+        if (!readSourceBytes(&source, origin, total - origin, 1024, 1024, sb,
+                             cancelled))
+          continue;
+        try {
+          const auto g = ext4::geometry(sb.data(), (total - origin) * sector);
+          const auto length = g.blocks * g.blockSize / sector;
+          if (g.blocks * g.blockSize % sector || !length)
+            continue;
+          if (std::any_of(result.begin(), result.end(), [&](const auto &v) {
+                return origin < v.start + v.count && v.start < origin + length;
+              }))
+            continue;
+          if (result.size() >= 128)
+            throw std::runtime_error("Volume candidate limit reached (128)");
+          result.push_back({origin, length, "ext4"});
+          ext4Found = true;
+          break;
+        } catch (const std::runtime_error &) {
+          continue;
+        }
+      }
+      if (ext4Found)
+        continue;
       if (p[510] != 0x55 || p[511] != 0xaa)
         continue;
       uint64_t length = 0;
@@ -144,6 +178,30 @@ scanDiskFiles(disk::IDiskReader &source,
             confidence);
       };
     };
+    if (volume.filesystem == "ext4") {
+      try {
+        ext4::Reader reader(source, volume.start, volume.count, cancelled);
+        const auto summary = reader.scan(
+            [&](const ext4::File &file) {
+              item(prefix + file.path, file.size, file.read, file.confidence);
+            },
+            report);
+        issues.push_back(
+            prefix +
+            "ext4 metadata checksums and journal replay are not validated; "
+            "only retained allocated files are reconstructed");
+        if (summary.invalid)
+          issues.push_back(prefix + "Some ext4 files/directories have invalid "
+                                    "or unsupported records");
+      } catch (const DiskCandidateLimit &) {
+        throw;
+      } catch (const std::exception &error) {
+        if (cancelled && cancelled())
+          return issues;
+        issues.push_back(prefix + error.what());
+      }
+      continue;
+    }
     if (volume.filesystem == "exFAT") {
       try {
         const auto summary = recoverExfatFiles(

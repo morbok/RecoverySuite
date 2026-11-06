@@ -11,7 +11,7 @@ all real-world data-loss cases.
 
 1. Open RecoverySuite and select the affected drive from the connected-drive list.
 2. Choose **Use selected drive**, then **Search for lost data**. The automatic scan
-   searches for surviving FAT12/16/32, exFAT and NTFS volumes, even without partition entries,
+   searches for surviving FAT12/16/32, exFAT, NTFS and ext4 volumes, even without partition entries,
    reconstructs supported existing/deleted-file candidates, and searches JPEG/PDF/ZIP signatures.
 3. Review filenames, paths, sizes and recovery confidence. Filter the list and check the
    files to recover. Use **Inspect highlighted file…** to read a bounded text/hex preview
@@ -33,8 +33,17 @@ Supported scope is FAT12/16/32, single-FAT exFAT 1.0, bounded NTFS recovery and 
 carving. Inspection shows up to 64 KiB as plain text or hexadecimal, without executing content.
 exFAT supports bounded contiguous/fragmented files, subfolders and retained deleted entries
 whose clusters remain free; invalid boot/entry checksums and cross-linked allocations are rejected.
-TexFAT, ext4, encrypted/compressed streams, rich media/document previews, arbitrarily fragmented
-deleted files, physical-scan persistence and failing-media rescue retries remain open work.
+Retained allocated ext4 files use directory/inode/extent reconstruction, including sparse and
+unwritten ranges. ext4 metadata checksums and journal replay remain unverified, and deleted
+ext4 files are not reconstructed from erased records.
+TexFAT, encrypted/compressed streams, rich media/document previews, arbitrarily fragmented
+deleted files, interrupted scan continuation and failing-media rescue retries remain open work.
+
+Use **File → Save scan results…** to save a catalog on another drive and **Open saved scan…**
+to reopen it later. The saved source must still be available at the same path. Reopening checks
+identity, geometry and up to 4 MiB of sampled content; it is not a full-disk comparison.
+Selected files are reconstructed again for inspection/recovery. Saved catalogs do not continue
+a scan that was interrupted before discovery finished.
 
 **Optional image source:** choose **Open an existing disk image instead…** on the source page.
 It uses the same automatic scan/review/recover flow. The advanced method controls and the

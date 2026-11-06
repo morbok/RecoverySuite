@@ -96,6 +96,25 @@ def exfat_fixture():
     return bytes(image)
 
 
+def ext4_fixture():
+    image=bytearray(128*1024);sb=1024
+    for at,value,width in ((0,16,4),(4,128,4),(20,1,4),(32,128,4),(40,16,4),(56,0xEF53,2),(88,128,2),(96,0x42,4)):
+        put(image,sb+at,value,width)
+    for at,value in ((2048,3),(2052,4),(2056,5)):put(image,at,value,4)
+    image[3*1024]=255;put(image,4*1024,0x402)
+    for number,mode,size,physical in ((2,0x41ED,1024,7),(11,0x81A4,5,8)):
+        at=5*1024+(number-1)*128
+        for off,value,width in ((0,mode,2),(4,size,4),(26,1,2),(32,0x80000,4),(40,0xF30A,2),(42,1,2),(44,4,2),(56,1,2),(60,physical,4)):
+            put(image,at+off,value,width)
+    root=7*1024
+    for off,number,length,name in ((0,2,12,b'.'),(12,2,12,b'..'),(24,11,1000,b'notes.txt')):
+        put(image,root+off,number,4);put(image,root+off+4,length)
+        image[root+off+6]=len(name);image[root+off+7]=2 if number==2 else 1
+        image[root+off+8:root+off+8+len(name)]=name
+    image[8*1024:8*1024+5]=b'hello'
+    return bytes(image)
+
+
 def gpt_fixture():
     import zlib
     image = bytearray(64 * 512)
@@ -124,7 +143,7 @@ if __name__ == '__main__':
     put(fat4k, 11, 4096)
     zero_cluster = bytearray(corpus['fat12.img'])
     zero_cluster[13] = 0
-    for name, data in {**corpus, "gpt.img": gpt_fixture(), "exfat.img": exfat_fixture(),
+    for name, data in {**corpus, "gpt.img": gpt_fixture(), "exfat.img": exfat_fixture(), "ext4.img": ext4_fixture(),
                        "fat-4k-boot.img": fat4k,
                        "fat-zero-cluster.img": zero_cluster}.items():
         (target / name).write_bytes(data)

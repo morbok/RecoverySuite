@@ -25,12 +25,13 @@ No completion percentage is meaningful without coverage of those user scenarios.
 
 ## Remaining product work
 
-- Other filesystem coverage (including ext4); broader formats beyond JPEG/PDF/ZIP carving.
+- Other filesystem coverage; broader formats beyond JPEG/PDF/ZIP carving.
+- ext4 deleted records, journal replay and metadata checksum verification.
 - exFAT TexFAT/two-FAT support and damaged/missing boot-region recovery.
 - Rich media/document previews and corruption/quality assessment; bounded text/hex inspection is available, but does not prove a whole file is intact.
 - More damaged-volume reconstruction, missing boot/MFT metadata, fragmented deleted chains,
   sparse/compressed/encrypted data and larger file-count/file-size limits.
-- Physical scan persistence, fast rediscovery and robust failing-media rescue acquisition/retries.
+- Interrupted scan continuation, fast rediscovery and robust failing-media rescue acquisition/retries.
 - Usable privileged device-access integration; currently native permissions and source state
   must already permit read-only access. Active system-volume recovery is not implemented.
 - Dedicated physical USB/SATA/NVMe and interrupted-write qualification, independent code review,
@@ -67,3 +68,27 @@ is intentionally a partial content view, not a file-format validity assessment.
 CI also exercises a standard-formatted exFAT filesystem on a disposable Linux
 loop device, recovering a nested binary file and a document with exact byte and
 source-preservation checks. The fuzz corpus includes a valid exFAT seed.
+
+## Saved catalogs and Linux ext4 (validation pending)
+
+Drive scan catalogs can be saved and reopened through File menu actions, using an
+anchored, exclusive new state file on another drive. Restore is transactional and
+validates bounds, duplicate paths, volume overlaps, source geometry and a SHA-256
+fingerprint over identity plus up to 64 evenly spaced 64 KiB samples. This detects
+changes in those samples; it cannot establish equality of unsampled disk bytes.
+Preview/export still replays current-source reconstruction. Interrupted discovery
+cannot yet continue from a cursor. Existing image-operation sessions remain separate.
+
+Automatic discovery also recognizes surviving primary ext4 superblocks after a
+lost partition table. Bounded retained allocated regular files are reconstructed
+from directory entries, inode/block allocation bitmaps and extent trees. Sparse
+and unwritten ranges become zero bytes. Symlinks/special files, non-UTF8 names,
+legacy indirect maps, inline/encrypted/verity/bigalloc layouts, deleted records
+and journal replay are unsupported. Metadata checksums are not verified; that
+limitation accompanies every ext4 result. Cross-linked and known-metadata-alias
+ranges are excluded. Limits: 4,096 groups, 2 GiB/file, 16 MiB/directory, 1,024
+directories/32 levels, 10,000 candidates, 100,000 extents and 64 MiB metadata reads.
+
+CI adds a standard-formatted ext4 device fixture with nested binary/document byte
+comparisons, parser fuzz seed, corrupt extents/allocation cases and saved-catalog
+round-trip, malformed state, changed-source and GUI save/open/recover cases.

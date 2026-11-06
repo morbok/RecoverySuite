@@ -108,6 +108,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size) {
       [](const recovery::exfat::File &file) {
         if (file.size) file.read(0, static_cast<size_t>(std::min<uint64_t>(file.size, 65536)));
       }); });
+  parse([&] { recovery::ext4::Reader(source,0,count,{}).scan(
+      [](const recovery::ext4::File& file){if(file.size)file.read(0,static_cast<size_t>(std::min<uint64_t>(file.size,65536)));},{}); });
   const auto discard = [](const std::string &, const std::vector<uint8_t> &) {};
   parse([&] { recovery::carveSignatures(source, 0, count, discard); });
   parse([&] {

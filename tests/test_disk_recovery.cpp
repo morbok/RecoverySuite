@@ -127,6 +127,56 @@ class TestDiskRecovery : public QObject {
       put(v, i, checksum, 4);
     return QByteArray(32 * 512, char{0}) + v;
   }
+  static QByteArray ext4Disk() {
+    QByteArray v(128 * 1024, char{0});
+    const int sb = 1024;
+    put(v, sb, 16, 4);
+    put(v, sb + 4, 128, 4);
+    put(v, sb + 20, 1, 4);
+    put(v, sb + 32, 128, 4);
+    put(v, sb + 40, 16, 4);
+    put(v, sb + 56, 0xef53);
+    put(v, sb + 88, 128);
+    put(v, sb + 96, 0x42, 4);
+    put(v, 2048, 3, 4);
+    put(v, 2052, 4, 4);
+    put(v, 2056, 5, 4);
+    // Filesystem blocks 1..8 allocated; inodes 2 and 11 allocated.
+    v[3 * 1024] = char(0xff);
+    put(v, 4 * 1024, 0x402);
+    const auto ino = [&](int number, int mode, int size, int physical) {
+      const int at = 5 * 1024 + (number - 1) * 128;
+      put(v, at, mode);
+      put(v, at + 4, size, 4);
+      put(v, at + 26, 1);
+      put(v, at + 32, 0x80000, 4);
+      put(v, at + 40, 0xf30a);
+      put(v, at + 42, 1);
+      put(v, at + 44, 4);
+      put(v, at + 56, 1);
+      put(v, at + 60, physical, 4);
+    };
+    ino(2, 0x41ed, 1024, 7);
+    ino(11, 0x81a4, 5, 8);
+    const int dir = 7 * 1024;
+    put(v, dir, 2, 4);
+    put(v, dir + 4, 12);
+    v[dir + 6] = 1;
+    v[dir + 7] = 2;
+    v[dir + 8] = '.';
+    put(v, dir + 12, 2, 4);
+    put(v, dir + 16, 12);
+    v[dir + 18] = 2;
+    v[dir + 19] = 2;
+    v.replace(dir + 20, 2, "..");
+    put(v, dir + 24, 11, 4);
+    put(v, dir + 28, 1000);
+    v[dir + 30] = 9;
+    v[dir + 31] = 1;
+    v.replace(dir + 32, 9, "notes.txt");
+    v.replace(8 * 1024, 5, "hello");
+    return QByteArray(32 * 512, char{0}) + v;
+  }
   static void save(const QString &path, const QByteArray &bytes) {
     QFile f(path);
     if (!f.open(QIODevice::WriteOnly) || f.write(bytes) != bytes.size())
@@ -370,6 +420,56 @@ private slots:
         service.executeOperation(scan(service.openImage(path.toStdString())));
     QVERIFY2(result.success, result.errorMessage.c_str());
     QCOMPARE(result.recoveredItemsCount, uint64_t(expected));
+    QVERIFY(!result.outputWritten);
+    QCOMPARE(read(path), bytes);
+  }
+  void ext4LostVolumeAndSelectedRecovery() {
+    QTemporaryDir root;
+    const auto path = root.filePath("ext4.img");
+    const auto original = ext4Disk();
+    save(path, original);
+    GUIRecoveryService service(nullptr);
+    auto op = scan(service.openImage(path.toStdString()));
+    const auto result = service.executeOperation(op);
+    QVERIFY2(result.success, result.errorMessage.c_str());
+    QCOMPARE(result.details.at("Filesystem volumes found"), std::string("1"));
+    QCOMPARE(result.recoveredItemsCount, uint64_t(1));
+    QCOMPARE(result.recoveredItems[0].name,
+             std::string("ext4_32/Existing/notes.txt"));
+    QCOMPARE(service.previewCandidate(result.recoveredItems[0].name),
+             std::vector<uint8_t>({'h', 'e', 'l', 'l', 'o'}));
+    QVERIFY(QDir().mkdir(root.filePath("out")));
+    op.operationType = "disk_recovery";
+    op.outputPath = root.filePath("out").toStdString();
+    op.selectedPaths = {result.recoveredItems[0].name};
+    const auto recovered = service.executeOperation(op);
+    QVERIFY2(recovered.success, recovered.errorMessage.c_str());
+    QCOMPARE(read(root.filePath("out/ext4_32/Existing/notes.txt")),
+             QByteArray("hello"));
+    QCOMPARE(read(path), original);
+  }
+  void ext4RejectsInvalidExtentsAndAllocation_data() {
+    QTest::addColumn<int>("offset");
+    QTest::addColumn<int>("value");
+    QTest::newRow("unallocated-data") << 3 * 1024 << 0x7f;
+    QTest::newRow("metadata-alias") << 5 * 1024 + 10 * 128 + 60 << 5;
+    QTest::newRow("extent-outside-disk") << 5 * 1024 + 10 * 128 + 60 << 255;
+    QTest::newRow("invalid-extent-header") << 5 * 1024 + 10 * 128 + 40 << 0;
+    QTest::newRow("directory-record-length") << 7 * 1024 + 28 << 1;
+  }
+  void ext4RejectsInvalidExtentsAndAllocation() {
+    QFETCH(int, offset);
+    QFETCH(int, value);
+    QTemporaryDir root;
+    auto bytes = ext4Disk();
+    bytes[32 * 512 + offset] = char(value);
+    const auto path = root.filePath("bad.img");
+    save(path, bytes);
+    GUIRecoveryService service(nullptr);
+    const auto result =
+        service.executeOperation(scan(service.openImage(path.toStdString())));
+    QVERIFY2(result.success, result.errorMessage.c_str());
+    QCOMPARE(result.recoveredItemsCount, uint64_t(0));
     QVERIFY(!result.outputWritten);
     QCOMPARE(read(path), bytes);
   }

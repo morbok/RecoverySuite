@@ -501,3 +501,12 @@ read-only image handle correctly prevents the mutation used by the changed-sourc
 test. The test now checks write denial plus unchanged preview on Windows, and
 changed-source rejection after a successful mutation on Linux. The implementation
 revision before that fixture addition passed all 31 Windows suites.
+
+## 2026-11-06: saved catalogs and ext4
+
+Added source-bound save/open drive catalogs (File menu) with bounded JSON, sampled
+identity/content fingerprint, transactional restore and current-source reconstruction.
+Added retained allocated ext4 file recovery with extent trees, allocation checks,
+sparse/unwritten zeroing and lost-volume discovery. This is explicitly not ext4
+undelete/journal replay or metadata-checksum verification. Synthetic, standard-
+formatted disposable device and fuzz cases run only in CI. Validation pending.

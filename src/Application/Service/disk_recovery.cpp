@@ -212,8 +212,8 @@ models::RecoveryResult GUIRecoveryService::executeDiskOperation(
   result.details["Filesystem volumes found"] =
       std::to_string(scanVolumes_.size());
   result.details["Supported recovery"] =
-      "FAT12/16/32, exFAT 1.0 (single FAT), NTFS and JPEG/PDF/ZIP signatures. "
-      "ext4, encrypted "
+      "FAT12/16/32, exFAT 1.0 (single FAT), NTFS, retained ext4 files and JPEG/PDF/ZIP signatures. "
+      "Encrypted "
       "and compressed filesystem data are not supported yet.";
   result.details["Recovery limits"] =
       "Candidates can contain overwritten or incomplete bytes. Interrupted "
