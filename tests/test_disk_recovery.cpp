@@ -226,6 +226,109 @@ class TestDiskRecovery : public QObject {
     put(image, sb + 1020, crc(0xffffffffu, image.constData() + sb, 1020), 4);
     return image;
   }
+  static QByteArray indexedExt4Disk(bool checksums, bool internal,
+                                    int fault = 0) {
+    auto image = checksums ? checksummedExt4Disk() : ext4Disk();
+    const int base = 32 * 512, root = base + 7 * 1024,
+              ino = base + 5 * 1024 + 128;
+    const auto seed =
+        crc(0xffffffffu, image.constData() + base + 1024 + 104, 16);
+    QByteArray identity(8, 0);
+    put(identity, 0, 2, 4);
+    const auto inodeSeed = crc(seed, identity.constData(), 8);
+    put(image, ino + 32, 0x81000, 4);
+    put(image, ino + 4, (internal ? 3 : 2) * 1024, 4);
+    put(image, ino + 42, 2);
+    put(image, ino + 64, 1, 4);
+    put(image, ino + 68, internal ? 2 : 1);
+    put(image, ino + 72, 9, 4);
+    image[base + 3 * 1024 + 1] = char(internal ? 3 : 1);
+    image.replace(root, 1024, QByteArray(1024, 0));
+    put(image, root, 2, 4);
+    put(image, root + 4, 12);
+    image[root + 6] = 1;
+    image[root + 7] = 2;
+    image[root + 8] = '.';
+    put(image, root + 12, 2, 4);
+    put(image, root + 16, 1012);
+    image[root + 18] = 2;
+    image[root + 19] = 2;
+    image.replace(root + 20, 2, "..");
+    image[root + 28] = 1;
+    image[root + 29] = 8;
+    image[root + 30] = char(internal ? 1 : 0);
+    put(image, root + 32, checksums ? 123 : 124);
+    put(image, root + 34, 1);
+    put(image, root + 36, 1, 4);
+    const int leaf = base + (internal ? 10 : 9) * 1024;
+    put(image, leaf, 11, 4);
+    put(image, leaf + 4, checksums ? 1012 : 1024);
+    image[leaf + 6] = 9;
+    image[leaf + 7] = 1;
+    image.replace(leaf + 8, 9, "notes.txt");
+    const int node = base + 9 * 1024;
+    if (internal) {
+      put(image, node + 4, 1024);
+      put(image, node + 8, checksums ? 126 : 127);
+      put(image, node + 10, 1);
+      put(image, node + 12, 2, 4);
+    }
+    if (fault == 1)
+      put(image, root + 36, 0, 4); // cyclic root reference
+    if (fault == 2)
+      put(image, root + 36, 99, 4); // outside directory
+    if (fault == 3)
+      put(image, root + 34, 200); // excessive count
+    if (fault == 4)
+      image[root + 30] = 3; // unsupported depth
+    if (fault == 5 && internal)
+      put(image, node + 12, 1, 4); // cyclic internal node
+    if (fault == 6) {
+      put(image, root + 34, 2);
+      put(image, root + 40, 2, 4);
+      put(image, root + 44, 1, 4);
+    } // aliased child
+    const auto indexChecksum = [&](int at, int offset) {
+      const int count = uint8_t(image[at + offset + 2]) |
+                        (int(uint8_t(image[at + offset + 3])) << 8);
+      // Deliberately malformed counts still get a checksum over their bounded
+      // bytes.
+      if (count > 123)
+        return;
+      auto digest = crc(inodeSeed, image.constData() + at, offset + count * 8);
+      QByteArray tail(8, 0);
+      digest = crc(digest, tail.constData(), 8);
+      put(image, at + 1020, digest, 4);
+    };
+    if (checksums) {
+      indexChecksum(root, 32);
+      if (internal)
+        indexChecksum(node, 8);
+      put(image, leaf + 1016, 12);
+      image[leaf + 1019] = char(0xde);
+      put(image, leaf + 1020, crc(inodeSeed, image.constData() + leaf, 1012),
+          4);
+      put(image, ino + 124, 0);
+      put(image, ino + 124,
+          crc(inodeSeed, image.constData() + ino, 128) & 0xffff);
+      const int descriptor = base + 2048;
+      put(image, descriptor + 24,
+          crc(seed, image.constData() + base + 3 * 1024, 16) & 0xffff);
+      put(image, descriptor + 30, 0);
+      QByteArray group(4, 0);
+      put(image, descriptor + 30,
+          crc(crc(seed, group.constData(), 4), image.constData() + descriptor,
+              32) &
+              0xffff);
+      if (fault == 7)
+        image[root + 1020] = char(uint8_t(image[root + 1020]) ^ 1);
+      if (fault == 8 && internal)
+        image[node + 1020] = char(uint8_t(image[node + 1020]) ^ 1);
+      if (fault == 9)
+        image[leaf + 20] = 1;
+    }
+    return image;
+  }
   static void save(const QString &path, const QByteArray &bytes) {
     QFile f(path);
     if (!f.open(QIODevice::WriteOnly) || f.write(bytes) != bytes.size())
@@ -510,6 +613,38 @@ private slots:
     QCOMPARE(read(root.filePath("out/ext4_32/Existing/notes.txt")),
              QByteArray("hello"));
     QCOMPARE(read(path), original);
+  }
+  void ext4IndexedDirectoriesAndCorruption() {
+    for (bool checksums : {false, true})
+      for (bool internal : {false, true})
+        for (int fault = 0; fault <= 9; ++fault) {
+          if ((fault == 5 || fault == 8) && !internal)
+            continue;
+          if (fault >= 7 && !checksums)
+            continue;
+          QTemporaryDir root;
+          const auto path = root.filePath("indexed.img");
+          const auto bytes = indexedExt4Disk(checksums, internal, fault);
+          save(path, bytes);
+          GUIRecoveryService service(nullptr);
+          auto op = scan(service.openImage(path.toStdString()));
+          op.deepSearch = false;
+          const auto result = service.executeOperation(op);
+          QVERIFY2(result.success, result.errorMessage.c_str());
+          QVERIFY2(result.recoveredItemsCount == uint64_t(fault ? 0 : 1),
+                   qPrintable(QString("checksums=%1 depth=%2 fault=%3 count=%4")
+                                  .arg(checksums)
+                                  .arg(internal)
+                                  .arg(fault)
+                                  .arg(result.recoveredItemsCount)));
+          if (!fault) {
+            QCOMPARE(result.recoveredItems[0].name,
+                     std::string("ext4_32/Existing/notes.txt"));
+            QCOMPARE(service.previewCandidate(result.recoveredItems[0].name),
+                     std::vector<uint8_t>({'h', 'e', 'l', 'l', 'o'}));
+          }
+          QCOMPARE(read(path), bytes);
+        }
   }
   void ext4MetadataChecksumsRejectCorruption() {
     QCOMPARE(

@@ -287,6 +287,89 @@ class Reader {
     }
     return out;
   }
+  Bytes directoryBlock(const Stream &s, uint64_t logical) {
+    if (logical >= s.size / g_.blockSize ||
+        !std::any_of(s.extents.begin(), s.extents.end(), [&](const auto &e) {
+          return !e.unwritten && logical >= e.logical &&
+                 logical - e.logical < e.count;
+        }))
+      throw std::runtime_error("Missing or unwritten ext4 directory block");
+    if (readBytes_ + g_.blockSize > 64 * 1024 * 1024)
+      throw std::runtime_error("ext4 metadata limit (64 MiB)");
+    readBytes_ += g_.blockSize;
+    return pull(s, logical * g_.blockSize, size_t(g_.blockSize));
+  }
+  // Enumerate checked htree leaves, without using hashes for filename lookup.
+  // Logical block references must form a bounded tree with no aliases/cycles.
+  std::vector<uint64_t> directoryLeaves(const Stream &s, const Bytes &ino,
+                                        uint64_t number) {
+    std::vector<uint64_t> leaves;
+    if (!(le(ino.data() + 32, 4) & 0x1000)) {
+      for (uint64_t block = 0; block < s.size / g_.blockSize; ++block)
+        leaves.push_back(block);
+      return leaves;
+    }
+    const auto root = directoryBlock(s, 0);
+    if (le(root.data(), 4) != number || le(root.data() + 4, 2) != 12 ||
+        root[6] != 1 || root[8] != '.' || !le(root.data() + 12, 4) ||
+        le(root.data() + 12, 4) > g_.inodes ||
+        le(root.data() + 16, 2) != g_.blockSize - 12 || root[18] != 2 ||
+        root[20] != '.' || root[21] != '.' || le(root.data() + 24, 4) ||
+        root[28] > 5 || root[29] != 8 || root[30] > 2 || root[31])
+      throw std::runtime_error(
+          "Invalid or unsupported ext4 directory index root");
+    const auto seed = crcNumber(crcNumber(seed_, uint32_t(number)),
+                                uint32_t(le(ino.data() + 100, 4)));
+    std::set<uint64_t> visited{0};
+    const auto walk = [&](const auto &self, const Bytes &block, size_t offset,
+                          unsigned depth) -> void {
+      check();
+      const auto limit = le(block.data() + offset, 2),
+                 count = le(block.data() + offset + 2, 2);
+      const auto capacity = (g_.blockSize - offset - (checksums_ ? 8 : 0)) / 8;
+      if (limit != capacity || !count || count > limit)
+        throw std::runtime_error("Invalid ext4 directory index count");
+      if (checksums_) {
+        const auto tail = offset + size_t(limit) * 8;
+        const auto used = offset + size_t(count) * 8;
+        const uint8_t zeros[4]{};
+        auto digest = crc32c(seed, block.data(), used);
+        digest = crc32c(digest, block.data() + tail, 4);
+        digest = crc32c(digest, zeros, 4);
+        if (le(block.data() + tail, 4) ||
+            digest != le(block.data() + tail + 4, 4))
+          throw std::runtime_error("ext4 directory index checksum mismatch");
+      }
+      uint64_t prior = 0;
+      for (size_t i = 0; i < count; ++i) {
+        const auto *entry = block.data() + offset + i * 8;
+        const auto hash = i ? le(entry, 4) & ~uint64_t(1) : 0;
+        if (i && hash < prior)
+          throw std::runtime_error("Unordered ext4 directory index");
+        prior = hash;
+        const auto child = le(entry + 4, 4);
+        if (!child || child >= s.size / g_.blockSize ||
+            !visited.insert(child).second || visited.size() > 16384)
+          throw std::runtime_error(
+              "Cyclic, aliased or out-of-range ext4 directory index");
+        if (!depth)
+          leaves.push_back(child);
+        else {
+          const auto node = directoryBlock(s, child);
+          if (le(node.data(), 4) || le(node.data() + 4, 2) != g_.blockSize ||
+              node[6] || node[7])
+            throw std::runtime_error("Invalid ext4 directory index node");
+          self(self, node, 8, depth - 1);
+        }
+      }
+    };
+    walk(walk, root, 32, root[30]);
+    // An unreferenced directory block may contain a surviving entry or corrupt
+    // index metadata; do not silently claim the directory was fully traversed.
+    if (visited.size() != s.size / g_.blockSize)
+      throw std::runtime_error("Unreferenced ext4 directory blocks");
+    return leaves;
+  }
   static std::string name(const uint8_t *p, size_t n) {
     std::string s(reinterpret_cast<const char *>(p), n);
     if (s.empty() || s == "." || s == ".." || s.back() == '.' ||
@@ -414,17 +497,15 @@ public:
         const auto ino = inode(directory.inode);
         if ((le(ino.data(), 2) & 0xf000) != 0x4000)
           throw std::runtime_error("ext4 directory type mismatch");
-        if (checksums_ && (le(ino.data() + 32, 4) & 0x1000))
-          throw std::runtime_error(
-              "Checksummed ext4 indexed directories are unsupported");
         const auto data = stream(ino, directory.inode);
         if (!data.size || data.size > 16 * 1024 * 1024 ||
             data.size % g_.blockSize)
           throw std::runtime_error("ext4 directory size unsupported");
         for (const auto &e : data.extents)
           protect(e.physical, e.count);
-        for (uint64_t at = 0; at < data.size; at += g_.blockSize) {
-          const auto block = pull(data, at, size_t(g_.blockSize));
+        const auto leaves = directoryLeaves(data, ino, directory.inode);
+        for (const auto logical : leaves) {
+          const auto block = directoryBlock(data, logical);
           if (checksums_) {
             const auto tail = block.data() + block.size() - 12;
             const auto seed =

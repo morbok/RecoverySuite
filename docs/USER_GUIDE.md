@@ -41,7 +41,7 @@ Filesystem recovery works with general file contents, regardless of extension. I
 
 Current bounds include 10,000 candidates, 128 volumes, up to 2 GiB for supported streamed files, and smaller per-parser metadata/buffer limits. FAT buffered recovery and signature candidates are limited to 16 MiB. See scan details for skipped or unsupported records.
 
-Encrypted/compressed streams, arbitrary fragmented deleted chains, exFAT TexFAT, ext4 deleted records/journal replay/checksummed indexed directories and other filesystem families are unsupported. The app never writes source sectors, repairs partitions, formats disks, or restores discarded SSD TRIM data. Unwritten/overwritten bytes cannot be recreated.
+Encrypted/compressed streams, arbitrary fragmented deleted chains, exFAT TexFAT, ext4 deleted records/journal replay and other filesystem families are unsupported. The app never writes source sectors, repairs partitions, formats disks, or restores discarded SSD TRIM data. Unwritten/overwritten bytes cannot be recreated.
 
 ## If something fails
 

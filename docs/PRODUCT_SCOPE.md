@@ -26,7 +26,7 @@ No completion percentage is meaningful without coverage of those user scenarios.
 ## Explicit limits and future coverage
 
 - Other filesystem coverage; broader formats beyond JPEG/PDF/ZIP carving.
-- ext4 deleted records, journal replay and checksummed indexed directory traversal.
+- ext4 deleted records and journal replay.
 - exFAT TexFAT/two-FAT support and damaged/missing boot-region recovery.
 - Active document previews and whole-file corruption/quality assessment. Bounded raster thumbnails and text/hex inspection are available.
 - More damaged-volume reconstruction, missing boot/MFT metadata, fragmented deleted chains,
@@ -84,7 +84,7 @@ and unwritten ranges become zero bytes. Symlinks/special files, non-UTF8 names,
 legacy indirect maps, inline/encrypted/verity/bigalloc layouts, deleted records
 and journal replay are unsupported. CRC32C checksums are verified when the filesystem enables them, including the
 superblock, group descriptors, allocation bitmaps, inodes, extent nodes and linear
-directory leaf blocks. Checksummed indexed directories are rejected. Cross-linked and known-metadata-alias
+directory leaf blocks and htree index nodes. Bounded indexed directories are traversed with checked references. Cross-linked and known-metadata-alias
 ranges are excluded. Limits: 4,096 groups, 2 GiB/file, 16 MiB/directory, 1,024
 directories/32 levels, 10,000 candidates, 100,000 extents and 64 MiB metadata reads.
 
@@ -117,5 +117,5 @@ catalog stays filesystem-only after save/open/recover.
 
 Ext4 checksum hardening adds known CRC32C test-vector coverage and independent
 checksummed fixtures with corruption injected into each supported metadata type.
-The normal mkfs.ext4 fixture exercises its standard metadata checksums. Unsupported
-checksummed indexed directories remain explicit, rather than bypassing validation.
+The normal mkfs.ext4 fixture exercises its standard metadata checksums. Indexed directories validate root/node/leaf checksums and logical references; unsupported
+index variants remain explicit.

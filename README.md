@@ -37,8 +37,8 @@ carving. Inspection shows bounded raster thumbnails or up to 64 KiB as plain tex
 exFAT supports bounded contiguous/fragmented files, subfolders and retained deleted entries
 whose clusters remain free; invalid boot/entry checksums and cross-linked allocations are rejected.
 Retained allocated ext4 files use directory/inode/extent reconstruction, including sparse and
-unwritten ranges. ext4 CRC32C metadata checksums are verified when enabled. Checksummed indexed
-directories, journal replay and deleted ext4 records remain unsupported.
+unwritten ranges. ext4 CRC32C metadata checksums and bounded indexed directory trees are verified when enabled.
+Journal replay and deleted ext4 records remain unsupported.
 TexFAT, encrypted/compressed streams, active document rendering, arbitrary fragmented
 deleted files and hardware-aware failing-media scheduling remain unsupported.
 
