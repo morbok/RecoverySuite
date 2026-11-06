@@ -6,7 +6,7 @@ reviewed build job; no automatic tag, public release or merge is performed.
 ## Packages
 
 - Linux TGZ: extract and run `usr/bin/RecoverySuite_GUI` or `usr/bin/RecoverySuite_CLI`.
-  Requires the Qt6 Core/Gui/Widgets libraries and libudev from the build distribution.
+  Requires the Qt6 Core/Gui/Widgets/DBus libraries and libudev from the build distribution.
 - Ubuntu 24.04 DEB: install with `sudo apt install ./RecoverySuite-*.deb`; dependencies are
   determined from the built ELF binaries by CPack/dpkg-shlibdeps. Use the CI artifact for that OS.
 - Windows x64 ZIP: extract and run `bin/RecoverySuite_GUI.exe` or `bin/RecoverySuite_CLI.exe`.
@@ -22,14 +22,15 @@ reviewed build job; no automatic tag, public release or merge is performed.
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel 2
 ctest --test-dir build --output-on-failure --timeout 60
-python3 scripts/package_smoke.py build/bin/RecoverySuite_CLI
+cmake --install build --prefix /tmp/recoverysuite-stage --component Runtime
+python3 scripts/package_smoke.py /tmp/recoverysuite-stage/bin/RecoverySuite_CLI
 (cd build && cpack -G TGZ)
 # Debian/Ubuntu build host only:
 (cd build && cpack -G DEB)
 ```
 
-For Windows use `--config Release` and `ctest -C Release`; CPack `-C Release -G ZIP`.
-Run the smoke script against the *extracted package* as well as the build tree. The script uses
+For Windows, first collect notices in CI with `python scripts/collect_qt_notices.py build/runtime-notices`. Use `--config Release` and `ctest -C Release`; CPack `-C Release -G ZIP`.
+Run the smoke script against the *extracted package* as well as the installed staging directory. The script uses
 only synthetic FAT/NTFS/signature fixtures, checks recovered bytes and session resume, and verifies
 no-overwrite behavior. It does not touch real devices.
 
@@ -57,9 +58,9 @@ Physical USB/SATA/NVMe disks, disconnects, permission policies and failing media
 dedicated QA before a stable release. Verify same-disk rejection,
 source hashes, cancellation, no-overwrite and exact-byte output using disposable fixtures.
 Do not select the OS/system disk as a source. Windows requires an already offline source;
-Linux requires an unmounted source. Acquisition stops on read errors and offers no rescue retries.
+Linux requires an unmounted source. Plain capture stops on read errors; explicit rescue retries sectors, logs zero-filled gaps and supports verified checkpoint continuation.
 
-SMART/NVMe diagnostics, hex inspection, plugins, broader damaged/deleted chain inference, OEM
+SMART/NVMe diagnostics, whole-disk hex editing, plugins, broader damaged/deleted chain inference, OEM
 short names and nested/MFT-bootstrap attribute lists are outside the implemented milestone.
 Review current CI on the exact head and complete code review before merging.
 
@@ -75,3 +76,7 @@ step verifies CPack sidecars and refuses missing, duplicate or altered packages.
 A failed platform blocks the combined artifact. CTest JUnit output, Qt text reports and
 `LastTest.log` are uploaded separately as diagnostics, even on failure. The workflow may be
 started manually with `workflow_dispatch`; it neither runs local tests nor publishes a release.
+
+## General-drive completion checks
+
+See RELEASE_ACCEPTANCE.md and USER_GUIDE.md. CI covers paused drive-catalog continuation across service restarts, a real-process crash during rescue, tampered-prefix and native-output-identity rejection, bounded raster preview, Linux UDisks2 read-only descriptor transport on an owned loop device, and Windows UAC API compilation. Interactive desktop consent is an external qualification item. Installed/extracted packages must include guides, exclude SDK headers, and verify all upstream runtime-notice file hashes. Windows notices are collected from pinned official Qt Base/SVG/Image Formats 6.8.3 source archives. The combined manifest binds all packages to the source revision and workflow.

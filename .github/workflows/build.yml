@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install dependencies
         timeout-minutes: 5
-        run: sudo apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=2 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update && sudo apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=2 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 install -y cmake ninja-build g++ qt6-base-dev libudev-dev exfatprogs udisks2
+        run: bash scripts/install_ci_dependencies.sh
       - name: Configure
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
       - name: Build
@@ -137,7 +137,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install dependencies
         timeout-minutes: 5
-        run: sudo apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=2 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update && sudo apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=2 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 install -y cmake ninja-build clang libclang-rt-dev qt6-base-dev libudev-dev
+        run: bash scripts/install_ci_dependencies.sh fuzz
       - name: Configure instrumented parsers
         run: cmake -S . -B build-fuzz -G Ninja -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_BUILD_TYPE=RelWithDebInfo -DRECOVERYSUITE_FUZZING=ON
       - name: Build parser harness

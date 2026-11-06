@@ -556,3 +556,7 @@ Linux GUI has an explicit Authorize read-only access action using UDisks2 Block.
 ## Delivery help and notices
 
 Embedded Help and packaged USER_GUIDE.md now describe the same general-drive scan/review/recover, authorization, paused scan continuation and resumable rescue workflows. Runtime packaging excludes SDK headers, includes user/completion guides and runtime notices, and validates every collected upstream notice hash in installed/extracted packages. Windows notice collection runs only in CI and verifies the official Qt source archive against a pinned SHA-256. Application licensing, real hardware qualification, independent review and signing remain explicit external release gates.
+
+## CI download reliability
+
+A later access run failed before compilation in Linux Release/fuzz: the Azure Ubuntu mirror trickled an 11 MiB CMake package for minutes despite per-socket timeouts. Dependency installation now uses isolated official Ubuntu HTTPS source lists on disposable GitHub runners only, omits unnecessary recommendations and reuses preinstalled build tools. The workstation package configuration is never touched. Windows elevation compile failure was an include-order issue and is corrected.
