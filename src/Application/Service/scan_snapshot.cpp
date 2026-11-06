@@ -118,6 +118,7 @@ void GUIRecoveryService::saveScan(const std::string &path,
       {"engine", "drive-catalog-v1"},
       {"source", QString::fromStdString(sourcePath_)},
       {"physical", bool(deviceReader_)},
+      {"deepSearch", scanDeepSearch_},
       {"sectorSize", QString::number(sourceReader_->getSectorSize())},
       {"sectors", QString::number(sourceReader_->getTotalSectors())},
       {"fingerprint", QString::fromStdString(scanFingerprint_)}};
@@ -242,6 +243,7 @@ GUIRecoveryService::loadScan(const std::string &path,
   scanCatalog_ = std::move(catalog);
   scanFingerprint_ = fingerprint;
   scanValid_ = true;
+  scanDeepSearch_ = obj.value("deepSearch").toBool(true);
   savedScan_ = result;
   recoveryService_ = std::move(backend);
   return result;

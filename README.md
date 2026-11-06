@@ -13,6 +13,8 @@ all real-world data-loss cases.
 2. Choose **Use selected drive**, then **Search for lost data**. The automatic scan
    searches for surviving FAT12/16/32, exFAT, NTFS and ext4 volumes, even without partition entries,
    reconstructs supported existing/deleted-file candidates, and searches JPEG/PDF/ZIP signatures.
+   Turn off **Also run a deep signature search** to review filesystem results sooner.
+   Volume discovery skips payload ranges of recognized volumes; unknown gaps still need searching.
 3. Review filenames, paths, sizes and recovery confidence. Filter the list and check the
    files to recover. Use **Inspect highlighted file…** to read a bounded text/hex preview
    before export. Scanning and inspection do not save files or require an output folder.
@@ -63,7 +65,7 @@ This is bounded software retrying, not a substitute for dedicated failing-hardwa
 It uses the same automatic scan/review/recover flow. The advanced method controls and the
 CLI image commands below remain available for targeted recovery and inspection.
 
-**CLI:** `RecoverySuite_CLI scan /dev/sdX` lists candidates; use
+**CLI:** `RecoverySuite_CLI scan /dev/sdX` lists candidates; add `--quick` to omit signature carving. Use
 `RecoverySuite_CLI device recover /dev/sdX --output /other-drive/folder --select 'candidate/path'`
 to recover chosen paths (repeat `--select` as needed). Windows uses `\\.\PhysicalDriveN`.
 For an existing raw image, `scan disk.img --image` and `device recover disk.img --image ...`

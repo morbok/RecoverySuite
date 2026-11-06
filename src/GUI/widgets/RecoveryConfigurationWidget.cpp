@@ -16,6 +16,7 @@ RecoveryConfigurationWidget::RecoveryConfigurationWidget(QWidget* parent) : QWid
     sourceLabel_->setTextFormat(Qt::PlainText); layout->addWidget(sourceLabel_);
     auto* help = new QLabel(tr("Start with an automatic scan. It searches the whole source for surviving FAT/exFAT/NTFS/ext4 volumes and deleted-file records, then JPEG/PDF/ZIP signatures. Review the found files before choosing what to recover. Damaged writes, overwritten bytes and SSD TRIM can make some data unrecoverable. ext4 currently reconstructs retained allocated files; deleted ext4 metadata and journal replay are unsupported. Other filesystems and encrypted data are not supported yet."), this);
     help->setWordWrap(true); layout->addWidget(help);
+    deep_=new QCheckBox(tr("Also run a deep signature search (slower; turn off to inspect filesystem results sooner)"),this);deep_->setObjectName("deepSignatureSearch");deep_->setChecked(true);layout->addWidget(deep_);
     mode_ = new QComboBox(this); mode_->setObjectName("scanMode");
     mode_->addItem(tr("Automatic scan — find lost data")); mode_->addItem(tr("Advanced — choose a specific method")); layout->addWidget(mode_);
     advanced_ = new QGroupBox(tr("Advanced recovery settings"), this); auto* advancedLayout = new QVBoxLayout(advanced_);
@@ -49,7 +50,7 @@ RecoveryConfigurationWidget::RecoveryConfigurationWidget(QWidget* parent) : QWid
     auto* start = new QPushButton(tr("Search for lost data"), this); start->setObjectName("startImageRecovery");
     layout->addWidget(start); connect(start, &QPushButton::clicked, this, &RecoveryConfigurationWidget::validateConfiguration);
     connect(mode_, &QComboBox::currentIndexChanged, this, [this,start](int index) {
-        advanced_->setVisible(index == 1); start->setText(index == 0 ? tr("Search for lost data") : tr("Validate and recover"));
+        deep_->setVisible(index==0);advanced_->setVisible(index == 1); start->setText(index == 0 ? tr("Search for lost data") : tr("Validate and recover"));
     });
     connect(method_, &QComboBox::currentIndexChanged, this, [this] { mode_->setCurrentIndex(1); });
     status_ = new QLabel(this); status_->setObjectName("configurationStatus"); status_->setTextFormat(Qt::PlainText);
@@ -72,12 +73,13 @@ application::service::models::RecoveryOperation RecoveryConfigurationWidget::get
     operation.operationType = method_->currentData().toString().toStdString(); operation.targetDevicePath = source_.toStdString();
     operation.startSector = parse(start_->text()); operation.numSectors = parse(count_->text());
     operation.sessionPath=session_->text().toStdString();operation.resumeSession=resumeSession_;
+    operation.deepSearch=deep_->isChecked();
     operation.outputPath = output_->text().toStdString(); operation.verifyAfterRecovery = verify_->isChecked();
     if (mode_->currentIndex() == 0) { operation.operationType="disk_scan"; operation.outputPath.clear(); operation.sessionPath.clear(); operation.resumeSession=false; operation.startSector=0; if(service_) operation.numSectors=service_->getDiskInfo(operation.targetDevicePath).totalSectors; }
     return operation;
 }
 void RecoveryConfigurationWidget::setOperation(const application::service::models::RecoveryOperation& operation) {
-    mode_->setCurrentIndex(1);source_=QString::fromStdString(operation.targetDevicePath);sourceLabel_->setText(source_);method_->setCurrentIndex(method_->findData(QString::fromStdString(operation.operationType)));start_->setText(QString::number(operation.startSector));count_->setText(QString::number(operation.numSectors));output_->setText(QString::fromStdString(operation.outputPath));verify_->setChecked(operation.verifyAfterRecovery);session_->setText(QString::fromStdString(operation.sessionPath));resumeSession_=operation.resumeSession;status_->setText(tr("Review the saved configuration. Resume rechecks the source and completed outputs, then replays discovery."));
+    deep_->setChecked(operation.deepSearch);mode_->setCurrentIndex(1);source_=QString::fromStdString(operation.targetDevicePath);sourceLabel_->setText(source_);method_->setCurrentIndex(method_->findData(QString::fromStdString(operation.operationType)));start_->setText(QString::number(operation.startSector));count_->setText(QString::number(operation.numSectors));output_->setText(QString::fromStdString(operation.outputPath));verify_->setChecked(operation.verifyAfterRecovery);session_->setText(QString::fromStdString(operation.sessionPath));resumeSession_=operation.resumeSession;status_->setText(tr("Review the saved configuration. Resume rechecks the source and completed outputs, then replays discovery."));
 }
 void RecoveryConfigurationWidget::validateConfiguration() {
     if (!service_) { status_->setText(tr("Recovery service is unavailable")); return; }

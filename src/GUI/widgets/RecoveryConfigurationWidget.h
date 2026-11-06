@@ -31,6 +31,7 @@ private:
     QLineEdit* session_;
     bool resumeSession_{};
     QCheckBox* verify_;
+    QCheckBox* deep_;
     QComboBox* method_;
     QComboBox* mode_;
     QGroupBox* advanced_;

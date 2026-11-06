@@ -50,10 +50,11 @@ int CLIHandler::run(int argc, char* argv[]) {
         const bool nested=command=="device";
         const bool recover=nested && args[0]=="recover";
         const size_t sourceIndex=nested?1:0;
-        if(args.size()<=sourceIndex){printError("Use scan <device> [--image] or device recover <device> --output <folder> --select <candidate-path>");return 2;}
-        std::string output;std::vector<std::string> selection;bool image=false;
+        if(args.size()<=sourceIndex){printError("Use scan <device> [--image] [--quick] or device recover <device> --output <folder> --select <candidate-path>");return 2;}
+        std::string output;std::vector<std::string> selection;bool image=false,deep=true;
         for(size_t i=sourceIndex+1;i<args.size();++i){
             if(args[i]=="--image")image=true;
+            else if(args[i]=="--quick")deep=false;
             else if((args[i]=="--output"||args[i]=="--select")&&i+1<args.size()){
                 const auto key=args[i++];if(key=="--output")output=args[i];else selection.push_back(args[i]);
             }else{printError("Unknown scan/recovery option");return 2;}
@@ -63,7 +64,7 @@ int CLIHandler::run(int argc, char* argv[]) {
             application::service::GUIRecoveryService service(nullptr);
             const auto source=image?service.openImage(args[sourceIndex]):service.openDevice(args[sourceIndex]);
             application::service::models::RecoveryOperation op{};op.operationType="disk_scan";op.targetDevicePath=source.devicePath;
-            op.numSectors=service.getDiskInfo(source.devicePath).totalSectors;
+            op.numSectors=service.getDiskInfo(source.devicePath).totalSectors;op.deepSearch=deep;
             auto result=service.executeOperation(op,{},cancellation_);
             if(!recover)for(const auto& item:result.recoveredItems)std::cout<<item.name<<"\t"<<item.sizeBytes<<" bytes\t"<<item.confidence<<'\n';
             if(result.cancelled)return 130;

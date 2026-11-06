@@ -110,3 +110,10 @@ a device read timeout, control head scheduling or provide hardware qualification
 Fault injection covers transient/permanent errors, exact gaps, retries, identity
 failure, cancellation, no-overwrite and output verification. CI loop/VHD fixtures
 exercise the healthy native path; actual failing hardware remains unqualified.
+
+Filesystem-only scanning is now available by clearing the deep signature-search
+checkbox, or with CLI `--quick`. Source discovery skips known volume payloads
+instead of rereading every sector within them. Unknown gaps still require search.
+The chosen depth is retained by saved catalogs and used again for preview/export.
+CI verifies that discovery actually reads fewer sectors and that a filesystem-only
+catalog stays filesystem-only after save/open/recover.

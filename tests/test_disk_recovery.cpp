@@ -473,6 +473,72 @@ private slots:
     QVERIFY(!result.outputWritten);
     QCOMPARE(read(path), bytes);
   }
+  void volumeDiscoverySkipsKnownVolumePayload() {
+    class CountingSource : public disk::IDiskReader {
+      disk::DiskImageReader image_;
+
+    public:
+      uint64_t sectorsRead{};
+      void open(const std::string &path) override { image_.open(path); }
+      void close() override { image_.close(); }
+      bool isOpen() const noexcept override { return image_.isOpen(); }
+      uint32_t getSectorSize() const noexcept override {
+        return image_.getSectorSize();
+      }
+      uint64_t getTotalSectors() const noexcept override {
+        return image_.getTotalSectors();
+      }
+      disk::DeviceInformation getDiskInfo() const override {
+        return image_.getDiskInfo();
+      }
+      bool writeSectors(uint64_t a, uint64_t b,
+                        const std::vector<std::byte> &c) override {
+        return image_.writeSectors(a, b, c);
+      }
+      bool readSectors(uint64_t a, uint64_t b,
+                       std::vector<std::byte> &c) override {
+        sectorsRead += b;
+        return image_.readSectors(a, b, c);
+      }
+    };
+    QTemporaryDir root;
+    const auto path = root.filePath("ext4.img");
+    save(path, ext4Disk());
+    CountingSource source;
+    source.open(path.toStdString());
+    const auto volumes = recovery::findDiskVolumes(source, {}, {});
+    QCOMPARE(volumes.size(), size_t(1));
+    QCOMPARE(volumes[0].start, uint64_t(32));
+    QVERIFY(source.sectorsRead <= 130);
+    QVERIFY(source.sectorsRead < source.getTotalSectors());
+  }
+  void filesystemOnlyScanPreservesDepthAcrossSaveAndRecovery() {
+    QTemporaryDir root;
+    const auto path = root.filePath("source.img");
+    save(path, disk());
+    GUIRecoveryService service(nullptr);
+    auto op = scan(service.openImage(path.toStdString()));
+    op.deepSearch = false;
+    const auto result = service.executeOperation(op);
+    QVERIFY2(result.success, result.errorMessage.c_str());
+    QCOMPARE(result.recoveredItemsCount, uint64_t(2));
+    for (const auto &file : result.recoveredItems)
+      QVERIFY(!file.name.starts_with("Signature matches/"));
+    service.saveScan(root.filePath("quick.rscan").toStdString());
+    const auto restored =
+        service.loadScan(root.filePath("quick.rscan").toStdString());
+    QCOMPARE(restored.recoveredItemsCount, uint64_t(2));
+    QVERIFY(QDir().mkdir(root.filePath("out")));
+    op.operationType = "disk_recovery";
+    op.outputPath = root.filePath("out").toStdString();
+    op.selectedPaths = {"FAT12_32/Existing/HELLO.TXT"};
+    const auto recovered = service.executeOperation(op);
+    QVERIFY2(recovered.success, recovered.errorMessage.c_str());
+    QCOMPARE(read(root.filePath("out/FAT12_32/Existing/HELLO.TXT")),
+             QByteArray("hello"));
+    QVERIFY(recovered.details.at("Search depth").find("skipped") !=
+            std::string::npos);
+  }
   void rescueImageGuiFlow() {
     QTemporaryDir root;
     const auto source = root.filePath("source.img"),

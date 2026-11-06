@@ -77,7 +77,7 @@ GUIRecoveryService::previewCandidate(const std::string &name,
           throw std::runtime_error("Incomplete preview read");
         found = true;
       },
-      {}, stopping);
+      {}, stopping, scanDeepSearch_);
   if (cancelled && cancelled())
     throw std::runtime_error("Preview cancelled");
   if (!found)
@@ -171,6 +171,7 @@ models::RecoveryResult GUIRecoveryService::executeDiskOperation(
     std::unique_ptr<SafeFileExporter> exporter;
     if (result.scanOnly) {
       scanValid_ = false;
+      scanDeepSearch_ = operation.deepSearch;
       scanCatalog_.clear();
       scanVolumes_.clear();
       scanFingerprint_ = fingerprintSource(*sourceReader_, cancelled);
@@ -222,7 +223,7 @@ models::RecoveryResult GUIRecoveryService::executeDiskOperation(
             }
           }
         },
-        report, cancelled);
+        report, cancelled, scanDeepSearch_);
     for (size_t i = 0; i < issues.size(); ++i)
       result.details["Scan issue " + std::to_string(i + 1)] = issues[i];
     if (!result.scanOnly && !stopping()) {
@@ -252,6 +253,9 @@ models::RecoveryResult GUIRecoveryService::executeDiskOperation(
     result.success = false;
   result.endTime = std::chrono::system_clock::now();
   result.details["Source"] = sourcePath_;
+  result.details["Search depth"] =
+      scanDeepSearch_ ? "Filesystem records and deep signature search"
+                      : "Filesystem records only; signature search skipped";
   result.details["Filesystem volumes found"] =
       std::to_string(scanVolumes_.size());
   result.details["Supported recovery"] =

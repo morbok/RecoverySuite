@@ -163,6 +163,7 @@ private:
     std::vector<recovery::FoundVolume> scanVolumes_;
     std::map<std::string, uint64_t> scanCatalog_;
     bool scanValid_{};
+    bool scanDeepSearch_{true};
     std::string scanFingerprint_;
     models::RecoveryResult savedScan_;
     static std::string fingerprintSource(disk::IDiskReader& source,

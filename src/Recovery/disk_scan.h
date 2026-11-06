@@ -46,6 +46,7 @@ findDiskVolumes(disk::IDiskReader &source, const DiskScanProgress &progress,
         bytes.size() != count * sector)
       throw std::runtime_error(
           "Disk search stopped on an incomplete source read");
+    uint64_t advance = at + count;
     for (uint64_t i = 0; i < count; ++i) {
       const auto start = at + i;
       // A volume's backup boot sector is not a separate partition.
@@ -80,6 +81,7 @@ findDiskVolumes(disk::IDiskReader &source, const DiskScanProgress &progress,
           if (result.size() >= 128)
             throw std::runtime_error("Volume candidate limit reached (128)");
           result.push_back({origin, length, "ext4"});
+          advance = std::max(advance, origin + length);
           ext4Found = true;
           break;
         } catch (const std::runtime_error &) {
@@ -130,8 +132,9 @@ findDiskVolumes(disk::IDiskReader &source, const DiskScanProgress &progress,
       if (result.size() >= 128)
         throw std::runtime_error("Volume candidate limit reached (128)");
       result.push_back({start, length, type});
+      advance = std::max(advance, start + length);
     }
-    at += count;
+    at = advance;
     if (progress)
       progress("Searching for surviving and lost volumes", at * sector,
                total * sector);
@@ -152,7 +155,7 @@ inline std::vector<std::string>
 scanDiskFiles(disk::IDiskReader &source,
               const std::vector<FoundVolume> &volumes, const DiskScanItem &item,
               const DiskScanProgress &progress,
-              const std::function<bool()> &cancelled) {
+              const std::function<bool()> &cancelled, bool deepSearch = true) {
   std::vector<std::string> issues;
   for (const auto &volume : volumes) {
     if (cancelled && cancelled())
@@ -301,6 +304,8 @@ scanDiskFiles(disk::IDiskReader &source,
     }
   }
   if (cancelled && cancelled())
+    return issues;
+  if (!deepSearch)
     return issues;
   const auto summary = carveSignatures(
       source, 0, source.getTotalSectors(),

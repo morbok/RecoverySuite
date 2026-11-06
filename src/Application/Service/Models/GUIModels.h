@@ -137,6 +137,7 @@ struct RecoveryOperation {
     uint64_t numSectors{};
     std::string outputPath;
     bool verifyAfterRecovery{};
+    bool deepSearch{true};
     bool createLogFile{};
     std::string sessionPath;
     bool resumeSession{};

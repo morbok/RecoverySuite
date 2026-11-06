@@ -516,3 +516,7 @@ zero-filled unreadable ranges, mandatory report, SHA-256 verification of stored
 bytes without rereading unstable source media, and partial-result reporting.
 Normal capture still fails on read errors. CI fault/loop/VHD/GUI cases added.
 No local tests or source scans; exact-head CI pending.
+
+Added filesystem-only search (GUI checkbox / CLI --quick), retained in saved scan
+catalogs. Discovery now skips recognized volume payloads; a counted-read CI test
+proves that optimization instead of asserting an implementation-specific result.
