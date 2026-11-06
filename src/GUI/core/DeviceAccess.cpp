@@ -52,8 +52,9 @@ authorizeReadOnlyDevice(const QString &device,
 #endif
 #ifdef _WIN32
 #include <QCoreApplication>
-#include <shellapi.h>
 #include <windows.h>
+
+#include <shellapi.h>
 namespace recoverysuite::gui::core {
 void requestAdministratorWindow() {
   const auto executable =
