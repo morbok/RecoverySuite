@@ -44,3 +44,27 @@ sudo cmp "$fixture/payload.bin" "$fixture/recovered/exFAT_0/Existing/Documents/p
 sudo cmp "$fixture/notes.txt" "$fixture/recovered/exFAT_0/Existing/notes.txt"
 sha256sum --check "$fixture/before.sha256"
 echo 'Standard-formatted exFAT device passed: nested binary/document recovery and unchanged source'
+
+# Damage only this newly-created fixture's main boot region, then use the
+# intact real mkfs.exfat backup. Recovery must not repair/write the source.
+sudo losetup -d "$loop_device"
+loop_device=""
+python3 - "$fixture/source.img" <<'PYDAMAGE'
+import sys
+with open(sys.argv[1],'r+b') as image:
+    image.seek(108)
+    shift=image.read(1)[0]
+    assert 9<=shift<=12
+    image.seek(0)
+    image.write(bytes(12*(1<<shift)))
+PYDAMAGE
+sha256sum "$fixture/source.img" > "$fixture/damaged-before.sha256"
+mkdir "$fixture/recovered-backup"
+loop_device=$(sudo losetup --find --show --read-only "$fixture/source.img")
+sudo "$cli" device scan "$loop_device" --quick
+sudo "$cli" device recover "$loop_device" --output "$fixture/recovered-backup" \
+    --select 'exFAT_0/Existing/Documents/payload.bin' --select 'exFAT_0/Existing/notes.txt'
+sudo cmp "$fixture/payload.bin" "$fixture/recovered-backup/exFAT_0/Existing/Documents/payload.bin"
+sudo cmp "$fixture/notes.txt" "$fixture/recovered-backup/exFAT_0/Existing/notes.txt"
+sha256sum --check "$fixture/damaged-before.sha256"
+echo 'Standard-formatted exFAT backup-boot recovery passed with erased main region and unchanged source'
