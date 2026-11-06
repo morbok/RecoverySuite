@@ -487,6 +487,18 @@ private slots:
              std::string("ext4_32/Existing/notes.txt"));
     QCOMPARE(service.previewCandidate(result.recoveredItems[0].name),
              std::vector<uint8_t>({'h', 'e', 'l', 'l', 'o'}));
+    QVERIFY(result.details.contains("Scan issue 1"));
+    service.saveScan(root.filePath("ext4.rscan").toStdString());
+    const auto loaded =
+        service.loadScan(root.filePath("ext4.rscan").toStdString());
+    QCOMPARE(loaded.details.at("Scan issue 1"),
+             result.details.at("Scan issue 1"));
+    auto continuedOp = op;
+    continuedOp.resumeScan = true;
+    const auto continued = service.executeOperation(continuedOp);
+    QVERIFY(continued.success);
+    QCOMPARE(continued.details.at("Scan issue 1"),
+             result.details.at("Scan issue 1"));
     QVERIFY(QDir().mkdir(root.filePath("out")));
     op.operationType = "disk_recovery";
     op.outputPath = root.filePath("out").toStdString();

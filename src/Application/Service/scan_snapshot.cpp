@@ -237,6 +237,14 @@ GUIRecoveryService::loadScan(const std::string &path,
     result.recoveredBytes += size;
     ++result.recoveredItemsCount;
   }
+  if (obj.contains("issues")) {
+    if (!obj.value("issues").isArray() ||
+        obj.value("issues").toArray().size() > 1000)
+      throw std::runtime_error("Invalid saved scan issues");
+    size_t index = 1;
+    for (const auto &issue : obj.value("issues").toArray())
+      result.details["Scan issue " + std::to_string(index++)] = text(issue);
+  }
   std::shared_ptr<disk::IDiskReader> reader;
   std::shared_ptr<disk::ReadOnlyDevice> device;
   std::shared_ptr<disk::DiskImageReader> image;

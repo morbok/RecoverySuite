@@ -184,6 +184,7 @@ models::RecoveryResult GUIRecoveryService::executeDiskOperation(
               "Open a saved partial scan before continuing");
         if (fingerprintSource(*sourceReader_, cancelled) != scanFingerprint_)
           throw std::runtime_error("Source changed since the partial scan");
+        result.details = savedScan_.details;
         result.recoveredItems = savedScan_.recoveredItems;
         result.recoveredItemsCount = savedScan_.recoveredItemsCount;
         result.recoveredBytes = savedScan_.recoveredBytes;
@@ -257,8 +258,13 @@ models::RecoveryResult GUIRecoveryService::executeDiskOperation(
         },
         report, cancelled, scanDeepSearch_,
         result.scanOnly ? &scanCheckpoint_ : nullptr);
-    for (size_t i = 0; i < issues.size(); ++i)
-      result.details["Scan issue " + std::to_string(i + 1)] = issues[i];
+    size_t issueNumber = 1;
+    for (const auto &issue : issues) {
+      while (
+          result.details.contains("Scan issue " + std::to_string(issueNumber)))
+        ++issueNumber;
+      result.details["Scan issue " + std::to_string(issueNumber++)] = issue;
+    }
     if (!result.scanOnly && !stopping()) {
       for (const auto &name : selected)
         if (!seen.contains(name)) {

@@ -560,3 +560,7 @@ Embedded Help and packaged USER_GUIDE.md now describe the same general-drive sca
 ## CI download reliability
 
 A later access run failed before compilation in Linux Release/fuzz: the Azure Ubuntu mirror trickled an 11 MiB CMake package for minutes despite per-socket timeouts. Dependency installation now uses isolated official Ubuntu HTTPS source lists on disposable GitHub runners only, omits unnecessary recommendations and reuses preinstalled build tools. The workstation package configuration is never touched. Windows elevation compile failure was an include-order issue and is corrected.
+
+## Final continuation review
+
+Preserve bounded filesystem issue messages across saved-catalog restore and continued scans, so completed-volume skipping cannot hide earlier unsupported/corrupt-record warnings. Added ext4 save/open/continue regression coverage. The final source-revision artifact and exact-head CI remain the acceptance evidence.
