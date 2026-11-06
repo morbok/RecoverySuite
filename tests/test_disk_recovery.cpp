@@ -558,6 +558,71 @@ private slots:
     QTest::newRow("missing-bitmap") << 25 * 512 << 0 << 0;
     QTest::newRow("directory-cycle") << 25 * 512 + 320 + 52 << 2 << 3;
   }
+  void exfatBackupBootRecoveryAndValidation() {
+    for (bool rawImage : {false, true})
+      for (int fault = 0; fault < 5; ++fault) {
+        QTemporaryDir root;
+        auto bytes = exfatDisk();
+        const int base = 32 * 512;
+        const auto checksum = [&](int start) {
+          uint32_t value = 0;
+          for (int i = 0; i < 11 * 512; ++i)
+            if (i != 106 && i != 107 && i != 112)
+              value = (value >> 1) + ((value & 1) ? 0x80000000u : 0) +
+                      uint8_t(bytes[start + i]);
+          for (int i = 11 * 512; i < 12 * 512; i += 4)
+            put(bytes, start + i, value, 4);
+        };
+        put(bytes, base + 64, 32, 8);
+        checksum(base);
+        bytes.replace(base + 12 * 512, 12 * 512, bytes.mid(base, 12 * 512));
+        if (fault == 1)
+          bytes.replace(base, 12 * 512, QByteArray(12 * 512, 0));
+        if (fault == 2)
+          bytes[base + 110] = 2; // geometry and checksum both invalid
+        if (fault == 3) {
+          bytes[base + 511] = 0;
+          bytes[base + 23 * 512] = char(uint8_t(bytes[base + 23 * 512]) ^ 1);
+        }
+        if (fault == 4) {
+          bytes[base + 110] = 2;
+          checksum(base);
+        } // checksum-valid unsupported primary must not use stale backup
+        if (rawImage)
+          bytes.remove(0, base);
+        const auto path = root.filePath("exfat-backup.img");
+        save(path, bytes);
+        GUIRecoveryService service(nullptr);
+        auto op = scan(service.openImage(path.toStdString()));
+        op.deepSearch = false;
+        const auto result = service.executeOperation(op);
+        QVERIFY2(result.success, result.errorMessage.c_str());
+        QCOMPARE(result.recoveredItemsCount, uint64_t(fault >= 3 ? 0 : 4));
+        if (fault < 3) {
+          const std::string name = std::string("exFAT_") +
+                                   (rawImage ? "0" : "32") +
+                                   "/Deleted/gone.txt";
+          QCOMPARE(service.previewCandidate(name),
+                   std::vector<uint8_t>({'l', 'a', 't', 'e', 'r'}));
+          if (fault) {
+            QVERIFY(result.details.contains("Scan issue 1"));
+            QVERIFY(result.details.at("Scan issue 1").find("backup geometry") !=
+                    std::string::npos);
+          }
+          service.saveScan(root.filePath("backup.rscan").toStdString());
+          QVERIFY(service.loadScan(root.filePath("backup.rscan").toStdString())
+                      .success);
+          QVERIFY(QDir().mkdir(root.filePath("out")));
+          op.operationType = "disk_recovery";
+          op.selectedPaths = {name};
+          op.outputPath = root.filePath("out").toStdString();
+          QVERIFY(service.executeOperation(op).success);
+          QCOMPARE(read(root.filePath("out/" + QString::fromStdString(name))),
+                   QByteArray("later"));
+        }
+        QCOMPARE(read(path), bytes);
+      }
+  }
   void exfatRejectsCorruptMetadata() {
     QFETCH(int, offset);
     QFETCH(int, value);

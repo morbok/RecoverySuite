@@ -51,6 +51,26 @@ inline Geometry geometry(const uint8_t *p, uint32_t sector,
     fail();
   return g;
 }
+// Validate an entire main/backup boot region before consuming its geometry.
+inline Bytes checkedBoot(disk::IDiskReader &source, uint64_t start,
+                         uint64_t count, uint64_t relative,
+                         const std::function<bool()> &cancelled) {
+  Bytes boot;
+  const auto sector = source.getSectorSize();
+  if (!readSourceBytes(&source, start, count, relative * sector, 12ULL * sector,
+                       boot, cancelled) ||
+      boot.size() < 512 || std::memcmp(boot.data() + 3, "EXFAT   ", 8))
+    return {};
+  uint32_t checksum = 0;
+  const size_t end = size_t(sector) * 11;
+  for (size_t i = 0; i < end; ++i)
+    if (i != 106 && i != 107 && i != 112)
+      checksum = (checksum >> 1) + ((checksum & 1) ? 0x80000000u : 0) + boot[i];
+  for (size_t i = end; i < boot.size(); i += 4)
+    if (le(boot.data() + i, 4) != checksum)
+      return {};
+  return boot;
+}
 inline std::string name(const Bytes &entries, size_t length) {
   std::string out;
   std::vector<uint16_t> units;
@@ -100,12 +120,14 @@ struct File {
 };
 struct Summary {
   uint64_t found{}, invalid{};
+  bool backupBoot{};
 };
 class Reader {
   disk::IDiskReader &source_;
   uint64_t start_, count_, metadataBytes_{};
   std::function<bool()> cancelled_;
   Geometry g_;
+  bool backupBoot_{};
   Bytes bitmap_;
   std::set<uint32_t> metadata_;
   uint64_t fatPageOffset_ = UINT64_MAX;
@@ -116,17 +138,17 @@ public:
          std::function<bool()> cancelled)
       : source_(source), start_(start), count_(count),
         cancelled_(std::move(cancelled)) {
-    const auto boot = bytes(0, 12 * uint64_t(source.getSectorSize()));
+    auto boot = checkedBoot(source, start, count, 0, cancelled_);
+    if (boot.empty()) {
+      boot = checkedBoot(source, start, count, 12, cancelled_);
+      backupBoot_ = true;
+    }
+    if (boot.empty())
+      throw std::runtime_error(
+          "Neither exFAT boot region has a valid checksum");
+    // A checksum-valid but unsupported layout must not be reinterpreted using
+    // a stale alternate copy (for example a former single-FAT geometry).
     g_ = geometry(boot.data(), source.getSectorSize(), count);
-    uint32_t checksum = 0;
-    const size_t end = size_t(source.getSectorSize()) * 11;
-    for (size_t i = 0; i < end; ++i)
-      if (i != 106 && i != 107 && i != 112)
-        checksum =
-            (checksum >> 1) + ((checksum & 1) ? 0x80000000u : 0) + boot[i];
-    for (size_t i = end; i < boot.size(); i += 4)
-      if (le(boot.data() + i, 4) != checksum)
-        throw std::runtime_error("exFAT boot checksum mismatch");
   }
   void check() const {
     if (cancelled_ && cancelled_())
@@ -236,6 +258,7 @@ public:
   Summary scan(const std::function<void(const File &)> &item,
                const std::function<void(uint64_t)> &progress) {
     Summary summary;
+    summary.backupBoot = backupBoot_;
     const auto rootChain = chain(uint32_t(g_.root), 0, false, true);
     auto root = metadata(rootChain, rootChain.size() * g_.clusterBytes);
     metadata_.insert(rootChain.begin(), rootChain.end());

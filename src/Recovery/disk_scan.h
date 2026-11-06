@@ -54,7 +54,7 @@ findDiskVolumes(disk::IDiskReader &source, const DiskScanProgress &progress,
           "Disk search stopped on an incomplete source read");
     uint64_t advance = at + count;
     for (uint64_t i = 0; i < count; ++i) {
-      const auto start = at + i;
+      auto start = at + i;
       // A volume's backup boot sector is not a separate partition.
       if (std::any_of(result.begin(), result.end(), [&](const auto &v) {
             return start >= v.start && start - v.start < v.count;
@@ -108,7 +108,25 @@ findDiskVolumes(disk::IDiskReader &source, const DiskScanProgress &progress,
       };
       if (!std::memcmp(p + 3, "EXFAT   ", 8)) {
         try {
-          length = exfat::geometry(p, sector, total - start).sectors;
+          // A surviving backup describes the original volume, not a second
+          // volume starting twelve sectors later. Raw volume images can retain
+          // their original media-relative offset, so also recognize backup
+          // at 12.
+          const auto declared = le(64, 8);
+          const bool backup =
+              start >= 12 &&
+              (declared == start - 12 || (start == 12 && declared != start));
+          const auto origin = backup ? start - 12 : start;
+          const auto boot = exfat::checkedBoot(source, origin, total - origin,
+                                               backup ? 12 : 0, cancelled);
+          if (boot.empty())
+            continue;
+          length = exfat::geometry(boot.data(), sector, total - origin).sectors;
+          if (std::any_of(result.begin(), result.end(), [&](const auto &v) {
+                return origin < v.start + v.count && v.start < origin + length;
+              }))
+            continue;
+          start = origin;
           type = "exFAT";
         } catch (const std::runtime_error &) {
           continue;
@@ -227,6 +245,9 @@ scanDiskFiles(disk::IDiskReader &source,
               item(prefix + file.path, file.size, file.read, file.confidence);
             },
             report, cancelled);
+        if (summary.backupBoot)
+          issues.push_back(prefix + "Primary boot region was invalid; "
+                                    "validated backup geometry used read-only");
         if (summary.invalid)
           issues.push_back(prefix +
                            "Some exFAT entries have invalid metadata, "

@@ -53,3 +53,5 @@ Encrypted/compressed streams, arbitrary fragmented deleted chains, exFAT TexFAT,
 - **Partial result:** review per-file issues and rescue gap ranges. Do not treat a copied file as proof of complete original data.
 
 This is an unsigned software prototype. Automated Windows/Linux checks use disposable fixtures. Physical USB/SATA/NVMe, real disconnect/failing-media behavior, independent review, application licensing and release signing remain external release gates.
+
+Large ext4 folders: bounded indexed directory trees are supported, including root/interior/leaf checksum checks. exFAT can use its checksum-valid backup boot region when the main copy is invalid. The original source remains unchanged; scan details report backup geometry use. A valid but unsupported main layout is not bypassed by an older backup.

@@ -27,7 +27,7 @@ No completion percentage is meaningful without coverage of those user scenarios.
 
 - Other filesystem coverage; broader formats beyond JPEG/PDF/ZIP carving.
 - ext4 deleted records and journal replay.
-- exFAT TexFAT/two-FAT support and damaged/missing boot-region recovery.
+- exFAT TexFAT/two-FAT support and recovery when both boot regions are unusable.
 - Active document previews and whole-file corruption/quality assessment. Bounded raster thumbnails and text/hex inspection are available.
 - More damaged-volume reconstruction, missing boot/MFT metadata, fragmented deleted chains,
   sparse/compressed/encrypted data and larger file-count/file-size limits.
@@ -51,7 +51,7 @@ Names and folders are preserved through the existing selected-only export flow.
 
 Limits: 2 GiB/file, 1,048,576 clusters/chain, 16 MiB/metadata stream, 64 MiB
 aggregate metadata, 1,024 directories and 32 nested levels. Deleted directories,
-TexFAT, missing allocation bitmaps, invalid boot checksums and damaged entry sets
+TexFAT, missing allocation bitmaps, two invalid boot regions and damaged entry sets
 are rejected; signature fallback remains available. Checks do not prove that
 deleted contents are intact. Tests run in GitHub CI, never on the user's PC.
 

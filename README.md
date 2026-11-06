@@ -35,7 +35,8 @@ fallback can find some candidates but cannot recreate unwritten, overwritten or 
 Supported scope is FAT12/16/32, single-FAT exFAT 1.0, bounded NTFS recovery and JPEG/PDF/ZIP
 carving. Inspection shows bounded raster thumbnails or up to 64 KiB as plain text/hex, without executing content.
 exFAT supports bounded contiguous/fragmented files, subfolders and retained deleted entries
-whose clusters remain free; invalid boot/entry checksums and cross-linked allocations are rejected.
+whose clusters remain free; invalid boot/entry checksums and cross-linked allocations are rejected. A checksum-valid backup
+boot region can supply geometry when the main copy is damaged.
 Retained allocated ext4 files use directory/inode/extent reconstruction, including sparse and
 unwritten ranges. ext4 CRC32C metadata checksums and bounded indexed directory trees are verified when enabled.
 Journal replay and deleted ext4 records remain unsupported.
