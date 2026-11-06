@@ -4,6 +4,8 @@
 #include "GUI/widgets/OperationProgressWidget.h"
 #include "GUI/widgets/RecoveryResultsWidget.h"
 #include <QStackedWidget>
+#include <QBuffer>
+#include <QImageReader>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QMenuBar>
@@ -226,7 +228,28 @@ void RecoveryWorker::process() {
         } else if(operation_.operationType=="disk_preview") {
             result.operationType="disk_preview";
             if(operation_.selectedPaths.size()!=1)throw std::runtime_error("Choose one file to inspect");
-            result.previewBytes=service_->previewCandidate(operation_.selectedPaths.front(),[this]{return cancelled_.load();});
+            result.previewBytes=service_->previewCandidate(operation_.selectedPaths.front(),[this]{return cancelled_.load();},16*1024*1024);
+            QByteArray input(reinterpret_cast<const char*>(result.previewBytes.data()),qsizetype(result.previewBytes.size()));
+            QBuffer buffer(&input);buffer.open(QIODevice::ReadOnly);
+            QImageReader reader(&buffer);
+            const auto format=reader.format();
+            const auto size=reader.size();
+            // Raster formats only, with bounds before decoding. Never launch a viewer,
+            // render SVG/HTML, resolve external resources or decode on the GUI thread.
+            if ((format=="png" || format=="jpeg" || format=="bmp" || format=="gif" || format=="webp") && size.isValid() &&
+                size.width()<=20000 && size.height()<=20000 && uint64_t(size.width())*uint64_t(size.height())<=16000000 && !cancelled_.load()) {
+                QImageReader::setAllocationLimit(64);
+                reader.setAutoTransform(true);
+                reader.setScaledSize(size.scaled(800,450,Qt::KeepAspectRatio));
+                const auto image=reader.read();
+                if (!image.isNull() && !cancelled_.load()) {
+                    QByteArray png;QBuffer output(&png);output.open(QIODevice::WriteOnly);
+                    if (image.save(&output,"PNG") && png.size()<=4*1024*1024)
+                        result.previewImagePNG.assign(png.begin(),png.end());
+                }
+            }
+            if(cancelled_.load())throw std::runtime_error("Preview cancelled");
+            if(result.previewBytes.size()>65536)result.previewBytes.resize(65536);
             result.success=true;
         } else result = service_->executeOperation(operation_, [this](const auto& progress) { emit progressUpdated(progress); }, [this] { return cancelled_.load(); });
     } catch (const std::exception& failure) { result.errorMessage = failure.what(); result.cancelled = cancelled_.load(); }

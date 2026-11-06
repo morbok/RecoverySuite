@@ -47,7 +47,10 @@ models::RecoveryResult GUIRecoveryService::rescueToImage(
 }
 std::vector<uint8_t>
 GUIRecoveryService::previewCandidate(const std::string &name,
-                                     const std::function<bool()> &cancelled) {
+                                     const std::function<bool()> &cancelled,
+                                     size_t byteLimit) {
+  if (!byteLimit || byteLimit > 16 * 1024 * 1024)
+    throw std::runtime_error("Preview read limit exceeded");
   std::unique_lock lock(imageMutex_, std::try_to_lock);
   if (!lock.owns_lock())
     throw std::runtime_error(
@@ -69,7 +72,8 @@ GUIRecoveryService::previewCandidate(const std::string &name,
           return;
         if (size != scanCatalog_.at(name))
           throw std::runtime_error("The file changed since the scan");
-        const auto count = static_cast<size_t>(std::min<uint64_t>(size, 65536));
+        const auto count =
+            static_cast<size_t>(std::min<uint64_t>(size, byteLimit));
         if (count)
           bytes = read(0, count);
         if (bytes.size() != count)

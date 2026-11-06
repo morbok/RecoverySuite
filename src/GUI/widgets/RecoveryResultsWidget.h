@@ -27,6 +27,7 @@ signals:
 private:
   QPushButton *previewButton_;
   QLabel *previewStatus_;
+  QLabel *previewImage_;
   QPlainTextEdit *previewText_;
   QWidget *summaryPanel_;
   QLabel *heading_;

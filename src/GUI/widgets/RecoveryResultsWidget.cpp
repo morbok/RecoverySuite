@@ -9,6 +9,7 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMap>
+#include <QPixmap>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QTreeWidget>
@@ -82,6 +83,11 @@ RecoveryResultsWidget::RecoveryResultsWidget(QWidget *parent)
   previewStatus_->setTextFormat(Qt::PlainText);
   previewStatus_->setWordWrap(true);
   layout->addWidget(previewStatus_);
+  previewImage_ = new QLabel(this);
+  previewImage_->setObjectName("candidateImagePreview");
+  previewImage_->setAlignment(Qt::AlignCenter);
+  previewImage_->setMaximumHeight(450);
+  layout->addWidget(previewImage_);
   previewText_ = new QPlainTextEdit(this);
   previewText_->setObjectName("candidatePreview");
   previewText_->setReadOnly(true);
@@ -99,6 +105,8 @@ RecoveryResultsWidget::RecoveryResultsWidget(QWidget *parent)
     }
   });
   connect(candidates_, &QTreeWidget::currentItemChanged, this, [this] {
+    previewImage_->clear();
+    previewImage_->hide();
     previewText_->clear();
     previewText_->hide();
     previewStatus_->hide();
@@ -184,6 +192,8 @@ void RecoveryResultsWidget::clear() {
         recoveredBytesLabel_, failedBytesLabel_, recoveredItemsLabel_,
         failedItemsLabel_, timeTakenLabel_, destinationLabel_, exportLabel_})
     label->setText(tr("Not reported"));
+  previewImage_->clear();
+  previewImage_->hide();
   previewButton_->hide();
   previewStatus_->hide();
   previewText_->hide();
@@ -347,11 +357,26 @@ namespace recoverysuite::gui::widgets {
 void RecoveryResultsWidget::setPreview(
     const application::service::models::RecoveryResult &result) {
   previewStatus_->show();
+  previewImage_->clear();
+  previewImage_->hide();
   previewText_->clear();
   if (!result.success) {
     previewStatus_->setText(QString::fromStdString(result.errorMessage));
     previewText_->hide();
     return;
+  }
+  if (!result.previewImagePNG.empty()) {
+    QPixmap image;
+    if (image.loadFromData(result.previewImagePNG.data(),
+                           uint(result.previewImagePNG.size()), "PNG")) {
+      previewImage_->setPixmap(image);
+      previewImage_->show();
+      previewText_->hide();
+      previewStatus_->setText(
+          tr("Image preview · Nothing saved. A readable preview does not prove "
+             "the whole file is intact."));
+      return;
+    }
   }
   const QByteArray bytes(
       reinterpret_cast<const char *>(result.previewBytes.data()),

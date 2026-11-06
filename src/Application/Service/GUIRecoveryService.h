@@ -49,11 +49,11 @@ public:
      */
     models::StorageDevice openImage(const std::string& path, uint32_t sectorSize = 512);
     models::StorageDevice openDevice(const std::string& path);
-    /** Read at most 64 KiB from a current catalog candidate; no files written.
+    /** Read a bounded prefix (default 64 KiB, maximum 16 MiB); no files written.
      * Call off the GUI thread. Cancellation also stops discovery replay.
      */
     std::vector<uint8_t> previewCandidate(const std::string& name,
-        const std::function<bool()>& cancelled = {});
+        const std::function<bool()>& cancelled = {}, size_t byteLimit = 65536);
     models::RecoveryResult rescueToImage(const std::string& path, const std::function<void(uint64_t)>& progress = {}, const std::function<bool()>& cancelled = {}, bool resume = false);
     void saveScan(const std::string& path, const std::function<bool()>& cancelled = {});
     models::RecoveryResult loadScan(const std::string& path, const std::function<bool()>& cancelled = {});

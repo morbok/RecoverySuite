@@ -544,3 +544,7 @@ cases, including stale-lock recovery. Validation pending; no local tests run.
 ## Interrupted drive scans
 
 Partial drive scans can now be saved to `.rscan`, opened after restart and continued from File → Continue interrupted scan. Volume discovery keeps its next sector; completed filesystem volumes are skipped; an interrupted filesystem volume is replayed with candidate deduplication. Signature discovery keeps the earliest unconsumed byte and naming counter, rereading at most the bounded pending candidate rather than the whole source. Saved source binding is checked before continuation. Added CI-only cross-service cancellation/resume and malformed cursor coverage. No local build/test execution.
+
+## Bounded raster previews
+
+Candidate inspection can decode a first-frame PNG/JPEG/BMP/GIF/WebP thumbnail on the worker thread. Input is capped at 16 MiB, dimensions at 16 million pixels and decoder allocation at 64 MiB; the UI receives a re-encoded PNG no larger than 800×450. Text/hex remains capped at 64 KiB. No external viewer, active markup or source writes. CI covers byte-exact source preservation and a real raster thumbnail.

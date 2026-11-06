@@ -1,9 +1,12 @@
 #include "Application/Service/GUIRecoveryService.h"
 #include "GUI/core/MainWindow.h"
+#include "GUI/widgets/RecoveryResultsWidget.h"
 #include "GUI/widgets/SourceDiscoveryWidget.h"
+#include <QBuffer>
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
+#include <QImage>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLabel>
@@ -631,6 +634,49 @@ private slots:
                  .toString(),
              QString("completed"));
     window.close();
+  }
+  void rasterPreviewDecodesOffscreenAndRemainsReadOnly() {
+    QTemporaryDir root;
+    QImage fixture(32, 24, QImage::Format_RGB32);
+    fixture.fill(Qt::green);
+    QByteArray png;
+    QBuffer buffer(&png);
+    QVERIFY(buffer.open(QIODevice::WriteOnly));
+    QVERIFY(fixture.save(&buffer, "PNG"));
+    QVERIFY(png.size() < 512);
+    auto bytes = disk();
+    put(bytes, 32 * 512 + 3 * 512 + 28, uint64_t(png.size()), 4);
+    bytes.replace(32 * 512 + 4 * 512, png.size(), png);
+    const auto path = root.filePath("source.img");
+    save(path, bytes);
+    GUIRecoveryService service(nullptr);
+    auto op = scan(service.openImage(path.toStdString()));
+    QVERIFY(service.executeOperation(op).success);
+    op.operationType = "disk_preview";
+    op.selectedPaths = {"FAT12_32/Existing/HELLO.TXT"};
+    gui::core::RecoveryWorker worker(&service, op);
+    models::RecoveryResult result;
+    connect(&worker, &gui::core::RecoveryWorker::finished, this,
+            [&](const auto &r) { result = r; });
+    worker.process();
+    QVERIFY2(result.success, result.errorMessage.c_str());
+    QVERIFY(!result.previewImagePNG.empty());
+    QVERIFY(result.previewBytes.size() <= 65536);
+    QImage image;
+    QVERIFY(image.loadFromData(result.previewImagePNG.data(),
+                               int(result.previewImagePNG.size()), "PNG"));
+    QVERIFY(image.width() <= 800 && image.height() <= 450);
+    QCOMPARE(image.pixelColor(image.width() / 2, image.height() / 2),
+             QColor(Qt::green));
+    gui::widgets::RecoveryResultsWidget widget;
+    widget.setPreview(result);
+    widget.show();
+    QVERIFY(widget.findChild<QLabel *>("candidateImagePreview")->isVisible());
+    QCOMPARE(read(path), bytes);
+    QVERIFY(!result.outputWritten);
+    QVERIFY_EXCEPTION_THROWN(service.previewCandidate(op.selectedPaths.front(),
+                                                      {}, 16 * 1024 * 1024 + 1),
+                             std::runtime_error);
   }
   void interruptedScanPersistsAndContinuesAcrossServices() {
     QTemporaryDir root;
