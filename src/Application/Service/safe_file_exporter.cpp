@@ -16,10 +16,88 @@
 #endif
 #ifndef _WIN32
 #include <fcntl.h>
+#include <sys/file.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #endif
 namespace recoverysuite::application::service {
+namespace {
+template <class Read, class Write, class Resize, class Flush>
+std::string
+checkpointCopy(uint64_t total, const SafeFileExporter::ResumePoint *resume,
+               uint64_t storedSize, const std::string &identity,
+               const Read &stored, const Write &write, const Resize &resize,
+               const Flush &flush, const SafeFileExporter::ReadAt &source,
+               const SafeFileExporter::Checkpoint &checkpoint,
+               const std::function<bool()> &cancelled, uint64_t interval) {
+  if (total > uint64_t(std::numeric_limits<int64_t>::max()) ||
+      interval < 65536 || interval > 64 * 1024 * 1024 || interval % 65536)
+    throw std::runtime_error("Invalid rescue checkpoint geometry");
+  const auto check = [&] {
+    if (cancelled && cancelled())
+      throw std::runtime_error(
+          "Rescue cancelled; committed progress is retained");
+  };
+  const uint64_t prefix = resume ? resume->bytes : 0;
+  if (prefix > total || storedSize < prefix || storedSize > total ||
+      (prefix != total && prefix % 65536) ||
+      (resume && (resume->identity != identity || resume->sha256.size() != 64)))
+    throw std::runtime_error(
+        "Rescue file identity, size or checkpoint does not match");
+  QCryptographicHash hash(QCryptographicHash::Sha256);
+  for (uint64_t at = 0; at < prefix;) {
+    check();
+    const auto n = size_t(std::min<uint64_t>(65536, prefix - at));
+    const auto bytes = stored(at, n);
+    if (bytes.size() != n)
+      throw std::runtime_error("Short rescue prefix read");
+    hash.addData(QByteArrayView(reinterpret_cast<const char *>(bytes.data()),
+                                qsizetype(n)));
+    at += n;
+  }
+  if (resume && hash.result().toHex().toStdString() != resume->sha256)
+    throw std::runtime_error(
+        "Saved rescue prefix has changed; refusing to overwrite it");
+  check();
+  resize(prefix);
+  flush();
+  checkpoint({prefix, hash.result().toHex().toStdString(), identity});
+  uint64_t committed = prefix;
+  for (uint64_t at = prefix; at < total;) {
+    check();
+    const auto n = size_t(std::min<uint64_t>(65536, total - at));
+    const auto bytes = source(at, n);
+    if (bytes.size() != n)
+      throw std::runtime_error("Incomplete rescue source chunk");
+    check();
+    write(at, bytes);
+    hash.addData(QByteArrayView(reinterpret_cast<const char *>(bytes.data()),
+                                qsizetype(n)));
+    at += n;
+    if (at - committed >= interval || at == total) {
+      flush();
+      checkpoint({at, hash.result().toHex().toStdString(), identity});
+      committed = at;
+    }
+  }
+  const auto digest = hash.result();
+  QCryptographicHash actual(QCryptographicHash::Sha256);
+  for (uint64_t at = 0; at < total;) {
+    check();
+    const auto n = size_t(std::min<uint64_t>(65536, total - at));
+    const auto bytes = stored(at, n);
+    if (bytes.size() != n)
+      throw std::runtime_error("Short stored rescue read");
+    actual.addData(QByteArrayView(reinterpret_cast<const char *>(bytes.data()),
+                                  qsizetype(n)));
+    at += n;
+  }
+  if (actual.result() != digest)
+    throw std::runtime_error("Stored rescue SHA-256 verification failed");
+  flush();
+  return digest.toHex().toStdString();
+}
+} // namespace
 #ifndef _WIN32
 namespace {
 class Descriptor {
@@ -178,6 +256,72 @@ void writeAt(int directory, const std::string &name, uint64_t size,
   }
 }
 } // namespace
+std::string SafeFileExporter::checkpointStream(
+    const std::string &name, uint64_t total, const ReadAt &source,
+    const ResumePoint *resume, const Checkpoint &checkpoint,
+    const std::function<bool()> &cancelled, uint64_t interval) {
+  if (name.empty() || name.size() > 255 || name == "." || name == ".." ||
+      name.find_first_of("/\\:") != std::string::npos ||
+      std::any_of(name.begin(), name.end(),
+                  [](unsigned char c) { return c < 32 || c == 127; }))
+    throw std::invalid_argument("Unsafe rescue filename");
+  Descriptor file(::openat(
+      impl_->directory.get(), name.c_str(),
+      O_RDWR | O_NOFOLLOW | O_CLOEXEC | (resume ? 0 : O_CREAT | O_EXCL), 0600));
+  if (file.get() < 0 || ::flock(file.get(), LOCK_EX | LOCK_NB))
+    throw std::runtime_error("Cannot exclusively open rescue file");
+  struct stat info{};
+  if (::fstat(file.get(), &info) || !S_ISREG(info.st_mode) ||
+      info.st_nlink != 1 || info.st_size < 0)
+    throw std::runtime_error(
+        "Rescue output must be a single-link regular file");
+  const auto identity = std::to_string(uint64_t(info.st_dev)) + ":" +
+                        std::to_string(uint64_t(info.st_ino));
+  const auto stored = [&](uint64_t at, size_t n) {
+    std::vector<uint8_t> bytes(n);
+    size_t done = 0;
+    while (done < n) {
+      checkCancel(cancelled);
+      const auto got =
+          ::pread(file.get(), bytes.data() + done, n - done, off_t(at + done));
+      if (got < 0 && errno == EINTR)
+        continue;
+      if (got <= 0)
+        throw std::runtime_error("Rescue verification read failed");
+      done += size_t(got);
+    }
+    return bytes;
+  };
+  const auto write = [&](uint64_t at, const std::vector<uint8_t> &bytes) {
+    size_t done = 0;
+    while (done < bytes.size()) {
+      checkCancel(cancelled);
+      const auto n = ::pwrite(file.get(), bytes.data() + done,
+                              bytes.size() - done, off_t(at + done));
+      if (n < 0 && errno == EINTR)
+        continue;
+      if (n <= 0)
+        throw std::runtime_error("Rescue write failed");
+      done += size_t(n);
+    }
+  };
+  const auto flush = [&] {
+    struct stat named{}, held{};
+    if (::fsync(file.get()) || ::fstat(file.get(), &held) ||
+        ::fstatat(impl_->directory.get(), name.c_str(), &named,
+                  AT_SYMLINK_NOFOLLOW) ||
+        held.st_dev != named.st_dev || held.st_ino != named.st_ino ||
+        held.st_nlink != 1 || ::fsync(impl_->directory.get()))
+      throw std::runtime_error("Rescue file changed or flush failed");
+  };
+  return checkpointCopy(
+      total, resume, uint64_t(info.st_size), identity, stored, write,
+      [&](uint64_t n) {
+        if (::ftruncate(file.get(), off_t(n)))
+          throw std::runtime_error("Cannot truncate uncommitted rescue suffix");
+      },
+      flush, source, checkpoint, cancelled, interval);
+}
 void SafeFileExporter::write(const std::string &name,
                              const std::vector<uint8_t> &data, bool verify,
                              const std::function<bool()> &cancelled) {
@@ -609,6 +753,59 @@ SafeFileExporter::SafeFileExporter(const std::string &directory)
   }
 }
 SafeFileExporter::~SafeFileExporter() = default;
+std::string SafeFileExporter::checkpointStream(
+    const std::string &name, uint64_t total, const ReadAt &source,
+    const ResumePoint *resume, const Checkpoint &checkpoint,
+    const std::function<bool()> &cancelled, uint64_t interval) {
+  component(name);
+  auto file =
+      relative(impl_->parents.back().value, wide(name),
+               FILE_GENERIC_READ | FILE_GENERIC_WRITE, resume ? 1 : 2, false);
+  FILE_STANDARD_INFO info{};
+  FILE_ID_INFO id{};
+  if (!GetFileInformationByHandleEx(file.value, FileStandardInfo, &info,
+                                    sizeof(info)) ||
+      info.EndOfFile.QuadPart < 0 || info.NumberOfLinks != 1 ||
+      !GetFileInformationByHandleEx(file.value, FileIdInfo, &id, sizeof(id)))
+    throw std::runtime_error("Cannot bind rescue file identity");
+  const auto identity =
+      std::to_string(id.VolumeSerialNumber) + ":" +
+      QByteArray(reinterpret_cast<const char *>(id.FileId.Identifier), 16)
+          .toHex()
+          .toStdString();
+  const auto stored = [&](uint64_t at, size_t n) {
+    winCancel(cancelled);
+    seek(file.value, at);
+    std::vector<uint8_t> bytes(n);
+    DWORD got = 0;
+    if (!ReadFile(file.value, bytes.data(), DWORD(n), &got, nullptr) ||
+        got != n)
+      throw std::runtime_error("Rescue verification read failed");
+    return bytes;
+  };
+  const auto write = [&](uint64_t at, const std::vector<uint8_t> &bytes) {
+    winCancel(cancelled);
+    seek(file.value, at);
+    DWORD got = 0;
+    if (!WriteFile(file.value, bytes.data(), DWORD(bytes.size()), &got,
+                   nullptr) ||
+        got != bytes.size())
+      throw std::runtime_error("Rescue write failed");
+  };
+  const auto flush = [&] {
+    if (!FlushFileBuffers(file.value))
+      throw std::runtime_error("Rescue flush failed");
+    inspectHandle(file.value, false);
+  };
+  return checkpointCopy(
+      total, resume, uint64_t(info.EndOfFile.QuadPart), identity, stored, write,
+      [&](uint64_t n) {
+        seek(file.value, n);
+        if (!SetEndOfFile(file.value))
+          throw std::runtime_error("Cannot truncate uncommitted rescue suffix");
+      },
+      flush, source, checkpoint, cancelled, interval);
+}
 void SafeFileExporter::write(const std::string &name,
                              const std::vector<uint8_t> &data, bool verify,
                              const std::function<bool()> &cancelled) {

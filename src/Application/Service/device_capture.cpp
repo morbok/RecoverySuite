@@ -3,9 +3,13 @@
 #include "Disk/Access/read_only_device.h"
 #include "safe_file_exporter.h"
 #include <QCryptographicHash>
+#include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLockFile>
+#include <charconv>
 #include <limits>
 #include <stdexcept>
 namespace recoverysuite::application::service {
@@ -55,7 +59,8 @@ CaptureResult copySourceImage(disk::IDiskReader &source,
 RescueResult rescueSourceImage(disk::IDiskReader &source,
                                const std::string &output, unsigned retries,
                                const std::function<void(uint64_t)> &progress,
-                               const std::function<bool()> &cancelled) {
+                               const std::function<bool()> &cancelled,
+                               bool resume, uint64_t checkpointInterval) {
   const auto sector = source.getSectorSize();
   const auto total = source.getTotalSectors();
   if (retries > 5 || !source.isOpen() || !source.getDiskInfo().isReadOnly ||
@@ -63,41 +68,32 @@ RescueResult rescueSourceImage(disk::IDiskReader &source,
       total > uint64_t(std::numeric_limits<int64_t>::max()) / sector)
     throw std::runtime_error(
         "Invalid read-only rescue geometry or retry limit");
-  const auto path = std::filesystem::absolute(disk::nativePath(output));
+  const auto path =
+      std::filesystem::absolute(disk::nativePath(output)).lexically_normal();
   const auto name = disk::utf8Path(path.filename()),
              report = name + ".rescue.json";
+  if (name.empty() || name == "." || name == ".." || name.size() > 240)
+    throw std::runtime_error("Choose a valid new rescue image filename");
+  std::error_code ec;
+  if (std::filesystem::equivalent(
+          path, disk::nativePath(source.getDiskInfo().devicePath), ec))
+    throw std::runtime_error("Rescue image cannot be the source");
   SafeFileExporter exporter(disk::utf8Path(path.parent_path()));
   const auto check = [&] {
     if (cancelled && cancelled())
-      throw std::runtime_error("Rescue cancelled");
+      throw std::runtime_error("Rescue cancelled; saved progress is retained");
   };
   check();
-  // Reserve the mandatory report first; a report collision must prevent
-  // imaging.
-  QJsonObject state{
-      {"schema", 1},
-      {"status", "incomplete"},
-      {"source", QString::fromStdString(source.getDiskInfo().devicePath)},
-      {"sectorSize", QString::number(sector)},
-      {"sectors", QString::number(total)},
-      {"warning",
-       "Unreadable sectors are zero-filled, not recovered. Incomplete imaging "
-       "must not be treated as a complete rescue."}};
-  const auto saveReport = [&](bool initial) {
-    const auto bytes = QJsonDocument(state).toJson(QJsonDocument::Compact);
-    const std::vector<uint8_t> data(bytes.begin(), bytes.end());
-    if (initial)
-      exporter.write(report, data, true, cancelled);
-    else
-      exporter.replaceState(report, data);
-  };
-  saveReport(true);
+  const auto reportPath =
+      disk::utf8Path(path.parent_path() / disk::nativePath(report));
+  QLockFile ownership(QString::fromStdString(reportPath) + ".lock");
+  ownership.setStaleLockTime(0);
+  if (!ownership.tryLock(0))
+    throw std::runtime_error("This rescue is already in use");
   RescueResult result;
   result.bytes = total * sector;
   result.sectorSize = sector;
-  result.report = disk::utf8Path(path.parent_path() / disk::nativePath(report));
-  QCryptographicHash hash(QCryptographicHash::Sha256);
-  uint64_t copied = 0;
+  result.report = reportPath;
   const auto read = [&](uint64_t at, uint64_t count,
                         std::vector<std::byte> &bytes) {
     check();
@@ -113,8 +109,125 @@ RescueResult rescueSourceImage(disk::IDiskReader &source,
       return false;
     }
   };
+
+  const auto info = source.getDiskInfo();
+  QCryptographicHash stamp(QCryptographicHash::Sha256);
+  stamp.addData((QString::fromStdString(info.devicePath) + "\n" +
+                 QString::fromStdString(info.serialNumber) + "\n" +
+                 QString::number(total) + "\n" + QString::number(sector))
+                    .toUtf8());
+  // Small deterministic source samples bind restarts without rereading the
+  // captured disk prefix. Changed/unreadable samples fail closed on resume.
+  for (uint64_t i = 0; i < 16; ++i) {
+    const auto at = (total - 1) / 15 * i + ((total - 1) % 15) * i / 15;
+    std::vector<std::byte> bytes;
+    const bool ok = read(at, 1, bytes);
+    stamp.addData(ok ? "readable" : "unreadable");
+    if (ok)
+      stamp.addData(QByteArrayView(reinterpret_cast<const char *>(bytes.data()),
+                                   qsizetype(bytes.size())));
+  }
+  const auto sourceStamp = stamp.result().toHex().toStdString();
+  SafeFileExporter::ResumePoint point{};
+  uint64_t copied = 0;
+  QJsonObject state;
+  const auto number = [](const QJsonValue &value) {
+    const auto s = value.toString().toStdString();
+    uint64_t n{};
+    const auto [end, error] = std::from_chars(s.data(), s.data() + s.size(), n);
+    if (s.empty() || error != std::errc{} || end != s.data() + s.size())
+      throw std::runtime_error("Invalid rescue checkpoint number");
+    return n;
+  };
+  if (resume) {
+    QFileInfo file(QString::fromStdString(reportPath));
+    if (!file.isFile() || file.isSymLink() || file.size() > 16 * 1024 * 1024)
+      throw std::runtime_error("Invalid rescue report");
+    QFile input(file.absoluteFilePath());
+    if (!input.open(QIODevice::ReadOnly))
+      throw std::runtime_error("Cannot open rescue report");
+    const auto bytes = input.read(16 * 1024 * 1024 + 1);
+    QJsonParseError error;
+    const auto doc = QJsonDocument::fromJson(bytes, &error);
+    if (bytes.size() > 16 * 1024 * 1024 || !input.atEnd() ||
+        input.error() != QFileDevice::NoError ||
+        error.error != QJsonParseError::NoError || !doc.isObject())
+      throw std::runtime_error("Malformed rescue report");
+    state = doc.object();
+    if (state.value("schema").toInt() != 2 ||
+        state.value("image").toString() !=
+            QString::fromStdString(disk::utf8Path(path)) ||
+        state.value("sourceStamp").toString() !=
+            QString::fromStdString(sourceStamp) ||
+        number(state.value("sectorSize")) != sector ||
+        number(state.value("sectors")) != total)
+      throw std::runtime_error("Rescue report belongs to a changed source, "
+                               "another image or an unsupported version");
+    const auto saved = state.value("checkpoint").toObject();
+    point = {number(saved.value("bytes")),
+             saved.value("sha256").toString().toStdString(),
+             saved.value("identity").toString().toStdString()};
+    if (point.bytes > result.bytes || point.bytes % sector ||
+        point.identity.empty() || point.identity.size() > 256 ||
+        point.sha256.size() != 64)
+      throw std::runtime_error("Invalid rescue checkpoint");
+    copied = point.bytes;
+    if (!state.value("unreadableRanges").isArray() ||
+        state.value("unreadableRanges").toArray().size() > 100000)
+      throw std::runtime_error("Invalid unreadable range list");
+    uint64_t prior = 0;
+    for (const auto &value : state.value("unreadableRanges").toArray()) {
+      const auto o = value.toObject();
+      const auto at = number(o.value("sector")),
+                 count = number(o.value("count"));
+      if (!count || at < prior || at >= point.bytes / sector ||
+          count > point.bytes / sector - at)
+        throw std::runtime_error("Invalid committed unreadable range");
+      result.unreadable.push_back({at, count});
+      result.unreadableSectors += count;
+      prior = at + count;
+    }
+  } else {
+    state = QJsonObject{
+        {"schema", 2},
+        {"status", "incomplete"},
+        {"source", QString::fromStdString(info.devicePath)},
+        {"image", QString::fromStdString(disk::utf8Path(path))},
+        {"sourceStamp", QString::fromStdString(sourceStamp)},
+        {"sectorSize", QString::number(sector)},
+        {"sectors", QString::number(total)},
+        {"warning", "Unreadable sectors are zero-filled, not recovered. Resume "
+                    "verifies source samples and the flushed output prefix; it "
+                    "does not prove all source bytes unchanged."}};
+  }
+  const auto saveReport = [&](bool initial) {
+    QJsonArray ranges;
+    uint64_t gaps = 0;
+    for (const auto &r : result.unreadable)
+      if (r.sector < point.bytes / sector) {
+        const auto count = std::min(r.count, point.bytes / sector - r.sector);
+        ranges.append(QJsonObject{{"sector", QString::number(r.sector)},
+                                  {"count", QString::number(count)}});
+        gaps += count;
+      }
+    state["unreadableRanges"] = ranges;
+    state["unreadableSectors"] = QString::number(gaps);
+    const auto bytes = QJsonDocument(state).toJson(QJsonDocument::Compact);
+    if (bytes.size() > 16 * 1024 * 1024)
+      throw std::runtime_error("Rescue report limit");
+    const std::vector<uint8_t> data(bytes.begin(), bytes.end());
+    if (initial)
+      exporter.write(report, data, true, cancelled);
+    else
+      exporter.replaceState(report, data);
+  };
+  if (!resume)
+    saveReport(true);
+  // Do not rewrite a report if prefix/source validation fails before the
+  // checkpoint callback. A bad resume must leave the previous state intact.
+  bool begun = false;
   try {
-    exporter.writeStream(
+    result.sha256 = exporter.checkpointStream(
         name, result.bytes,
         [&](uint64_t offset, size_t n) {
           check();
@@ -153,55 +266,53 @@ RescueResult rescueSourceImage(disk::IDiskReader &source,
               }
             }
           }
-          hash.addData(
-              QByteArrayView(reinterpret_cast<const char *>(out.data()),
-                             qsizetype(out.size())));
           copied += n;
           if (progress)
             progress(copied);
           return out;
         },
-        true, false, cancelled, true);
-    result.sha256 = hash.result().toHex().toStdString();
+        resume ? &point : nullptr,
+        [&](const SafeFileExporter::ResumePoint &committed) {
+          begun = true;
+          point = committed;
+          state["status"] = "incomplete";
+          state["storedBytesVerified"] = false;
+          state["checkpoint"] =
+              QJsonObject{{"bytes", QString::number(point.bytes)},
+                          {"sha256", QString::fromStdString(point.sha256)},
+                          {"identity", QString::fromStdString(point.identity)}};
+          saveReport(false);
+        },
+        cancelled, checkpointInterval);
     state["status"] =
         result.unreadableSectors ? "completed-with-gaps" : "completed";
     state["sha256"] = QString::fromStdString(result.sha256);
     state["storedBytesVerified"] = true;
+    saveReport(false);
   } catch (...) {
-    state["status"] = "incomplete";
-    state["sourceBytesRead"] = QString::number(copied);
-    QJsonArray ranges;
-    for (const auto &r : result.unreadable)
-      ranges.append(QJsonObject{{"sector", QString::number(r.sector)},
-                                {"count", QString::number(r.count)}});
-    state["unreadableRanges"] = ranges;
-    state["unreadableSectors"] = QString::number(result.unreadableSectors);
-    try {
-      saveReport(false);
-    } catch (...) {
-    } // Preserve the original capture error.
+    if (begun) {
+      state["status"] = "incomplete";
+      state["storedBytesVerified"] = false;
+      try {
+        saveReport(false);
+      } catch (...) {
+      }
+    }
     throw;
   }
-  QJsonArray ranges;
-  for (const auto &r : result.unreadable)
-    ranges.append(QJsonObject{{"sector", QString::number(r.sector)},
-                              {"count", QString::number(r.count)}});
-  state["unreadableRanges"] = ranges;
-  state["unreadableSectors"] = QString::number(result.unreadableSectors);
-  saveReport(false);
   return result;
 }
 RescueResult rescueDevice(const std::string &path, const std::string &output,
                           unsigned retries,
                           const std::function<void(uint64_t)> &progress,
-                          const std::function<bool()> &cancelled) {
+                          const std::function<bool()> &cancelled, bool resume) {
   disk::ReadOnlyDevice source;
   source.open(path);
   const auto directory = disk::utf8Path(
       std::filesystem::absolute(disk::nativePath(output)).parent_path());
   source.validateDestination(directory);
   const auto result =
-      rescueSourceImage(source, output, retries, progress, cancelled);
+      rescueSourceImage(source, output, retries, progress, cancelled, resume);
   source.validateDestination(directory);
   return result;
 }

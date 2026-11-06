@@ -531,3 +531,12 @@ Checksum CI caught a failed-bitmap cache surviving validation rejection. Both
 inode/block bitmap caches now clear rejected bytes before throwing, so a later
 lookup cannot bypass checksum verification. The existing injected-corruption
 case exercises this regression; final qualification is rerunning.
+
+## Completion pass: restartable rescue capture
+
+Added an explicit software acceptance checklist in RELEASE_ACCEPTANCE.md. Rescue
+capture now retains a flushed prefix, cumulative SHA-256 and native file identity.
+Resume validates source identity/samples and the stored prefix before truncating
+only uncommitted tail bytes. Source data before the checkpoint is not reread.
+Added cancellation, tampered prefix, identity and real process-crash/restart CI
+cases, including stale-lock recovery. Validation pending; no local tests run.

@@ -54,7 +54,7 @@ public:
      */
     std::vector<uint8_t> previewCandidate(const std::string& name,
         const std::function<bool()>& cancelled = {});
-    models::RecoveryResult rescueToImage(const std::string& path, const std::function<void(uint64_t)>& progress = {}, const std::function<bool()>& cancelled = {});
+    models::RecoveryResult rescueToImage(const std::string& path, const std::function<void(uint64_t)>& progress = {}, const std::function<bool()>& cancelled = {}, bool resume = false);
     void saveScan(const std::string& path, const std::function<bool()>& cancelled = {});
     models::RecoveryResult loadScan(const std::string& path, const std::function<bool()>& cancelled = {});
     bool sourceIsPhysical() const { return bool(deviceReader_); }

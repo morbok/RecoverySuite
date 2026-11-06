@@ -5,10 +5,9 @@
 #include <set>
 
 namespace recoverysuite::application::service {
-models::RecoveryResult
-GUIRecoveryService::rescueToImage(const std::string &path,
-                                  const std::function<void(uint64_t)> &progress,
-                                  const std::function<bool()> &cancelled) {
+models::RecoveryResult GUIRecoveryService::rescueToImage(
+    const std::string &path, const std::function<void(uint64_t)> &progress,
+    const std::function<bool()> &cancelled, bool resume) {
   std::unique_lock lock(imageMutex_, std::try_to_lock);
   if (!lock.owns_lock() || !sourceReader_)
     throw std::runtime_error(
@@ -22,7 +21,7 @@ GUIRecoveryService::rescueToImage(const std::string &path,
     deviceReader_->validateDestination(directory);
   }
   const auto rescued =
-      rescueSourceImage(*sourceReader_, path, 2, progress, cancelled);
+      rescueSourceImage(*sourceReader_, path, 2, progress, cancelled, resume);
   models::RecoveryResult result{};
   result.operationType = "disk_rescue";
   result.success = !rescued.unreadableSectors;

@@ -34,6 +34,11 @@ MainWindow::MainWindow(application::service::GUIRecoveryService* service, QWidge
         const auto path=QFileDialog::getSaveFileName(this,tr("Rescue to another drive; unreadable sectors will be zero-filled and logged"),{},tr("Rescue image (*.img)"));
         if(!path.isEmpty())rescueImageAs(path);
     });
+    file->addAction(tr("Continue interrupted rescue…"),this,[this] {
+        if(running_)return;
+        const auto path=QFileDialog::getOpenFileName(this,tr("Continue rescue for the selected source"),{},tr("Rescue report (*.rescue.json)"));
+        if(path.endsWith(".rescue.json"))rescueImageAs(path.left(path.size()-12),true);
+    });
     file->addAction(tr("Save scan results…"),this,[this] {
         if(running_)return;
         const auto path=QFileDialog::getSaveFileName(this,tr("Save scan on another drive"),{},tr("Saved drive scan (*.rscan)"));
@@ -85,9 +90,9 @@ MainWindow::MainWindow(application::service::GUIRecoveryService* service, QWidge
 MainWindow::~MainWindow() {
     if (thread_ && thread_->isRunning()) { emit cancelRecovery(); thread_->quit(); thread_->wait(); }
 }
-void MainWindow::rescueImageAs(const QString& path) {
+void MainWindow::rescueImageAs(const QString& path, bool resume) {
     if(running_||path.isEmpty())return;
-    operation_.operationType="disk_rescue";operation_.outputPath=path.toStdString();
+    operation_.operationType="disk_rescue";operation_.outputPath=path.toStdString();operation_.resumeRescue=resume;
     state_.forceTransitionTo(ApplicationState::RECOVERY_CONFIGURATION);handleStartRecovery();
 }
 void MainWindow::saveScanAs(const QString& path) {
@@ -206,7 +211,7 @@ void RecoveryWorker::process() {
             result.operationType=operation_.operationType;
             result=service_->rescueToImage(operation_.outputPath,[this](uint64_t bytes){
                 application::service::models::RecoveryProgress p{};p.operationType="disk_rescue";p.currentStep="Copying readable sectors; gaps are logged";p.processedBytes=bytes;p.isCancellable=true;emit progressUpdated(p);
-            },[this]{return cancelled_.load();});
+            },[this]{return cancelled_.load();},operation_.resumeRescue);
         } else if(operation_.operationType=="disk_save_scan") {
             result.operationType=operation_.operationType;
             service_->saveScan(operation_.sessionPath,[this]{return cancelled_.load();});result.success=true;

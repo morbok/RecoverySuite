@@ -3,14 +3,18 @@
 #include "Disk/Access/disk_image_reader.h"
 #include "Disk/Access/path_utf8.h"
 #include "Disk/Access/read_only_device.h"
+#include <QCoreApplication>
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QProcess>
+#include <QProcessEnvironment>
 #include <QTemporaryDir>
 #include <QTest>
+#include <cstdlib>
 #include <limits>
 #include <map>
 #include <set>
@@ -71,6 +75,18 @@ class TestNativeIo : public QObject {
       return true;
     }
   };
+
+public:
+  static void crashCapture(const std::string &path) {
+    FaultSource source;
+    application::service::rescueSourceImage(
+        source, path, 2,
+        [](uint64_t bytes) {
+          if (bytes > 65536)
+            std::_Exit(23);
+        },
+        {}, false, 65536);
+  }
 private slots:
   void unicodeImageAndCapture() {
     QTemporaryDir root;
@@ -254,10 +270,7 @@ private slots:
         application::service::rescueSourceImage(source, path.toStdString()),
         disk::DiskException);
     QVERIFY(!QFile::exists(path));
-    QCOMPARE(QJsonDocument::fromJson(read(path + ".rescue.json"))
-                 .object()["status"]
-                 .toString(),
-             QString("incomplete"));
+    QVERIFY(!QFile::exists(path + ".rescue.json"));
     source.fatal = false;
     bool cancelled = false;
     const auto cancel = root.filePath("cancel.img");
@@ -266,8 +279,122 @@ private slots:
                                  [&](uint64_t) { cancelled = true; },
                                  [&] { return cancelled; }),
                              std::runtime_error);
-    QVERIFY(!QFile::exists(cancel));
+    QVERIFY(QFile::exists(cancel));
     QVERIFY(QFile::exists(cancel + ".rescue.json"));
+  }
+  void rescueResumesCommittedPrefixAndRejectsTampering() {
+    QTemporaryDir root;
+    FaultSource source;
+    const auto path = root.filePath("resume.img");
+    bool stop = false;
+    QVERIFY_EXCEPTION_THROWN(application::service::rescueSourceImage(
+                                 source, path.toStdString(), 2,
+                                 [&](uint64_t bytes) {
+                                   if (bytes > 65536)
+                                     stop = true;
+                                 },
+                                 [&] { return stop; }, false, 65536),
+                             std::runtime_error);
+    QCOMPARE(read(path).size(), 65536);
+    const auto originalReport = read(path + ".rescue.json");
+    const auto checkpoint = QJsonDocument::fromJson(originalReport)
+                                .object()["checkpoint"]
+                                .toObject();
+    QCOMPARE(checkpoint["bytes"].toString(), QString("65536"));
+    const auto original = read(path);
+    auto damaged = original;
+    damaged[0] = char(uint8_t(damaged[0]) ^ 1);
+    save(path, damaged);
+    QVERIFY_EXCEPTION_THROWN(
+        application::service::rescueSourceImage(source, path.toStdString(), 2,
+                                                {}, {}, true, 65536),
+        std::runtime_error);
+    QCOMPARE(read(path), damaged);
+    QCOMPARE(read(path + ".rescue.json"), originalReport);
+    save(path, original);
+    const auto before = source.attempts[3];
+    const auto result = application::service::rescueSourceImage(
+        source, path.toStdString(), 2, {}, {}, true, 65536);
+    QCOMPARE(source.attempts[3], before);
+    QCOMPARE(result.unreadableSectors, uint64_t(2));
+    QCOMPARE(read(path).size(), 131072);
+    QCOMPARE(result.sha256,
+             QCryptographicHash::hash(read(path), QCryptographicHash::Sha256)
+                 .toHex()
+                 .toStdString());
+    QCOMPARE(QJsonDocument::fromJson(read(path + ".rescue.json"))
+                 .object()["status"]
+                 .toString(),
+             QString("completed-with-gaps"));
+  }
+  void checkpointTruncatesUncommittedTailAndBindsFileIdentity() {
+    QTemporaryDir root;
+    application::service::SafeFileExporter output(root.path().toStdString());
+    application::service::SafeFileExporter::ResumePoint point;
+    bool stop = false;
+    const auto source = [&](uint64_t offset, size_t n) {
+      if (offset >= 65536)
+        stop = true;
+      return std::vector<uint8_t>(n, 7);
+    };
+    QVERIFY_EXCEPTION_THROWN(output.checkpointStream(
+                                 "partial.img", 131072, source, nullptr,
+                                 [&](const auto &p) { point = p; },
+                                 [&] { return stop; }, 65536),
+                             std::runtime_error);
+    QCOMPARE(point.bytes, uint64_t(65536));
+    // Simulate a process stopping after a partial, uncommitted final write.
+    QFile tail(root.filePath("partial.img"));
+    QVERIFY(tail.open(QIODevice::Append));
+    QCOMPARE(tail.write("junk"), qint64(4));
+    tail.close();
+    uint64_t first = 0;
+    const auto hash = output.checkpointStream(
+        "partial.img", 131072,
+        [&](uint64_t offset, size_t n) {
+          if (!first)
+            first = offset;
+          return std::vector<uint8_t>(n, 9);
+        },
+        &point, [&](const auto &) {}, {}, 65536);
+    QCOMPARE(first, uint64_t(65536));
+    QCOMPARE(read(root.filePath("partial.img")),
+             QByteArray(65536, char(7)) + QByteArray(65536, char(9)));
+    QCOMPARE(hash, QCryptographicHash::hash(read(root.filePath("partial.img")),
+                                            QCryptographicHash::Sha256)
+                       .toHex()
+                       .toStdString());
+    const auto before = read(root.filePath("partial.img"));
+    auto forged = point;
+    forged.identity = "not-this-file";
+    QVERIFY_EXCEPTION_THROWN(output.checkpointStream(
+                                 "partial.img", 131072, source, &forged,
+                                 [](const auto &) {}, {}, 65536),
+                             std::runtime_error);
+    QCOMPARE(read(root.filePath("partial.img")), before);
+  }
+  void rescueRestartsAfterProcessCrash() {
+    QTemporaryDir root;
+    const auto path = root.filePath("crash.img");
+    QProcess child;
+    auto environment = QProcessEnvironment::systemEnvironment();
+    environment.insert("RS_CRASH_RESCUE", path);
+    child.setProcessEnvironment(environment);
+    child.start(QCoreApplication::applicationFilePath(), {});
+    QVERIFY(child.waitForStarted(10000));
+    QVERIFY(child.waitForFinished(10000));
+    QCOMPARE(child.exitCode(), 23);
+    const auto obj =
+        QJsonDocument::fromJson(read(path + ".rescue.json")).object();
+    QCOMPARE(obj["checkpoint"].toObject()["bytes"].toString(),
+             QString("65536"));
+    FaultSource source;
+    const auto result = application::service::rescueSourceImage(
+        source, path.toStdString(), 2, {}, {}, true, 65536);
+    QCOMPARE(result.bytes, uint64_t(131072));
+    QCOMPARE(result.unreadableSectors, uint64_t(2));
+    QCOMPARE(source.attempts[3], 0u);
+    QCOMPARE(read(path).size(), 131072);
   }
   void storedDigestVerificationNeverRequestsSourceTwice() {
     QTemporaryDir root;
@@ -313,5 +440,14 @@ private slots:
 #endif
   }
 };
-QTEST_GUILESS_MAIN(TestNativeIo)
+int main(int argc, char **argv) {
+  QCoreApplication app(argc, argv);
+  const auto crash = qEnvironmentVariable("RS_CRASH_RESCUE");
+  if (!crash.isEmpty()) {
+    TestNativeIo::crashCapture(crash.toStdString());
+    return 24;
+  }
+  TestNativeIo test;
+  return QTest::qExec(&test, argc, argv);
+}
 #include "test_native_io.moc"

@@ -26,15 +26,16 @@ copySourceImage(disk::IDiskReader &source, const std::string &output,
 // Explicit salvage: sector fallback with <=5 retries, zero-filled unreadable
 // ranges and a mandatory report. Verifies stored output without rereading
 // media.
-RescueResult
-rescueSourceImage(disk::IDiskReader &source, const std::string &output,
-                  unsigned retries = 2,
-                  const std::function<void(uint64_t)> &progress = {},
-                  const std::function<bool()> &cancelled = {});
+RescueResult rescueSourceImage(
+    disk::IDiskReader &source, const std::string &output, unsigned retries = 2,
+    const std::function<void(uint64_t)> &progress = {},
+    const std::function<bool()> &cancelled = {}, bool resume = false,
+    uint64_t checkpointInterval = 64 * 1024 * 1024);
 RescueResult rescueDevice(const std::string &source, const std::string &output,
                           unsigned retries = 2,
                           const std::function<void(uint64_t)> &progress = {},
-                          const std::function<bool()> &cancelled = {});
+                          const std::function<bool()> &cancelled = {},
+                          bool resume = false);
 // Real devices only. Enforces unmounted/offline source and different physical
 // destination.
 CaptureResult captureDevice(const std::string &device,

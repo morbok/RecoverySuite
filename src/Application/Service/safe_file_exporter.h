@@ -25,6 +25,14 @@ public:
     // Verify an existing anchored regular output without changing it.
     void verifyStream(const std::string& path,uint64_t size,const ReadAt& read,bool tree,
                       const std::function<bool()>& cancelled = {});
+    struct ResumePoint {uint64_t bytes{};std::string sha256, identity;};
+    using Checkpoint = std::function<void(const ResumePoint&)>;
+    // Explicit application-owned rescue file. Retains partial output, verifies
+    // its committed prefix before resuming, truncates only uncommitted suffix,
+    // and checkpoints only after flushing the held regular file.
+    std::string checkpointStream(const std::string& name,uint64_t total,const ReadAt& source,
+        const ResumePoint* resume,const Checkpoint& checkpoint,
+        const std::function<bool()>& cancelled={},uint64_t interval=64*1024*1024);
     // Atomic replacement reserved for an explicitly selected application state file.
     void replaceState(const std::string& name,const std::vector<uint8_t>& data);
     // Relative tree paths are validated component by component; directories use mode 0700.
