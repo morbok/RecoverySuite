@@ -134,8 +134,10 @@ class Reader {
       const auto digest =
           crc32c(seed_, b.data(), size_t((g_.perGroup + 7) / 8));
       if (checksums_ && (g_.descSize == 64 ? digest : digest & 0xffff) !=
-                            record.blockChecksum)
+                            record.blockChecksum) {
+        b.clear();
         throw std::runtime_error("ext4 block bitmap checksum mismatch");
+      }
     }
     return (b.at(size_t(bit / 8)) & (1 << (bit % 8))) != 0;
   }
@@ -151,9 +153,11 @@ class Reader {
           bytes(group.inodeBitmap * g_.blockSize, g_.blockSize, true);
       const auto digest = crc32c(seed_, group.inodes.data(),
                                  size_t((g_.inodesPerGroup + 7) / 8));
-      if (checksums_ &&
-          (g_.descSize == 64 ? digest : digest & 0xffff) != group.inodeChecksum)
+      if (checksums_ && (g_.descSize == 64 ? digest : digest & 0xffff) !=
+                            group.inodeChecksum) {
+        group.inodes.clear();
         throw std::runtime_error("ext4 inode bitmap checksum mismatch");
+      }
     }
     if (!(group.inodes.at(size_t(index / 8)) & (1 << (index % 8))))
       throw std::runtime_error("Unallocated ext4 inode");

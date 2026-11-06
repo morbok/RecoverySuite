@@ -526,3 +526,8 @@ descriptors, bitmaps, inodes, external extent nodes and linear directory blocks.
 Unsupported checksummed indexed directories are rejected. Added a known vector
 and independent checksummed/corruption fixtures; native mkfs.ext4 CI validates
 interoperability. This supersedes the earlier unverified-checksum limitation.
+
+Checksum CI caught a failed-bitmap cache surviving validation rejection. Both
+inode/block bitmap caches now clear rejected bytes before throwing, so a later
+lookup cannot bypass checksum verification. The existing injected-corruption
+case exercises this regression; final qualification is rerunning.
