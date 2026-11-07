@@ -1,51 +1,146 @@
-<p align="center">
-  <img src="packaging/recoverysuite.svg" width="72" alt="RecoverySuite">
-</p>
+<div align="center">
 
-# RecoverySuite
+<img src="docs/assets/recoverysuite-banner.svg" alt="RecoverySuite — Windows and Linux disk data recovery" width="960">
 
-**Find lost files. Review what survived. Recover them to another drive.**
+<br>
 
-RecoverySuite is a native **Windows and Linux disk data recovery application** for accidentally deleted files, lost partitions, and data made inaccessible after an interrupted write or disconnected drive. Recoverable filesystem records can contain documents, videos, archives, photos, code, or other file types.
+[![Windows](https://img.shields.io/badge/Windows-x64-0078D4?style=for-the-badge)](#windows)
+[![Linux](https://img.shields.io/badge/Linux-Ubuntu_24.04-E95420?style=for-the-badge)](#linux)
+[![MIT License](https://img.shields.io/badge/License-MIT-16A085?style=for-the-badge)](LICENSE)
+[![Prototype](https://img.shields.io/badge/Status-Prototype-D49A36?style=for-the-badge)](#supported-recovery)
 
-**Status: unsigned development prototype.** Automated tests pass on disposable Windows/Linux fixtures. Real failing-drive behavior and physical USB/SATA/NVMe recovery still need separate hardware validation. Recovery is limited by surviving metadata and readable bytes; full Disk Drill feature parity is not claimed.
+**Recover lost files from deleted partitions, accidental deletions, and interrupted writes.**
 
-[Get the prototype](#download-and-install) · [How to recover files](#recover-files-in-five-steps) · [Supported recovery](#what-can-it-recover) · [User guide](docs/USER_GUIDE.md) · [Contribute](CONTRIBUTING.md)
+Documents, videos, archives, photos, code, and other files — on Windows and Linux.
 
-## Download and install
+### [⬇ Download for Windows & Linux](https://github.com/morbok/RecoverySuite/actions/runs/42355941877/artifacts/13567617573)
 
-The [Build and test workflow](https://github.com/morbok/RecoverySuite/actions/workflows/build.yml) produces a combined **RecoverySuite-prototype** artifact only after all its required jobs pass.
+[Download & install](#download--install) · [Quick start](#quick-start) · [Supported recovery](#supported-recovery) · [Help](#troubleshooting) · [Documentation](docs/README.md)
 
-1. Open a successful run and scroll to **Artifacts**.
-2. Download **RecoverySuite-prototype** and extract it. GitHub may require sign-in.
-3. Read `START_HERE.md`. Check the package against `SHA256SUMS` or `manifest.json`; the manifest identifies the exact source commit and CI run.
+</div>
 
-[Verified MIT-licensed bundle — e0d468f](https://github.com/morbok/RecoverySuite/actions/runs/42255314931/artifacts/13521908107) · [Its validation run](https://github.com/morbok/RecoverySuite/actions/runs/42255314931)
+## Features
 
-CI artifacts expire. If that download is unavailable, use a newer successful run. There is currently no signed stable release.
+- **Recover general files** from supported FAT, exFAT, NTFS and ext4 records.
+- **Find lost partitions** when recognizable filesystem metadata survives.
+- **Review before saving** with search, filters, file selection and bounded previews.
+- **Save scan progress** and continue later with the same source.
+- **Rescue readable sectors** to an image, with reported gaps and checkpoint resume.
+- **Keep source access read-only** and recover selected files to another physical drive.
+- **Run locally** — no API keys, subscription, or cloud account needed.
 
-| Platform | Package | Open the application |
-| --- | --- | --- |
-| Windows x64 | ZIP inside `Windows/` | Extract the package, then open `bin/RecoverySuite_GUI.exe`. Keep the bundled DLLs/plugins beside it. |
-| Ubuntu 24.04 | DEB inside `Linux/` | On a separate evaluation machine, install the package with `sudo apt install ./Linux/RecoverySuite-*.deb`, then launch `RecoverySuite_GUI`. |
-| Linux archive | TGZ inside `Linux/` | Extract it, then open `usr/bin/RecoverySuite_GUI`. Requires the Ubuntu 24.04 build distribution's Qt6 and libudev runtime libraries. |
+> **Development prototype:** unsigned and tested on disposable CI fixtures. Physical failing-drive qualification is still pending. See [supported recovery](#supported-recovery) for limits.
 
-Windows requires the official [Microsoft Visual C++ 2015–2022 x64 Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe).
-Linux requires Qt6 Core/Gui/Widgets/DBus and libudev; desktop authorization uses UDisks2/polkit. Other Linux distributions are not yet qualified.
+## Download & install
 
-## Recover files in five steps
+### 1. Download the app
 
-**Before starting:** stop using the affected drive. Prepare a destination on a **different physical disk**. RecoverySuite opens sources read-only; it does not repair or format them. An active system disk is not a supported source.
+**[Download RecoverySuite-prototype.zip](https://github.com/morbok/RecoverySuite/actions/runs/42355941877/artifacts/13567617573)** — contains both Windows and Linux packages.
 
-1. **Select the affected disk.** In **Drives**, match its capacity and device path. Linux volumes must be unmounted; Windows disks must already be offline. RecoverySuite does not change this state.
-2. **Open it for recovery.** Choose **Use selected drive**. If needed, choose **Authorize read-only access…** on Linux or **Open administrator window…** on Windows.
-3. **Search.** Choose **Search for lost data**. Leave the deep signature search enabled for additional JPEG/PDF/ZIP candidates, or disable it to inspect filesystem records sooner.
-4. **Review.** Filter by filename, folder or extension. Highlight a result and choose **Inspect highlighted file…** for a bounded thumbnail or text/hex preview. Check the files you want.
-5. **Recover.** Choose an existing folder on another disk, then **Recover selected files**. Existing output files are preserved. Saved bytes are read back and verified.
+- Sign in to GitHub if the download asks you to.
+- Extract the downloaded ZIP. Inside it, you will find:
 
-You can also use **Open an existing disk image instead…**. A disk image is optional; it is a sector-by-sector source file, not a restriction to recovering pictures.
+```text
+RecoverySuite-prototype/
+├── Windows/         Windows portable ZIP
+├── Linux/           Ubuntu DEB + Linux TAR.GZ
+├── START_HERE.md    Installation notes
+├── SHA256SUMS       Package checksums
+└── manifest.json    Source commit and build information
+```
 
-A successful copy verifies the exported bytes. It does **not** prove that deleted data had never been overwritten. A preview alone does not prove that an entire file is intact.
+The outer folder name depends on where you extract it. **Choose the package for your OS below; you don't need to compile anything.** GitHub's **Code → Download ZIP** downloads source code, not the ready-to-run application.
+
+<details>
+<summary>Download unavailable? Find a newer build</summary>
+
+GitHub CI downloads expire. Open [Build and test](https://github.com/morbok/RecoverySuite/actions/workflows/build.yml), select a successful run, scroll down to **Artifacts**, then download **RecoverySuite-prototype**. A combined package appears only after all required build checks pass.
+
+The download linked above is from [validated commit fec923c](https://github.com/morbok/RecoverySuite/actions/runs/42355941877). There is no signed stable release yet.
+
+</details>
+
+### 2. Install and open
+
+<a id="windows"></a>
+#### Windows
+
+1. Open the extracted **Windows** folder.
+2. Extract the ZIP inside it to a new folder.
+3. Open **bin → RecoverySuite_GUI.exe**. Keep the bundled DLLs and plugins in place.
+
+If Windows reports a missing Visual C++ runtime, install Microsoft's [Visual C++ 2015–2022 x64 Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe).
+
+<a id="linux"></a>
+#### Linux
+
+**Ubuntu 24.04 — DEB package**
+
+Open a terminal inside the extracted prototype folder:
+
+```bash
+sudo apt install ./Linux/RecoverySuite-*.deb
+RecoverySuite_GUI
+```
+
+**Linux TAR.GZ — without installing the application package**
+
+From the same extracted prototype folder:
+
+```bash
+mkdir -p recoverysuite
+tar -xzf Linux/RecoverySuite-*.tar.gz -C recoverysuite
+./recoverysuite/usr/bin/RecoverySuite_GUI
+```
+
+The archive requires the Ubuntu 24.04 build distribution's Qt6 Core/Gui/Widgets/DBus and libudev runtime libraries. Desktop authorization uses UDisks2/polkit. Other Linux distributions are not yet qualified.
+
+<details>
+<summary>Verify the download</summary>
+
+The outer download contains `SHA256SUMS` and `manifest.json`. Compare your selected package's SHA-256 with its entry before use.
+
+Linux:
+
+```bash
+sha256sum -c SHA256SUMS
+```
+
+Windows PowerShell:
+
+```powershell
+Get-FileHash .\Windows\RecoverySuite-*.zip -Algorithm SHA256
+```
+
+Compare the Windows hash with the matching `Windows/` entry in `SHA256SUMS`. These checks verify package integrity, not publisher signing.
+
+</details>
+
+## Quick start
+
+### 1. Choose the affected drive
+
+Connect the disk and select it in **Drives**, matching its capacity and device path. Choose **Use selected drive**.
+
+**Use another physical disk for recovered files.** Linux source volumes must be unmounted; Windows source disks must already be offline. The active system disk is not a supported source.
+
+If access is denied, choose **Authorize read-only access…** on Linux or **Open administrator window…** on Windows.
+
+### 2. Search for lost data
+
+Click **Search for lost data**. Leave deep signature search enabled for additional JPEG/PDF/ZIP candidates, or disable it for filesystem records only.
+
+Have a disk image already? Choose **Open an existing disk image instead…**. Images are optional sector-by-sector source files; recovery is not limited to pictures.
+
+### 3. Review what was found
+
+Filter by filename, folder or extension. Highlight a candidate and choose **Inspect highlighted file…** for a bounded thumbnail or text/hex preview. Check the files you want to recover.
+
+### 4. Recover your selected files
+
+Choose an existing destination folder on another physical disk, then click **Recover selected files**. Existing output files are preserved; recovered bytes are read back and verified.
+
+A successful copy verifies the export. It does not prove deleted contents were never overwritten, and a preview does not prove the entire file is intact.
 
 ### Pause or continue later
 
@@ -57,7 +152,7 @@ Use **File → Rescue drive to image (logs unreadable sectors)…** to copy read
 
 Unreadable sectors become explicitly reported zero-filled gaps. Rescue cannot recreate missing data or guarantee a timeout when the operating system stalls. See the [rescue guide](docs/USER_GUIDE.md#rescue-a-disk-with-read-errors) before use.
 
-## What can it recover?
+## Supported recovery
 
 Filesystem recovery works with general file contents, regardless of extension. Deep signature search has a narrower list of supported formats.
 
