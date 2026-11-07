@@ -37,7 +37,7 @@ To build and test the GUI implementation:
 
 2. **Configure Build**:
    ```bash
-   cd /home/jagermeister/Desktop/RecoverySuite
+   cd <checkout>/RecoverySuite
    mkdir -p build && cd build
    cmake ..
    ```
@@ -59,9 +59,9 @@ To build and test the GUI implementation:
 Once the GUI is successfully built and verified, the system will be ready for PHASE 13E preparations.
 
 ## 📁 FILE LOCATIONS:
-- Source: `/home/jagermeister/Desktop/RecoverySuite/src/GUI/`
-- Tests: `/home/jagermeister/Desktop/RecoverySuite/tests/`
-- Build config: `/home/jagermeister/Desktop/RecoverySuite/src/GUI/CMakeLists.txt`
+- Source: `<checkout>/RecoverySuite/src/GUI/`
+- Tests: `<checkout>/RecoverySuite/tests/`
+- Build config: `<checkout>/RecoverySuite/src/GUI/CMakeLists.txt`
 - Documentation: Various `.md` files in project root
 
 **IMPLEMENTATION STATUS**: 100% COMPLETE  

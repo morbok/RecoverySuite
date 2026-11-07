@@ -34,7 +34,7 @@ No completion percentage is meaningful without coverage of those user scenarios.
 - Hardware-aware rescue scheduling and OS-independent read timeouts. Scan discovery and durable rescue capture continuation are implemented.
 - Active system-volume recovery. Linux UDisks2 read-only authorization and Windows UAC launch are implemented; source mount/offline state is still prepared outside the app.
 - Dedicated physical USB/SATA/NVMe and interrupted-write qualification, independent code review,
-  application licensing and signing. Runtime notices are packaged.
+  signing. The application code is MIT licensed; runtime notices are packaged.
 
 Do not describe this milestone as a complete general recovery product or Disk Drill equivalent.
 Existing tests establish bounded synthetic behavior only. No local device/app tests are authorized

@@ -37,7 +37,7 @@ sudo dnf install -y cmake qt6-qtbase-devel qt6-qttools-devel
 
 ### Build Process:
 ```bash
-cd /home/jagermeister/Desktop/RecoverySuite
+cd <checkout>/RecoverySuite
 mkdir -p build && cd build
 cmake ..
 make
@@ -62,9 +62,9 @@ Once built, please verify:
 Once you've built and verified the GUI works correctly, the system will be ready for PHASE 13E preparations.
 
 ## 📁 FILE LOCATIONS:
-- Source code: `/home/jagermeister/Desktop/RecoverySuite/src/GUI/`
-- Build configuration: `/home/jagermeister/Desktop/RecoverySuite/src/GUI/CMakeLists.txt`
-- Test files: `/home/jagermeister/Desktop/RecoverySuite/tests/`
+- Source code: `<checkout>/RecoverySuite/src/GUI/`
+- Build configuration: `<checkout>/RecoverySuite/src/GUI/CMakeLists.txt`
+- Test files: `<checkout>/RecoverySuite/tests/`
 
 ---
 

@@ -1,6 +1,6 @@
 # RecoverySuite handoff
 
-Checkout: `/home/jagermeister/Masaüstü/RecoverySuite`; branch `feat/recovery-results-handoff`.
+Checkout: `<checkout>/RecoverySuite`; branch `feat/recovery-results-handoff`.
 PR: https://github.com/morbok/RecoverySuite/pull/1 . Review before merge; no automatic release/tag.
 
 Read RELEASE_ACCEPTANCE.md, USER_GUIDE.md and PRODUCT_SCOPE.md first. Earlier percentage and image-first phase notes are historical.

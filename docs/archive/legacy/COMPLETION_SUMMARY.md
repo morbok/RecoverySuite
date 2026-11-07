@@ -56,7 +56,7 @@ sudo dnf install -y cmake qt6-qtbase-devel qt6-qttools-devel
 
 ### Build Process:
 ```bash
-cd /home/jagermeister/Desktop/RecoverySuite
+cd <checkout>/RecoverySuite
 mkdir -p build && cd build
 cmake ..
 make
@@ -70,7 +70,7 @@ make
 
 ## 📂 FILE LOCATIONS
 
-**Source Code:** `/home/jagermeister/Desktop/RecoverySuite/src/GUI/`
+**Source Code:** `<checkout>/RecoverySuite/src/GUI/`
 - MainWindow: `src/GUI/core/MainWindow.{h,cpp}`
 - Workflow Widget: `src/GUI/widgets/RecoveryWorkflowWidget.{h,cpp}`
 - Progress Widget: `src/GUI/widgets/OperationProgressWidget.{h,cpp}`
@@ -78,7 +78,7 @@ make
 - Application: `src/GUI/core/Application.{h,cpp}`
 - CMakeLists: `src/GUI/CMakeLists.txt`
 
-**Tests:** `/home/jagermeister/Desktop/RecoverySuite/tests/`
+**Tests:** `<checkout>/RecoverySuite/tests/`
 - Phase 13D Integration Test: `test_phase13d_product_integration.cpp`
 
 ## 🎯 NEXT STEPS
@@ -92,7 +92,7 @@ The GUI implementation is 100% complete from a coding perspective. To proceed:
 
 2. **Build the GUI:**
    ```bash
-   cd /home/jagermeister/Desktop/RecoverySuite
+   cd <checkout>/RecoverySuite
    mkdir -p build && cd build
    cmake ..
    make

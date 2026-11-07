@@ -594,3 +594,9 @@ The first kernel-EIO run found that buffered Linux block I/O reported eight unre
 ## 2026-11-06 — Owner licensing and hardware decisions
 
 The owner selected MIT for RecoverySuite’s own code. Added LICENSE, runtime-package installation and exact license-content checks in the existing CI package smoke gate; dependency notices retain their original terms. Prototype delivery notes and release documents now record this decision. The owner confirmed no separate test computer/runner is currently available. Physical-hardware and interactive-consent qualification remains open; no tests are authorized on the user’s PC. Independent review and signing remain open. All execution validation for this change must use its new exact-head GitHub run.
+
+## 2026-11-07 — Repository presentation and credential protection
+
+Confirmed all six jobs at e0d468f/run 42255314931 passed before repository cleanup. Replaced the front page with installation, five-step general disk recovery, support/limits and troubleshooting; added documentation/contributor/security navigation. Archived historical root status pages, stopped tracking local assistant settings and redundant backup files, and replaced private workstation home paths in documentation with portable examples. No application code or device behavior changed.
+
+Gitleaks 8.30.1 found no credential candidates across all fetched refs/history before cleanup. Added redacted staged checks, private-filename rejection and a checksum-pinned full-history CI workflow with synthetic rejection/redaction tests. No credential values are printed or uploaded. Machine-local assistant files remain on disk and are ignored. Source disk images, recovery outputs and reports are ignored. No public history rewrite, merge or release performed. Application/device tests remain CI-only; local credential/document checks are authorized repository maintenance.

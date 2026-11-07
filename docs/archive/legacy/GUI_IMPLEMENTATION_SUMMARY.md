@@ -85,7 +85,7 @@ To build and test the GUI implementation:
 
 2. **Configure Build:**
    ```bash
-   cd /home/jagermeister/Desktop/RecoverySuite
+   cd <checkout>/RecoverySuite
    mkdir -p build && cd build
    cmake ..
    ```

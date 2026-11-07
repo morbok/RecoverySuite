@@ -41,7 +41,7 @@ sudo dnf install -y cmake qt6-qtbase-devel qt6-qttools-devel
 
 ### Build Process:
 ```bash
-cd /home/jagermeister/Desktop/RecoverySuite
+cd <checkout>/RecoverySuite
 mkdir -p build && cd build
 cmake ..
 make

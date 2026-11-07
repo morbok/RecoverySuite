@@ -39,7 +39,7 @@ sudo dnf install -y cmake qt6-qtbase-devel qt6-qttools-devel
 
 ### 2. Configure and Build:
 ```bash
-cd /home/jagermeister/Desktop/RecoverySuite
+cd <checkout>/RecoverySuite
 mkdir -p build && cd build
 cmake ..
 make
@@ -74,9 +74,9 @@ Once you've built and verified the GUI works correctly:
 3. Or we can iterate on the GUI based on feedback
 
 ## 📁 FILE LOCATIONS:
-- Source: `/home/jagermeister/Desktop/RecoverySuite/src/GUI/`
-- Build config: `/home/jagermeister/Desktop/RecoverySuite/src/GUI/CMakeLists.txt`
-- Tests: `/home/jagermeister/Desktop/RecoverySuite/tests/`
+- Source: `<checkout>/RecoverySuite/src/GUI/`
+- Build config: `<checkout>/RecoverySuite/src/GUI/CMakeLists.txt`
+- Tests: `<checkout>/RecoverySuite/tests/`
 
 ## ✅ STATUS FROM MY PERSPECTIVE:
 **IMPLEMENTATION**: 100% COMPLETE (all coding work finished)  
