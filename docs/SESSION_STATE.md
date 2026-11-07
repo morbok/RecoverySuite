@@ -604,3 +604,7 @@ Gitleaks 8.30.1 found no credential candidates across all fetched refs/history b
 ## 2026-11-07 — Download-first README presentation
 
 Updated the README presentation using the user-provided repository as a structural reference: original RecoverySuite SVG banner, centered platform/license/status badges, prominent combined-package download, navigation, short features and numbered setup/recovery instructions. Separate Windows, Ubuntu DEB and Linux archive sections explain double extraction, executable locations, prerequisites and checksum verification; source ZIP is explicitly distinguished from application packages. Download points to the already qualified fec923c artifact/run. Local link/asset and SVG XML/whitespace checks passed; credential hook runs before committing. Documentation/assets only; no local application/device tests.
+
+## 2026-11-07 — Simplified download choices
+
+Removed the decorative README banner and unused SVG asset. Moved download/install ahead of features. Windows now uses a single extract/open instruction; Ubuntu uses one install-and-launch command after downloading/extracting the shared bundle. macOS is explicitly unsupported rather than offering a nonfunctional installer. Advanced archive/checksum/build information is collapsed. No application behavior changed; no application/device tests performed locally.

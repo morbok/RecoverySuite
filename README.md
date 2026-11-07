@@ -1,8 +1,6 @@
 <div align="center">
 
-<img src="docs/assets/recoverysuite-banner.svg" alt="RecoverySuite — Windows and Linux disk data recovery" width="960">
-
-<br>
+<h1>RecoverySuite</h1>
 
 [![Windows](https://img.shields.io/badge/Windows-x64-0078D4?style=for-the-badge)](#windows)
 [![Linux](https://img.shields.io/badge/Linux-Ubuntu_24.04-E95420?style=for-the-badge)](#linux)
@@ -13,106 +11,42 @@
 
 Documents, videos, archives, photos, code, and other files — on Windows and Linux.
 
-### [⬇ Download for Windows & Linux](https://github.com/morbok/RecoverySuite/actions/runs/42355941877/artifacts/13567617573)
-
 [Download & install](#download--install) · [Quick start](#quick-start) · [Supported recovery](#supported-recovery) · [Help](#troubleshooting) · [Documentation](docs/README.md)
 
 </div>
 
-## Features
-
-- **Recover general files** from supported FAT, exFAT, NTFS and ext4 records.
-- **Find lost partitions** when recognizable filesystem metadata survives.
-- **Review before saving** with search, filters, file selection and bounded previews.
-- **Save scan progress** and continue later with the same source.
-- **Rescue readable sectors** to an image, with reported gaps and checkpoint resume.
-- **Keep source access read-only** and recover selected files to another physical drive.
-- **Run locally** — no API keys, subscription, or cloud account needed.
-
-> **Development prototype:** unsigned and tested on disposable CI fixtures. Physical failing-drive qualification is still pending. See [supported recovery](#supported-recovery) for limits.
-
 ## Download & install
 
-### 1. Download the app
+**[⬇ Download RecoverySuite — Windows & Linux](https://github.com/morbok/RecoverySuite/actions/runs/42355941877/artifacts/13567617573)**
 
-**[Download RecoverySuite-prototype.zip](https://github.com/morbok/RecoverySuite/actions/runs/42355941877/artifacts/13567617573)** — contains both Windows and Linux packages.
+Extract the downloaded ZIP. It contains **Windows/** and **Linux/** folders. GitHub may ask you to sign in.
 
-- Sign in to GitHub if the download asks you to.
-- Extract the downloaded ZIP. Inside it, you will find:
+### Windows
 
-```text
-RecoverySuite-prototype/
-├── Windows/         Windows portable ZIP
-├── Linux/           Ubuntu DEB + Linux TAR.GZ
-├── START_HERE.md    Installation notes
-├── SHA256SUMS       Package checksums
-└── manifest.json    Source commit and build information
+Open **Windows/** → extract the ZIP inside → double-click **bin/RecoverySuite_GUI.exe**.
+
+If a runtime is missing, install [Microsoft Visual C++ x64](https://aka.ms/vs/17/release/vc_redist.x64.exe).
+
+### Linux
+
+On **Ubuntu 24.04**, open a terminal in the extracted download folder and run:
+
+```bash
+sudo apt install ./Linux/RecoverySuite-*.deb && RecoverySuite_GUI
 ```
 
-The outer folder name depends on where you extract it. **Choose the package for your OS below; you don't need to compile anything.** GitHub's **Code → Download ZIP** downloads source code, not the ready-to-run application.
+### macOS
+
+Not supported yet; there is no macOS installer.
 
 <details>
-<summary>Download unavailable? Find a newer build</summary>
+<summary>Other downloads, checksums and build status</summary>
 
-GitHub CI downloads expire. Open [Build and test](https://github.com/morbok/RecoverySuite/actions/workflows/build.yml), select a successful run, scroll down to **Artifacts**, then download **RecoverySuite-prototype**. A combined package appears only after all required build checks pass.
-
-The download linked above is from [validated commit fec923c](https://github.com/morbok/RecoverySuite/actions/runs/42355941877). There is no signed stable release yet.
-
-</details>
-
-### 2. Install and open
-
-<a id="windows"></a>
-#### Windows
-
-1. Open the extracted **Windows** folder.
-2. Extract the ZIP inside it to a new folder.
-3. Open **bin → RecoverySuite_GUI.exe**. Keep the bundled DLLs and plugins in place.
-
-If Windows reports a missing Visual C++ runtime, install Microsoft's [Visual C++ 2015–2022 x64 Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe).
-
-<a id="linux"></a>
-#### Linux
-
-**Ubuntu 24.04 — DEB package**
-
-Open a terminal inside the extracted prototype folder:
-
-```bash
-sudo apt install ./Linux/RecoverySuite-*.deb
-RecoverySuite_GUI
-```
-
-**Linux TAR.GZ — without installing the application package**
-
-From the same extracted prototype folder:
-
-```bash
-mkdir -p recoverysuite
-tar -xzf Linux/RecoverySuite-*.tar.gz -C recoverysuite
-./recoverysuite/usr/bin/RecoverySuite_GUI
-```
-
-The archive requires the Ubuntu 24.04 build distribution's Qt6 Core/Gui/Widgets/DBus and libudev runtime libraries. Desktop authorization uses UDisks2/polkit. Other Linux distributions are not yet qualified.
-
-<details>
-<summary>Verify the download</summary>
-
-The outer download contains `SHA256SUMS` and `manifest.json`. Compare your selected package's SHA-256 with its entry before use.
-
-Linux:
-
-```bash
-sha256sum -c SHA256SUMS
-```
-
-Windows PowerShell:
-
-```powershell
-Get-FileHash .\Windows\RecoverySuite-*.zip -Algorithm SHA256
-```
-
-Compare the Windows hash with the matching `Windows/` entry in `SHA256SUMS`. These checks verify package integrity, not publisher signing.
+- **Linux archive:** extract the TAR.GZ inside **Linux/** and open `usr/bin/RecoverySuite_GUI`. Requires Ubuntu 24.04's Qt6 Core/Gui/Widgets/DBus and libudev runtime libraries; desktop authorization uses UDisks2/polkit.
+- **Verify packages:** use the included `SHA256SUMS` and `manifest.json`.
+- **Download expired?** Open a successful [Build and test run](https://github.com/morbok/RecoverySuite/actions/workflows/build.yml), scroll to **Artifacts**, and download **RecoverySuite-prototype**.
+- **Code → Download ZIP** contains source code, not the ready-to-run app.
+- This is an unsigned development prototype. The linked package passed [Windows/Linux validation](https://github.com/morbok/RecoverySuite/actions/runs/42355941877); physical failing-drive qualification remains pending.
 
 </details>
 
@@ -151,6 +85,16 @@ Choose **Cancel** to pause a scan, then **File → Save scan results…** to sav
 Use **File → Rescue drive to image (logs unreadable sectors)…** to copy readable sectors to another disk. Keep the image and its `.rescue.json` report together. **File → Continue interrupted rescue…** resumes verified checkpoints.
 
 Unreadable sectors become explicitly reported zero-filled gaps. Rescue cannot recreate missing data or guarantee a timeout when the operating system stalls. See the [rescue guide](docs/USER_GUIDE.md#rescue-a-disk-with-read-errors) before use.
+
+## Features
+
+- **Recover general files** from supported FAT, exFAT, NTFS and ext4 records.
+- **Find lost partitions** when recognizable filesystem metadata survives.
+- **Review before saving** with search, filters, file selection and bounded previews.
+- **Save scan progress** and continue later with the same source.
+- **Rescue readable sectors** to an image, with reported gaps and checkpoint resume.
+- **Keep source access read-only** and recover selected files to another physical drive.
+- **Run locally** — no API keys, subscription, or cloud account needed.
 
 ## Supported recovery
 
