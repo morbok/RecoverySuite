@@ -5,7 +5,7 @@
 #include <cstring>
 #include <stdexcept>
 
-#include "../../src/Disk/IDiskReader.hpp"
+#include "Disk/IDiskReader.hpp"
 
 // Mock disk reader implementation for testing the IDiskReader interface
 class TestDiskReader : public recoverysuite::disk::IDiskReader {
@@ -51,8 +51,8 @@ public:
             throw recoverysuite::disk::DiskException("Disk is not open");
         }
 
-        // For simplicity, only allow reading from sector 0 in this test
-        if (startSector != 0) {
+        // Validate the requested range without overflowing.
+        if (sectorCount == 0 || startSector >= totalSectors_ || sectorCount > totalSectors_ - startSector) {
             return false;
         }
 
@@ -93,6 +93,7 @@ public:
 
     recoverysuite::disk::DeviceInformation getDiskInfo() const override {
         getDiskInfoCalled_++;
+        if (!isOpen_) throw recoverysuite::disk::DiskException("Disk is not open");
         recoverysuite::disk::DeviceInformation info;
         info.modelNumber = "test_mock";
         info.bytesPerSector = sectorSize_;
@@ -241,14 +242,7 @@ void test_idiskreader_interface() {
     assert(diskReader->wasCloseCalled());
     assert(!diskReader->isOpen());
 
-    // Test operations on closed disk should fail
-    try {
-        diskReader->open("/dev/test2");
-        // Note: Our mock allows reopening, so this won't throw
-    } catch (const std::exception&) {
-        // Expected - though our mock doesn't actually throw on reopen
-    }
-
+    // Test operations on closed disk should fail. Keep the mock closed.
     try {
         diskReader->getDiskInfo();
         assert(false); // Should not reach here

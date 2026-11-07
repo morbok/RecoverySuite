@@ -1,3 +1,10 @@
+# Keep assert-based tests active in Release builds too.
+if(MSVC)
+    add_compile_options(/UNDEBUG)
+else()
+    add_compile_options(-UNDEBUG)
+endif()
+
 # RecoverySuite Tests
 enable_testing()
 
@@ -46,21 +53,6 @@ target_link_libraries(RecoverySuite_StorageTest
         RecoverySuite_Core
         RecoverySuite_Storage
 )
-
-# Platform-specific libraries for storage access (needed for static library linking)
-if(UNIX AND NOT APPLE)
-    target_link_libraries(RecoverySuite_StorageTest
-        PRIVATE
-            /usr/lib64/libudev.so.1
-    )
-elseif(APPLE)
-    target_link_libraries(RecoverySuite_StorageTest
-        PRIVATE
-            pthread
-            IOKit
-            CoreFoundation
-    )
-endif()
 
 # Add the test to CTest
 add_test(NAME RecoverySuite_StorageTest
@@ -406,3 +398,75 @@ target_link_libraries(test_recovery_operation_progress
 # Add the test to CTest
 add_test(NAME test_recovery_operation_progress
          COMMAND test_recovery_operation_progress)
+add_test(NAME test_gui_recovery_service COMMAND test_gui_recovery_service)
+
+set_tests_properties(test_recovery_operation_progress PROPERTIES ENVIRONMENT QT_QPA_PLATFORM=offscreen)
+
+find_package(Qt6 REQUIRED COMPONENTS Test)
+add_executable(test_recovery_results_widget test_recovery_results_widget.cpp)
+set_target_properties(test_recovery_results_widget PROPERTIES AUTOMOC ON)
+target_link_libraries(test_recovery_results_widget PRIVATE RecoverySuite_GUI RecoverySuite_Application Qt6::Test)
+add_test(NAME test_recovery_results_widget COMMAND test_recovery_results_widget)
+set_tests_properties(test_recovery_results_widget PROPERTIES ENVIRONMENT QT_QPA_PLATFORM=offscreen)
+
+add_executable(test_image_recovery test_image_recovery.cpp)
+set_target_properties(test_image_recovery PROPERTIES AUTOMOC ON)
+target_link_libraries(test_image_recovery PRIVATE RecoverySuite_GUI RecoverySuite_Application Qt6::Test)
+add_test(NAME test_image_recovery COMMAND test_image_recovery)
+set_tests_properties(test_image_recovery PROPERTIES ENVIRONMENT QT_QPA_PLATFORM=offscreen)
+
+add_executable(test_cli_image test_cli_image.cpp)
+set_target_properties(test_cli_image PROPERTIES AUTOMOC ON)
+target_link_libraries(test_cli_image PRIVATE Qt6::Core Qt6::Test)
+add_dependencies(test_cli_image RecoverySuite_CLI)
+add_test(NAME test_cli_image COMMAND test_cli_image)
+
+add_executable(test_metadata_snapshot test_metadata_snapshot.cpp)
+set_target_properties(test_metadata_snapshot PROPERTIES AUTOMOC ON)
+target_link_libraries(test_metadata_snapshot PRIVATE RecoverySuite_GUI RecoverySuite_Application Qt6::Test)
+add_dependencies(test_metadata_snapshot RecoverySuite_CLI)
+if(WIN32)
+    add_test(NAME test_metadata_snapshot COMMAND test_metadata_snapshot -o "${CMAKE_CURRENT_BINARY_DIR}/test_metadata_snapshot.qt.txt,txt")
+else()
+    add_test(NAME test_metadata_snapshot COMMAND test_metadata_snapshot)
+endif()
+set_tests_properties(test_metadata_snapshot PROPERTIES ENVIRONMENT QT_QPA_PLATFORM=offscreen)
+
+add_executable(test_fat_files test_fat_files.cpp)
+set_target_properties(test_fat_files PROPERTIES AUTOMOC ON)
+target_link_libraries(test_fat_files PRIVATE RecoverySuite_GUI RecoverySuite_Application Qt6::Test)
+add_dependencies(test_fat_files RecoverySuite_CLI)
+add_test(NAME test_fat_files COMMAND test_fat_files)
+set_tests_properties(test_fat_files PROPERTIES ENVIRONMENT QT_QPA_PLATFORM=offscreen)
+
+add_executable(test_disk_recovery test_disk_recovery.cpp)
+set_target_properties(test_disk_recovery PROPERTIES AUTOMOC ON)
+target_link_libraries(test_disk_recovery PRIVATE RecoverySuite_GUI RecoverySuite_Application Qt6::Test)
+add_test(NAME test_disk_recovery COMMAND test_disk_recovery)
+set_tests_properties(test_disk_recovery PROPERTIES ENVIRONMENT QT_QPA_PLATFORM=offscreen)
+
+add_executable(test_ntfs_mft test_ntfs_mft.cpp)
+set_target_properties(test_ntfs_mft PROPERTIES AUTOMOC ON)
+target_link_libraries(test_ntfs_mft PRIVATE RecoverySuite_GUI RecoverySuite_Application Qt6::Test)
+add_dependencies(test_ntfs_mft RecoverySuite_CLI)
+add_test(NAME test_ntfs_mft COMMAND test_ntfs_mft)
+set_tests_properties(test_ntfs_mft PROPERTIES ENVIRONMENT QT_QPA_PLATFORM=offscreen)
+
+add_executable(test_recovery_session test_recovery_session.cpp)
+set_target_properties(test_recovery_session PROPERTIES AUTOMOC ON)
+target_link_libraries(test_recovery_session PRIVATE RecoverySuite_Application Qt6::Test)
+add_dependencies(test_recovery_session RecoverySuite_CLI)
+if(WIN32)
+    add_test(NAME test_recovery_session COMMAND test_recovery_session -o "${CMAKE_CURRENT_BINARY_DIR}/test_recovery_session.qt.txt,txt")
+else()
+    add_test(NAME test_recovery_session COMMAND test_recovery_session)
+endif()
+
+add_executable(test_native_io test_native_io.cpp)
+set_target_properties(test_native_io PROPERTIES AUTOMOC ON)
+target_link_libraries(test_native_io PRIVATE RecoverySuite_Application Qt6::Test)
+if(WIN32)
+    add_test(NAME test_native_io COMMAND test_native_io -o "${CMAKE_CURRENT_BINARY_DIR}/test_native_io.qt.txt,txt")
+else()
+    add_test(NAME test_native_io COMMAND test_native_io)
+endif()

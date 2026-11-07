@@ -1,6 +1,6 @@
 #include <iostream>
-#include "../../src/GUI/core/ApplicationState.h"
-#include "../../src/GUI/core/StateManager.h"
+#include "GUI/core/ApplicationState.h"
+#include "GUI/core/StateManager.h"
 
 using namespace recoverysuite::gui::core;
 

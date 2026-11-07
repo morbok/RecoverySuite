@@ -39,7 +39,8 @@ bool StateManager::isValidTransition(ApplicationState currentState, ApplicationS
                    newState == ApplicationState::EXIT;
 
         case ApplicationState::SOURCE_SELECTION:
-            return newState == ApplicationState::STORAGE_PARTITION_INSPECTION ||
+            return newState == ApplicationState::RECOVERY_CONFIGURATION ||
+                   newState == ApplicationState::STORAGE_PARTITION_INSPECTION ||
                    newState == ApplicationState::START;
 
         case ApplicationState::STORAGE_PARTITION_INSPECTION:
@@ -68,7 +69,8 @@ bool StateManager::isValidTransition(ApplicationState currentState, ApplicationS
                    newState == ApplicationState::VALIDATION; // Allow cancellation back to validation
 
         case ApplicationState::RESULTS:
-            return newState == ApplicationState::SOURCE_SELECTION ||
+            return newState == ApplicationState::RECOVERY_CONFIGURATION ||
+                   newState == ApplicationState::SOURCE_SELECTION ||
                    newState == ApplicationState::EXIT;
 
         case ApplicationState::ERROR:

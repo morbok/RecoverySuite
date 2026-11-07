@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <functional>
 #include "RecoveryCapability.h"
 #include "RecoveryOperationValidator.h"
 #include "../Disk/IDiskReader.hpp"
@@ -22,12 +23,14 @@ public:
     MetadataRecovery(
         const RecoveryCapabilityRegistry& capabilityRegistry,
         const RecoverySafetyPolicy& safetyPolicy = RecoverySafetyPolicy(),
-        recoverysuite::disk::IDiskReader* diskReader = nullptr
+        recoverysuite::disk::IDiskReader* diskReader = nullptr,
+        std::function<bool()> cancelled = {}
     );
 
     // Destructor
     ~MetadataRecovery() = default;
 
+    // Snapshot actual FAT boot/FAT/root bytes (16 MiB per region); NTFS MFT is unavailable.
     // Recover filesystem metadata from the specified disk
     // Returns true if recovery was successful
     bool recoverMetadata(
@@ -58,43 +61,27 @@ public:
         std::vector<uint8_t>& recoveredData
     );
 
+    /** Check a range without reading or modifying the source. */
+    bool isSectorRangeValid(uint64_t startSector, uint64_t numSectors) const;
+
 private:
     // The capability registry to check against
     const RecoveryCapabilityRegistry& capabilityRegistry_;
 
     // The safety policy to use for validation
-    const RecoverySafetyPolicy& safetyPolicy_;
+    RecoverySafetyPolicy safetyPolicy_;
 
     // The disk reader to use for accessing disk data
     recoverysuite::disk::IDiskReader* diskReader_;
 
+    std::function<bool()> cancelled_;
+
     // The operation validator
     RecoveryOperationValidator validator_;
 
-    // Helper to check if a sector range is valid for the disk
-    bool isSectorRangeValid(uint64_t startSector, uint64_t numSectors) const;
 
-    // Helper to read sectors from disk
-    bool readSectors(
-        uint64_t startSector,
-        uint64_t numSectors,
-        std::vector<uint8_t>& buffer
-    ) const;
 
-    // Helper to detect filesystem type from boot sector data
-    std::string detectFilesystemType(const std::vector<uint8_t>& bootSectorData) const;
 
-    // Helper to recover FAT tables
-    bool recoverFatTables(
-        const std::vector<uint8_t>& bootSectorData,
-        std::map<std::string, std::vector<uint8_t>>& recoveredMetadata
-    ) const;
-
-    // Helper to recover NTFS MFT
-    bool recoverNtfsMft(
-        const std::vector<uint8_t>& bootSectorData,
-        std::map<std::string, std::vector<uint8_t>>& recoveredMetadata
-    ) const;
 };
 
 } // namespace recovery

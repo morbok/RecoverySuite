@@ -12,11 +12,9 @@ GPTPartitionEntry::GPTPartitionEntry(const std::array<std::byte, SIZE>& data)
 }
 
 bool GPTPartitionEntry::isEmpty() const noexcept {
-    // Check if all bytes are zero
-    for (const auto& b : m_data) {
-        if (b != std::byte{0}) {
-            return false;
-        }
+    // The type GUID alone marks an unused entry; stale remaining bytes are ignored.
+    for (size_t i = 0; i < 16; ++i) {
+        if (m_data[i] != std::byte{0}) return false;
     }
     return true;
 }
@@ -61,10 +59,10 @@ uint64_t GPTPartitionEntry::getAttributes() const noexcept {
 }
 
 std::u16string GPTPartitionEntry::getName() const noexcept {
-    // Offset 0x38 in the entry: 72 UTF-16 characters (144 bytes)
+    // Offset 0x38 in the entry: 36 UTF-16 code units (72 bytes)
     std::u16string name;
-    name.resize(72);
-    std::memcpy(name.data(), m_data.data() + 0x38, 72 * sizeof(char16_t));
+    name.resize(NAME_LENGTH);
+    std::memcpy(name.data(), m_data.data() + 0x38, NAME_LENGTH * sizeof(char16_t));
     // Remove trailing null characters (if any)
     auto it = std::find(name.begin(), name.end(), static_cast<char16_t>(0));
     if (it != name.end()) {

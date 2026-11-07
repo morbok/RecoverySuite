@@ -155,7 +155,7 @@ RecoveryService::FileRecoveryResult RecoveryService::recoverFiles(uint64_t start
             result = convertFileRecoveryResult(success, "", recoveredFiles);
             recoverysuite::logging::Logger::instance().info("File recovery completed successfully: recovered " + std::to_string(recoveredFiles.size()) + " files");
         } else {
-            result.errorMessage = "File recovery failed";
+            result.errorMessage = "FAT12/16 allocated root-file recovery failed or is unsupported; check geometry, FAT copies, names and cluster chains";
             recoverysuite::logging::Logger::instance().warn("File recovery failed");
         }
     } catch (const std::exception& e) {
@@ -206,7 +206,7 @@ RecoveryService::MetadataRecoveryResult RecoveryService::recoverMetadata(uint64_
             result = convertMetadataRecoveryResult(success, "", recoveredMetadata);
             recoverysuite::logging::Logger::instance().info("Metadata recovery completed successfully: recovered " + std::to_string(recoveredMetadata.size()) + " metadata items");
         } else {
-            result.errorMessage = "Metadata recovery failed";
+            result.errorMessage = "FAT metadata snapshot failed: unsupported format, invalid geometry, truncated range or region above 16 MiB";
             recoverysuite::logging::Logger::instance().warn("Metadata recovery failed");
         }
     } catch (const std::exception& e) {

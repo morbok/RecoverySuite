@@ -19,10 +19,10 @@ int main(int argc, char *argv[])
 
     // Set application metadata
     QApplication::setApplicationName("RecoverySuite");
-    QApplication::setApplicationDisplayName("RecoverySuite Enterprise");
-    QApplication::setApplicationVersion("1.0.0");
+    QApplication::setApplicationDisplayName("RecoverySuite");
+    QApplication::setApplicationVersion("1.0.0-prototype");
     QApplication::setOrganizationName("RecoverySuite Team");
-    QApplication::setOrganizationDomain("recoverysuite.example.com");
+
 
     // Set application icon (if available)
     // QIcon appIcon(":/icons/recoverysuite.png");

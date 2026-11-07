@@ -1,3 +1,4 @@
+#include <limits>
 #include <iostream>
 #include <memory>
 #include <vector>
@@ -6,10 +7,11 @@
 #include <map>
 #include <string>
 
-#include "../../src/Recovery/FilesystemDetector.h"
-#include "../../src/Recovery/RecoveryCapability.h"
-#include "../../src/Recovery/RecoverySafetyPolicy.h"
-#include "../../src/Disk/IDiskReader.hpp"
+#include "Recovery/FilesystemDetector.h"
+#include "Recovery/BootSectorDetection.h"
+#include "Recovery/RecoveryCapability.h"
+#include "Recovery/RecoverySafetyPolicy.h"
+#include "Disk/IDiskReader.hpp"
 
 // Mock disk reader for testing - returns specific boot sector data
 class TestMockDiskReader : public recoverysuite::disk::IDiskReader {
@@ -41,7 +43,7 @@ public:
             throw recoverysuite::disk::DiskException("Disk is not open");
         }
 
-        if (startSector != 0) {
+        if (sectorCount == 0 || startSector >= totalSectors_ || sectorCount > totalSectors_ - startSector) {
             // For simplicity, only sector 0 (boot sector) is implemented
             return false;
         }
@@ -103,45 +105,25 @@ private:
 // Helper to create FAT boot sector signature
 std::vector<std::byte> createFatBootSector() {
     std::vector<std::byte> bootSector(512, std::byte{0});
-    // FAT12/FAT16 signature bytes at offset 0x52
-    bootSector[0x52] = std::byte{0x29};  // Extended boot signature
-    // Volume ID (placeholder)
-    bootSector[0x53] = std::byte{0x12};
-    bootSector[0x54] = std::byte{0x34};
-    bootSector[0x55] = std::byte{0x56};
-    bootSector[0x56] = std::byte{0x78};
-    // Volume label (NO NAME    )
-    bootSector[0x47] = std::byte{'N'};
-    bootSector[0x48] = std::byte{'O'};
-    bootSector[0x49] = std::byte{' '};
-    bootSector[0x4A] = std::byte{'N'};
-    bootSector[0x4B] = std::byte{'A'};
-    bootSector[0x4C] = std::byte{'M'};
-    bootSector[0x4D] = std::byte{'E'};
-    bootSector[0x4E] = std::byte{' '};
-    bootSector[0x4F] = std::byte{' '};
-    bootSector[0x50] = std::byte{' '};
-    bootSector[0x51] = std::byte{' '};
-    // FAT type string at offset 0x52
-    bootSector[0x36] = std::byte{'F'};
-    bootSector[0x37] = std::byte{'A'};
-    bootSector[0x38] = std::byte{'T'};
-    bootSector[0x39] = std::byte{' '};
-    bootSector[0x3A] = std::byte{'1'};
-    bootSector[0x3B] = std::byte{'2'};
+    bootSector[11] = std::byte{0}; bootSector[12] = std::byte{2}; // 512 bytes/sector
+    bootSector[13] = std::byte{1}; bootSector[14] = std::byte{1};
+    bootSector[16] = std::byte{2}; bootSector[17] = std::byte{224};
+    bootSector[19] = std::byte{0x40}; bootSector[20] = std::byte{0x0B}; // 2880 sectors
+    bootSector[21] = std::byte{0xF0}; bootSector[22] = std::byte{9};
+    bootSector[510] = std::byte{0x55}; bootSector[511] = std::byte{0xAA};
     return bootSector;
 }
 
 // Helper to create NTFS boot sector signature
 std::vector<std::byte> createNtfsBootSector() {
     std::vector<std::byte> bootSector(512, std::byte{0});
-    // NTFS signature at offset 0x03
-    bootSector[0x00] = std::byte{'N'};
-    bootSector[0x01] = std::byte{'T'};
-    bootSector[0x02] = std::byte{'F'};
-    bootSector[0x03] = std::byte{'S'};
-    // OEM ID (empty)
-    // ... rest zeros
+    const std::string oem = "NTFS    ";
+    std::memcpy(bootSector.data() + 3, oem.data(), oem.size());
+    bootSector[11] = std::byte{0}; bootSector[12] = std::byte{2};
+    bootSector[13] = std::byte{8};
+    bootSector[40] = std::byte{0xE8}; bootSector[41] = std::byte{3};
+    bootSector[48] = std::byte{4}; bootSector[64] = std::byte{0xF6};
+    bootSector[510] = std::byte{0x55}; bootSector[511] = std::byte{0xAA};
     return bootSector;
 }
 
@@ -158,6 +140,7 @@ void test_filesystem_detector_initialization() {
     mockReader->open("test");
 
     recoverysuite::recovery::RecoveryCapabilityRegistry capabilityRegistry;
+    capabilityRegistry.registerCapability(recoverysuite::recovery::RecoveryCapability::FILESYSTEM_DETECTION);
     recoverysuite::recovery::RecoverySafetyPolicy safetyPolicy;
 
     // Test constructor with all parameters
@@ -193,6 +176,7 @@ void test_filesystem_detector_detection() {
     mockReader->open("test");
 
     recoverysuite::recovery::RecoveryCapabilityRegistry capabilityRegistry;
+    capabilityRegistry.registerCapability(recoverysuite::recovery::RecoveryCapability::FILESYSTEM_DETECTION);
     recoverysuite::recovery::RecoverySafetyPolicy safetyPolicy;
 
     // Test 1: Empty boot sector (should detect nothing)
@@ -206,7 +190,7 @@ void test_filesystem_detector_detection() {
 
     std::vector<std::string> detectedFilesystems;
     bool result = detector.detectFilesystems(
-        false,  // sourceIsReadOnly
+        true,   // sourceIsReadOnly
         true,   // destinationDiffersFromSource
         0,      // startSector
         1,      // numSectors
@@ -217,7 +201,7 @@ void test_filesystem_detector_detection() {
         detectedFilesystems
     );
 
-    assert(result == true);  // Detection should succeed even if nothing found
+    assert(result == false); // Unknown data is not a detected filesystem.
     assert(detectedFilesystems.empty());  // Should detect nothing from empty data
     mockReader->close();
 
@@ -232,7 +216,7 @@ void test_filesystem_detector_detection() {
 
     std::vector<std::string> detectedFilesystems2;
     bool result2 = detector2.detectFilesystems(
-        false,  // sourceIsReadOnly
+        true,   // sourceIsReadOnly
         true,   // destinationDiffersFromSource
         0,      // startSector
         1,      // numSectors
@@ -243,7 +227,8 @@ void test_filesystem_detector_detection() {
         detectedFilesystems2
     );
 
-    assert(result2 == true);  // Detection should succeed
+    assert(result2 == true);
+    assert(detectedFilesystems2 == std::vector<std::string>{"FAT12"});
     // Note: Actual detection depends on the implementation details of detectFilesystemType
     // For now we just verify it doesn't crash
     mockReader->close();
@@ -259,7 +244,7 @@ void test_filesystem_detector_detection() {
 
     std::vector<std::string> detectedFilesystems3;
     bool result3 = detector3.detectFilesystems(
-        false,  // sourceIsReadOnly
+        true,   // sourceIsReadOnly
         true,   // destinationDiffersFromSource
         0,      // startSector
         1,      // numSectors
@@ -270,7 +255,8 @@ void test_filesystem_detector_detection() {
         detectedFilesystems3
     );
 
-    assert(result3 == true);  // Detection should succeed
+    assert(result3 == true);
+    assert(detectedFilesystems3 == std::vector<std::string>{"NTFS"});
     mockReader->close();
 
     std::cout << "[PASS] FilesystemDetector detection test passed" << std::endl;
@@ -280,10 +266,11 @@ void test_filesystem_detector_detection() {
 void test_sector_range_validation() {
     std::cout << "Testing sector range validation..." << std::endl;
 
-    auto mockReader = std::make_shared<TestMockDiskReader>();
+    auto mockReader = std::make_shared<TestMockDiskReader>(createNtfsBootSector());
     mockReader->open("test");
 
     recoverysuite::recovery::RecoveryCapabilityRegistry capabilityRegistry;
+    capabilityRegistry.registerCapability(recoverysuite::recovery::RecoveryCapability::FILESYSTEM_DETECTION);
     recoverysuite::recovery::RecoverySafetyPolicy safetyPolicy;
     recoverysuite::recovery::FilesystemDetector detector(
         capabilityRegistry,
@@ -291,22 +278,41 @@ void test_sector_range_validation() {
         mockReader.get()
     );
 
+    // Exercise range validation through the public operation, with read-only input.
+    auto detectRange = [&detector](uint64_t start, uint64_t count) {
+        std::vector<std::string> found;
+        return detector.detectFilesystems(true, true, start, count, true, true, true, true, found);
+    };
     // Test valid ranges
-    assert(detector.isSectorRangeValid(0, 100) == true);
-    assert(detector.isSectorRangeValid(50, 50) == true);
-    assert(detector.isSectorRangeValid(900, 100) == true);  // Ends at 999
+    assert(detectRange(0, 100) == true);
+    assert(detectRange(50, 50) == true);
+    assert(detectRange(900, 100) == true);  // Ends at 999
 
     // Test invalid ranges
-    assert(detector.isSectorRangeValid(0, 0) == false);  // Zero length
-    assert(detector.isSectorRangeValid(1000, 1) == false);  // Beyond disk (1000+1 > 1000)
-    assert(detector.isSectorRangeValid(900, 200) == false);  // Extends beyond disk (900+200 > 1000)
+    assert(detectRange(0, 0) == false);  // Zero length
+    assert(detectRange(1000, 1) == false);  // Beyond disk (1000+1 > 1000)
+    assert(detectRange(900, 200) == false);  // Extends beyond disk (900+200 > 1000)
 
     // Test overflow protection
-    assert(detector.isSectorRangeValid(std::numeric_limits<uint64_t>::max(), 1) == false);
-    assert(detector.isSectorRangeValid(std::numeric_limits<uint64_t>::max() - 100, 200) == false);
+    assert(detectRange(std::numeric_limits<uint64_t>::max(), 1) == false);
+    assert(detectRange(std::numeric_limits<uint64_t>::max() - 100, 200) == false);
 
     mockReader->close();
     std::cout << "[PASS] Sector range validation test passed" << std::endl;
+}
+
+void test_malformed_boot_sectors() {
+    auto bytes = createFatBootSector();
+    std::vector<uint8_t> boot(bytes.size());
+    std::memcpy(boot.data(), bytes.data(), bytes.size());
+    assert(recoverysuite::recovery::detectBootSectorType(boot) == "FAT12");
+    boot[13] = 0; // No divide by zero when sectors per cluster is corrupt.
+    assert(recoverysuite::recovery::detectBootSectorType(boot).empty());
+    boot[13] = 1;
+    boot[19] = 1; boot[20] = 0; // Filesystem overhead exceeds total sectors.
+    assert(recoverysuite::recovery::detectBootSectorType(boot).empty());
+    boot.resize(31); // Truncated boot sector.
+    assert(recoverysuite::recovery::detectBootSectorType(boot).empty());
 }
 
 int main() {
@@ -316,6 +322,7 @@ int main() {
         test_filesystem_detector_initialization();
         test_filesystem_detector_detection();
         test_sector_range_validation();
+        test_malformed_boot_sectors();
 
         std::cout << "All tests passed!" << std::endl;
         return 0;

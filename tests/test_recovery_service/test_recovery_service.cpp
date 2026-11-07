@@ -1,12 +1,13 @@
+#include <limits>
 #include <iostream>
 #include <memory>
 #include <vector>
 #include <cassert>
 #include <cstring>
-#include "../../src/Application/Service/RecoveryService.h"
-#include "../../src/Disk/IDiskReader.hpp"
-#include "../../src/Recovery/RecoveryCapability.h"
-#include "../../src/Recovery/RecoverySafetyPolicy.h"
+#include "Application/Service/RecoveryService.h"
+#include "Disk/IDiskReader.hpp"
+#include "Recovery/RecoveryCapability.h"
+#include "Recovery/RecoverySafetyPolicy.h"
 
 // Mock disk reader for testing - simplified version that returns test data
 class TestMockDiskReader : public recoverysuite::disk::IDiskReader {

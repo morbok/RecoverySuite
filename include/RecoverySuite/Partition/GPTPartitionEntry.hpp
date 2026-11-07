@@ -17,7 +17,7 @@ namespace partition {
 class GPTPartitionEntry {
 public:
     static constexpr size_t SIZE = 128;
-    static constexpr size_t NAME_LENGTH = 72; // UTF-16 characters, 72*2=144 bytes
+    static constexpr size_t NAME_LENGTH = 36; // UTF-16 code units, 72 bytes
 
     GPTPartitionEntry() = default;
     explicit GPTPartitionEntry(const std::array<std::byte, SIZE>& data);

@@ -44,13 +44,7 @@ public:
 
             recoverysuite::logging::Logger::instance().info("Starting GUI Application main loop");
 
-            // TODO: In a real implementation, we would get a proper disk reader from the disk manager
-            // For now, we'll note that the GUI recovery service needs a proper disk reader
-            // This would be obtained from the DiskManager or similar component in the disk layer
-            // auto diskReader = DiskManager::getInstance()->getDefaultDiskReader(); // Example
-            // guiRecoveryService_ = std::make_unique<GUIRecoveryService>(diskReader);
-
-            // For now, we'll create the service with a null disk reader - it will handle errors gracefully
+            // Start with no selected source. Opening an image in the UI creates its read-only reader.
             guiRecoveryService_ = std::make_unique<recoverysuite::application::service::GUIRecoveryService>(nullptr);
 
             // Create and show main window, passing the recovery service

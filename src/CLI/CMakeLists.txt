@@ -31,5 +31,5 @@ target_link_libraries(RecoverySuite_CLI
 
 # Install executable
 install(TARGETS RecoverySuite_CLI
-        RUNTIME DESTINATION bin
+        RUNTIME DESTINATION bin COMPONENT Runtime
         )

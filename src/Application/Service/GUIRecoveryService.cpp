@@ -1,9 +1,18 @@
+#include "recovery_session.h"
+#include "Disk/DiskEnumerator.h"
+#include "Disk/Access/path_utf8.h"
 #include "GUIRecoveryService.h"
 #include "RecoveryService.h"
 #include "../../Logging/Logger.h"
 #include <stdexcept>
 #include <chrono>
 #include <thread>
+#include <filesystem>
+#include <limits>
+#include "safe_file_exporter.h"
+#include "Recovery/signature_carver.h"
+#include "Recovery/fat_root_files.h"
+#include "Recovery/ntfs_mft.h"
 
 namespace recoverysuite {
 namespace application {
@@ -22,22 +31,217 @@ GUIRecoveryService::~GUIRecoveryService() {
 }
 
 std::vector<models::StorageDevice> GUIRecoveryService::enumerateStorageDevices() {
-    // Note: This is a simplified implementation.
-    // In a real implementation, we would use the DiskManager or similar
-    // to enumerate actual storage devices.
-
-    if (!recoveryService_) {
-        recoverysuite::logging::Logger::instance().info("No recovery service available, returning empty device list");
-        // For now, return an empty vector as we don't have access to the disk manager here
-        // A full implementation would delegate to the underlying recovery service or disk manager
-        return std::vector<models::StorageDevice>();
+    std::vector<models::StorageDevice> devices;
+    for (const auto& info : disk::createDiskEnumerator()->enumerateDisks()) {
+        if (info.bytesPerSector > std::numeric_limits<uint32_t>::max()) continue;
+        devices.push_back({info.devicePath, info.modelNumber, info.serialNumber,
+            info.totalSizeBytes, static_cast<uint32_t>(info.bytesPerSector), info.isReadOnly});
     }
+    return devices;
+}
 
-    recoverysuite::logging::Logger::instance().info("Enumerating storage devices (GUI level)");
+models::StorageDevice GUIRecoveryService::openImage(const std::string& path, uint32_t sectorSize) {
+    std::unique_lock lock(imageMutex_, std::try_to_lock);
+    if (!lock.owns_lock()) throw std::runtime_error("Wait for recovery to finish before changing the source");
+    auto reader = std::make_shared<disk::DiskImageReader>(sectorSize);
+    reader->open(path);
+    auto service = std::make_unique<RecoveryService>(reader);
+    imageReader_ = std::move(reader);
+    deviceReader_.reset(); sourceReader_ = imageReader_; sourcePath_ = imageReader_->sourcePath();
+    scanValid_ = false; scanVolumes_.clear(); scanCatalog_.clear();
+    recoveryService_ = std::move(service);
+    return getStorageDeviceInfo(imageReader_->sourcePath());
+}
 
-    // For now, return an empty vector as we don't have access to the disk manager here
-    // A full implementation would delegate to the underlying recovery service or disk manager
-    return std::vector<models::StorageDevice>();
+std::string GUIRecoveryService::validateImageOperation(const models::RecoveryOperation& operation) const {
+    if (!sourceReader_ || !sourceReader_->isOpen()) return "Select a drive or open a disk image first";
+    try { if (imageReader_) imageReader_->validateIdentity(); if (deviceReader_) deviceReader_->validateIdentity(); }
+    catch (const std::exception& failure) { return failure.what(); }
+    if (operation.operationType != "disk_scan" && operation.operationType != "disk_recovery" && operation.operationType != "carving" && operation.operationType != "metadata_recovery" && operation.operationType != "file_recovery" && operation.operationType != "file_tree_recovery" && operation.operationType != "ntfs_mft_snapshot" && operation.operationType != "ntfs_resident_recovery" && operation.operationType != "ntfs_tree_recovery" && operation.operationType != "ntfs_checked_recovery" && operation.operationType != "ntfs_deleted_recovery" && operation.operationType != "fat_deleted_recovery")
+        return "Choose signature carving, a metadata snapshot or a supported FAT/NTFS file-recovery method";
+    std::error_code error;
+    if (deviceReader_) {
+        if (operation.targetDevicePath != sourcePath_) return "The operation source does not match the opened drive";
+    } else {
+        const auto source = std::filesystem::canonical(disk::nativePath(operation.targetDevicePath), error);
+        if (error || disk::utf8Path(source) != sourcePath_) return "The operation source does not match the opened image";
+    }
+    if (!operation.numSectors || operation.startSector >= sourceReader_->getTotalSectors() ||
+        operation.numSectors > sourceReader_->getTotalSectors() - operation.startSector ||
+        operation.numSectors > std::numeric_limits<uint64_t>::max() / sourceReader_->getSectorSize())
+        return "The sector range is outside the opened source";
+    if (operation.operationType == "disk_scan") return {};
+    if (deviceReader_ && !operation.sessionPath.empty()) return "Physical-drive sessions are not available yet; leave the session field empty";
+    if (deviceReader_) { try { deviceReader_->validateDestination(operation.outputPath); }
+        catch (const std::exception& failure) { return failure.what(); } }
+    if(operation.resumeSession&&operation.sessionPath.empty())return "Choose a saved session to resume";
+    if (operation.createLogFile) return "Separate log file output is not available";
+    try { SafeFileExporter destination(operation.outputPath); }
+    catch (const std::exception& failure) { return failure.what(); }
+    return {};
+}
+std::string GUIRecoveryService::validateOperation(const models::RecoveryOperation& operation) const {
+    std::unique_lock lock(imageMutex_, std::try_to_lock);
+    if (!lock.owns_lock()) return "A recovery operation is already active";
+    return validateImageOperation(operation);
+}
+models::RecoveryResult GUIRecoveryService::executeOperation(const models::RecoveryOperation& operation,
+    std::function<void(const models::RecoveryProgress&)> progressCallback,
+    std::function<bool()> cancellationToken) {
+    if (operation.operationType == "disk_scan" || operation.operationType == "disk_recovery")
+        return executeDiskOperation(operation, progressCallback, cancellationToken);
+    models::RecoveryResult result{};
+    result.operationType = operation.operationType; result.destination = operation.outputPath;
+    result.startTime = std::chrono::system_clock::now();
+    const auto cancelled = [&] { return cancellationToken && cancellationToken(); };
+    std::unique_lock lock(imageMutex_, std::try_to_lock);
+    std::unique_ptr<RecoverySession> session;uint64_t resumedItems=0;
+    try {
+        if (!lock.owns_lock()) throw std::runtime_error("A recovery operation is already active");
+        if (cancelled()) result.cancelled = true;
+        else {
+            const auto error = validateImageOperation(operation);
+            if (!error.empty()) throw std::runtime_error(error);
+            SafeFileExporter exporter(operation.outputPath);
+            const bool carving = operation.operationType == "carving";
+            const bool tree = operation.operationType == "file_tree_recovery";
+            const auto totalBytes = operation.numSectors * sourceReader_->getSectorSize();
+            result.processedBytesKnown = true; result.failedBytesKnown = true; result.failedItemsKnown = true;
+            const auto report = [&](uint64_t processed) {
+                result.processedBytes = processed;
+                if (!progressCallback) return;
+                models::RecoveryProgress progress{};
+                progress.operationType = operation.operationType; progress.status = "running";
+                progress.currentStep = carving ? "Scanning image and saving signature candidates" : "Reading and saving filesystem data";
+                progress.processedBytes = processed; progress.totalBytes = carving ? totalBytes : 0;
+                progress.percentage = carving ? static_cast<uint32_t>((static_cast<long double>(processed) / totalBytes) * 100) : 0;
+                progress.recoveredItemsCount = result.recoveredItemsCount; progress.failedItemsCount = result.failedItemsCount;
+                progress.isCancellable = true; progress.timestamp = std::chrono::system_clock::now();
+                progress.elapsedSeconds = std::chrono::duration_cast<std::chrono::seconds>(progress.timestamp - result.startTime).count();
+                progressCallback(progress);
+            };
+            if(!operation.sessionPath.empty())session=std::make_unique<RecoverySession>(operation,*sourceReader_,exporter,cancellationToken,[&](uint64_t checked){
+                if(!progressCallback)return;
+                models::RecoveryProgress p{};p.operationType=operation.operationType;p.status="running";p.currentStep="Checking source fingerprint for session";p.processedBytes=checked;p.totalBytes=sourceReader_->getTotalSectors()*sourceReader_->getSectorSize();p.percentage=uint32_t(100.0L*checked/p.totalBytes);p.isCancellable=true;progressCallback(p);
+            });
+            report(0);
+            const auto saveStream=[&](const std::string& name,uint64_t size,const SafeFileExporter::ReadAt& read,bool hierarchical,const std::string& confidence=std::string{}) {
+                if(result.recoveredItemsCount+result.failedItemsCount>=10000)throw std::runtime_error("Maximum output item count reached");
+                try {
+                    const bool resumed=session?session->exportItem(name,size,read,hierarchical,operation.verifyAfterRecovery):false;
+                    if(!session)exporter.writeStream(name,size,read,operation.verifyAfterRecovery,hierarchical,cancellationToken);
+                    if(resumed)++resumedItems;
+                    result.recoveredItems.push_back({name,size});++result.recoveredItemsCount;result.recoveredBytes+=size;result.outputWritten=true;
+                    if(!confidence.empty())result.details[name]=confidence;
+                }catch(const std::exception& failure){if(!cancelled()){++result.failedItemsCount;result.failedBytes+=size;result.details[name]=failure.what();}}
+            };
+            const auto saveItem=[&](const std::string& name,const std::vector<uint8_t>& data) {
+                saveStream(name,data.size(),[&](uint64_t offset,size_t size){return std::vector<uint8_t>(data.begin()+offset,data.begin()+offset+size);},tree||operation.operationType=="ntfs_tree_recovery"||operation.operationType=="fat_deleted_recovery");
+            };
+            recovery::CarvingSummary summary{};
+            if(operation.operationType=="ntfs_checked_recovery"||operation.operationType=="ntfs_deleted_recovery") {
+                recovery::NtfsRecoveryOptions options;options.deleted=operation.operationType=="ntfs_deleted_recovery";
+                const auto files=recovery::recoverNtfsChecked(*sourceReader_,operation.startSector,operation.numSectors,options,[&](const auto& file) {
+                    saveStream(file.path,file.size,file.read,true,file.confidence);
+                },report,cancellationToken);
+                summary.processedBytes=files.processedBytes;summary.cancelled=cancelled();summary.skippedCandidates=files.invalidFiles;
+                result.details["Invalid NTFS files"]=std::to_string(files.invalidFiles);
+                result.details["NTFS consistency checks"]=options.deleted?"Unused MFT records and free cluster bits checked; retained names/data are recovery candidates":"MFT and cluster allocation bitmaps plus parent directory index membership checked";
+                if(options.deleted)result.details["Deleted NTFS candidates inspected"]=std::to_string(files.deletedCandidates);
+            } else if (carving) {
+                summary = recovery::carveSignatures(*sourceReader_,operation.startSector,operation.numSectors,
+                    saveItem,report,cancellationToken);
+            } else if(operation.operationType=="ntfs_resident_recovery"||operation.operationType=="ntfs_tree_recovery") {
+                const auto files=(operation.operationType=="ntfs_tree_recovery"?recovery::recoverNtfsTreeFiles:recovery::recoverNtfsRootFiles)(*sourceReader_,operation.startSector,operation.numSectors,saveItem,report,cancellationToken);
+                summary.processedBytes=files.processedBytes;summary.cancelled=cancelled();
+                summary.skippedCandidates=files.invalidFiles+files.nonresidentFiles+files.unsupportedFiles;
+                result.details["Nonresident NTFS root files reconstructed"]=std::to_string(files.recoveredNonresidentFiles);
+                result.details["Invalid NTFS root files"]=std::to_string(files.invalidFiles);
+                result.details["Nonresident NTFS root files not reconstructed"]=std::to_string(files.nonresidentFiles);
+                result.details["Unsupported NTFS root-file features"]=std::to_string(files.unsupportedFiles);
+                result.details["Unused user-record slots skipped"]=std::to_string(files.unusedRecords);
+                result.details["Directory records skipped"]=std::to_string(files.directoryRecords);
+                result.details["Extension records skipped"]=std::to_string(files.extensionRecords);
+                result.details["Non-root files skipped"]=std::to_string(files.nonRootFiles);
+                result.details["Other root names not exported"]=std::to_string(files.otherRootNames);
+            } else if(operation.operationType=="ntfs_mft_snapshot") {
+                const auto mft=recovery::readNtfsMft(*sourceReader_,operation.startSector,operation.numSectors,report,cancellationToken);
+                result.details["MFT record bytes"]=std::to_string(mft.recordSize);
+                result.details["MFT in-use record flags"]=std::to_string(mft.inUseRecords);
+                result.details["MFT unused record flags"]=std::to_string(mft.unusedRecords);
+                result.details["MFT zero-filled record slots"]=std::to_string(mft.blankRecords);
+                saveItem("NTFS_BootSector",mft.bootSector);
+                if(!cancelled())saveItem("NTFS_MFTInitialized",mft.initializedRecords);
+                summary.processedBytes=mft.processedBytes;summary.cancelled=cancelled();
+            } else if (operation.operationType == "file_recovery" || tree || operation.operationType=="fat_deleted_recovery") {
+                const auto files=recovery::recoverFatRootFiles(*sourceReader_,operation.startSector,operation.numSectors,saveItem,report,cancellationToken,tree||operation.operationType=="fat_deleted_recovery",operation.operationType=="fat_deleted_recovery");
+                summary.processedBytes=files.processedBytes;summary.cancelled=files.cancelled;summary.skippedCandidates=files.invalidFiles+files.invalidDirectories;
+                result.details[tree?"Invalid or unsupported files":"Invalid or unsupported root files"]=std::to_string(files.invalidFiles);
+                result.details["Long names rejected (8.3 fallback)"]=std::to_string(files.longNameFallbacks);
+                result.details[operation.operationType=="fat_deleted_recovery"?"Deleted entries inspected":"Deleted entries not reconstructed"]=std::to_string(files.deletedEntries);
+                if(operation.operationType=="fat_deleted_recovery")result.details["Recovery confidence"]="Low: assumes contiguous free clusters. First short-name character and long names are lost; original bytes may have been overwritten.";
+                if(tree) {
+                    result.details["Directories traversed"]=std::to_string(files.traversedDirectories);
+                    result.details["Invalid or unsupported directories"]=std::to_string(files.invalidDirectories);
+                }else result.details["Subdirectories not traversed"]=std::to_string(files.directories);
+            } else {
+                recovery::RecoveryCapabilityRegistry registry;
+                registry.registerCapability(recovery::RecoveryCapability::METADATA_RECOVERY);
+                recovery::RecoverySafetyPolicy policy;
+                recovery::MetadataRecovery metadata(registry,policy,sourceReader_.get(),cancellationToken);
+                std::map<std::string,std::vector<uint8_t>> regions;
+                const bool read = metadata.recoverMetadata(true,true,operation.startSector,operation.numSectors,
+                    true,true,true,true,regions);
+                if (!read && !cancelled()) throw std::runtime_error("Cannot snapshot FAT metadata: unsupported format, invalid geometry, truncated range or region above 16 MiB");
+                for (const auto& [name,data] : regions) {
+                    if (cancelled()) break;
+                    summary.processedBytes += data.size();
+                    saveItem(name,data); report(summary.processedBytes);
+                }
+                summary.cancelled = cancelled();
+            }
+            result.processedBytes = summary.processedBytes; result.cancelled = summary.cancelled;
+            if (carving) result.details["Skipped incomplete or oversized candidates"] = std::to_string(summary.skippedCandidates);
+            result.details["Verification"] = operation.verifyAfterRecovery ? "Saved bytes were read back and compared" : "Not requested";
+            result.success = !result.cancelled && !result.failedItemsCount && !summary.skippedCandidates;
+            if (result.failedItemsCount) result.errorMessage = "Some candidates could not be saved; existing files were kept";
+            else if (summary.skippedCandidates) result.errorMessage = carving ? "Some signature candidates were incomplete or larger than 16 MiB" : "Some files or directories have invalid metadata or unsupported recovery features";
+        }
+    } catch (const std::exception& failure) { result.errorMessage = failure.what(); result.success = false; }
+    result.cancelled = result.cancelled || cancelled();
+    if (result.cancelled) result.success = false;
+    if(session){try{session->finish(result.cancelled?"cancelled":(result.success?"completed":"partial"));}catch(const std::exception& failure){result.success=false;result.errorMessage=std::string("Session checkpoint failed: ")+failure.what();}
+        result.details["Session"]=operation.sessionPath;result.details["Earlier outputs verified"]=std::to_string(resumedItems);result.details["New outputs saved"]=std::to_string(result.recoveredItemsCount-resumedItems);result.details["Resume method"]="Full source fingerprint and earlier outputs verified; discovery is replayed to preserve file boundaries";}
+    result.endTime = std::chrono::system_clock::now();
+    result.details["Export"] = result.outputWritten ? "Only the listed items were saved to the destination" : "No output files were saved";
+    result.details["Recovery method"] = operation.operationType == "fat_deleted_recovery"
+        ? "Deleted FAT file candidates from retained short entries and contiguous free clusters. Content and original names are unproven."
+        : operation.operationType == "ntfs_deleted_recovery"
+        ? "Deleted NTFS file candidates from unused base records, retained attributes and free data clusters. Content may have been overwritten."
+        : operation.operationType == "ntfs_checked_recovery"
+        ? "NTFS files with checked allocation and directory index membership, attribute-list extensions and streaming output up to 2 GiB/file. File content may still be damaged."
+        : operation.operationType == "ntfs_tree_recovery"
+        ? "In-use NTFS files with sequence-checked parent paths, limited to 32 directory levels. No index/bitmap validation or deleted files."
+        : operation.operationType == "ntfs_resident_recovery"
+        ? "In-use NTFS root files with unnamed resident/nonresident DATA (16 MiB/file) and sequence-matching parent references. One preferred name per record. No index/bitmap cross-check, deleted/recursive recovery, attribute-list extensions, sparse/compressed/encrypted DATA or alternate-stream export."
+        : operation.operationType == "ntfs_mft_snapshot"
+        ? "NTFS boot and initialized MFT bytes. Mapping pairs, FILE headers and update-sequence fixups checked; raw on-disk bytes preserved. No file reconstruction, mirror fallback or attribute-list extensions."
+        : operation.operationType == "metadata_recovery"
+        ? "FAT metadata snapshot: boot sector and FAT copies; FAT12/16 root entries included. No repair, FAT32 root chain or NTFS MFT reconstruction."
+        : operation.operationType == "file_tree_recovery" ? "Allocated FAT12/16/32 files with bounded recursive directory traversal. Deleted chains are not inferred; empty directories and original permissions/timestamps are not exported."
+        : operation.operationType == "file_recovery" ? "Allocated FAT12/16/32 root files using verified long names or 8.3 aliases and cluster chains. No deleted-file guessing or subdirectory traversal."
+        : "Signature candidates only; file structure and content may still be damaged";
+    if (progressCallback) {
+        models::RecoveryProgress progress{};
+        progress.operationType = operation.operationType;
+        progress.status = result.cancelled ? "cancelled" : (result.success ? "completed" : "failed");
+        progress.currentStep = result.cancelled ? "Cancelled; completed output files were kept" : (result.success ? "Scan complete" : result.errorMessage);
+        progress.processedBytes = result.processedBytes;
+        progress.recoveredItemsCount = result.recoveredItemsCount; progress.failedItemsCount = result.failedItemsCount;
+        progress.timestamp = result.endTime;
+        progressCallback(progress);
+    }
+    return result;
 }
 
 models::StorageDevice GUIRecoveryService::getStorageDeviceInfo(const std::string& devicePath) {
@@ -88,296 +292,196 @@ std::vector<models::Partition> GUIRecoveryService::getDevicePartitions(const std
 }
 
 models::AnalysisResult GUIRecoveryService::analyzeFilesystem(const std::string& devicePath, uint64_t startSector, uint64_t numSectors) {
-    models::AnalysisResult result;
-    result.success = false;
-    result.errorMessage = "Recovery service not available";
-
-    if (!recoveryService_) {
-        recoverysuite::logging::Logger::instance().info("No recovery service available for filesystem analysis");
-        return result;
-    }
-
+    models::AnalysisResult result{};
+    std::unique_lock lock(imageMutex_, std::try_to_lock);
+    if (!lock.owns_lock()) {result.errorMessage="A recovery operation is already active";return result;}
     try {
-        recoverysuite::logging::Logger::instance().info("GUI requesting filesystem analysis: " + devicePath +
-                                                       ", start_sector=" + std::to_string(startSector) +
-                                                       ", num_sectors=" + std::to_string(numSectors));
-
-        // Call the underlying recovery service
-        auto serviceResult = recoveryService_->analyzeFilesystem(startSector, numSectors);
-
-        // Convert to GUI model
-        result.success = serviceResult.success;
-        result.errorMessage = serviceResult.errorMessage;
-
-        // Populate basic filesystem info from analysis results
-        if (serviceResult.success && !serviceResult.analysisResults.empty()) {
-            result.filesystemInfo.type = serviceResult.analysisResults["filesystem_type"];
-            result.filesystemInfo.version = serviceResult.analysisResults["version"];
-            result.filesystemInfo.totalSizeBytes = std::stoull(serviceResult.analysisResults["total_size_bytes"]);
-            result.filesystemInfo.usedSizeBytes = std::stoull(serviceResult.analysisResults["used_size_bytes"]);
-            result.filesystemInfo.freeSizeBytes = std::stoull(serviceResult.analysisResults["free_size_bytes"]);
-            result.filesystemInfo.clusterSizeBytes = std::stoul(serviceResult.analysisResults["cluster_size_bytes"]);
-            result.filesystemInfo.volumeLabel = serviceResult.analysisResults["volume_label"];
-            result.filesystemInfo.serialNumber = serviceResult.analysisResults["serial_number"];
-            result.filesystemInfo.isReadOnly = (serviceResult.analysisResults["is_read_only"] == "true");
-            result.filesystemInfo.isCorrupted = (serviceResult.analysisResults["is_corrupted"] == "true");
+        const auto reader=getDiskReaderForDevice(devicePath);
+        if (!reader) throw std::runtime_error("Recovery service not available");
+        if (imageReader_) imageReader_->validateIdentity();
+        const auto backend=recoveryService_->analyzeFilesystem(startSector,numSectors);
+        result.success=backend.success;result.errorMessage=backend.errorMessage;result.properties=backend.analysisResults;
+        if (result.success) {
+            const auto number=[&](const std::string& key) -> uint64_t {
+                const auto it=result.properties.find(key);
+                if (it==result.properties.end() || it->second=="unknown") return 0;
+                return std::stoull(it->second);
+            };
+            auto& info=result.filesystemInfo;
+            info.type=result.properties["Filesystem Type"];info.version=result.properties["Version"];
+            info.volumeLabel=result.properties["Volume Label"];info.serialNumber=result.properties["Volume Serial Number"];
+            info.totalSizeBytes=number("Total Size");info.clusterSizeBytes=number("Bytes Per Sector")*number("Sectors Per Cluster");
+            info.isReadOnly=reader->getDiskInfo().isReadOnly;
         }
-
-    } catch (const std::exception& e) {
-        result.success = false;
-        result.errorMessage = "Exception during analysis: " + std::string(e.what());
-        recoverysuite::logging::Logger::instance().error("Exception during filesystem analysis: " + std::string(e.what()));
-    }
-
+    } catch(const std::exception& failure) {result.success=false;result.errorMessage=failure.what();}
     return result;
 }
 
 models::RecoveryResult GUIRecoveryService::recoverFiles(const std::string& devicePath, uint64_t startSector, uint64_t numSectors,
-                                                       const std::string& outputPath,
-                                                       std::function<void(const models::RecoveryProgress&)> progressCallback,
-                                                       std::function<bool()> cancellationToken) {
-    models::RecoveryResult result;
-    result.success = false;
-    result.errorMessage = "Recovery service not available";
-
-    if (!recoveryService_) {
-        recoverysuite::logging::Logger::instance().info("No recovery service available for file recovery");
-        return result;
-    }
-
+    const std::string& outputPath,
+    std::function<void(const models::RecoveryProgress&)> progressCallback,
+    std::function<bool()> cancellationToken) {
+    models::RecoveryResult result{};
+    result.operationType = "file_recovery";
+    result.destination = outputPath;
+    result.startTime = std::chrono::system_clock::now();
+    result.details["export"] = "Output files have not been saved.";
     try {
-        recoverysuite::logging::Logger::instance().info("GUI requesting file recovery: " + devicePath +
-                                                       ", start_sector=" + std::to_string(startSector) +
-                                                       ", num_sectors=" + std::to_string(numSectors) +
-                                                       ", output_path=" + outputPath);
-
-        // Generate operation ID for tracking
-        std::string operationId = "file_recovery_" + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count());
-
-        // Register cancellation token if provided
-        if (cancellationToken) {
-            operationCancellationTokens_[operationId] = cancellationToken;
+        if (cancellationToken && cancellationToken()) {
+            result.cancelled = true;
+        } else if (!recoveryService_) {
+            result.errorMessage = "Recovery service not available";
+        } else if (devicePath.empty() || !isSectorRangeValid(devicePath, startSector, numSectors)) {
+            result.errorMessage = "Invalid source or sector range";
+        } else {
+            models::RecoveryProgress progress{};
+            progress.operationType = result.operationType;
+            progress.status = "running";
+            progress.currentStep = "Processing source; detailed progress is not reported by the backend";
+            progress.isCancellable = true;
+            if (progressCallback) progressCallback(progress);
+            if (cancellationToken && cancellationToken()) {
+                result.cancelled = true;
+            } else {
+                const auto backend = recoveryService_->recoverFiles(startSector, numSectors);
+                result.success = backend.success;
+                result.errorMessage = backend.errorMessage;
+                for (const auto& [name, data] : backend.recoveredFiles) {
+                    result.recoveredItems.push_back({name, static_cast<uint64_t>(data.size())});
+                    result.recoveredBytes += data.size();
+                }
+                result.recoveredItemsCount = result.recoveredItems.size();
+                result.cancelled = cancellationToken && cancellationToken();
+                if (result.cancelled) result.success = false;
+            }
         }
-
-        // TODO: Implement actual progress reporting and cancellation checking
-        // For now, we'll call the underlying service and simulate progress
-
-        // Call the underlying recovery service
-        auto serviceResult = recoveryService_->recoverFiles(startSector, numSectors);
-
-        // Unregister cancellation token
-        operationCancellationTokens_.erase(operationId);
-
-        // Convert to GUI model
-        result.success = serviceResult.success;
-        result.errorMessage = serviceResult.errorMessage;
-        result.operationType = "file_recovery";
-        result.processedBytes = static_cast<uint64_t>(numSectors) * 512;  // Assuming 512 byte sectors
-        result.recoveredBytes = serviceResult.success ? result.processedBytes : 0;
-        result.failedBytes = serviceResult.success ? 0 : result.processedBytes;
-        result.recoveredItemsCount = serviceResult.success ? static_cast<uint64_t>(serviceResult.recoveredFiles.size()) : 0;
-        result.failedItemsCount = serviceResult.success ? 0 : 1;  // Simplified
-        result.startTime = std::chrono::system_clock::now() - std::chrono::seconds(5);  // Placeholder
-        result.endTime = std::chrono::system_clock::now();
-
-        // Add details
-        result.details["recovered_file_count"] = std::to_string(serviceResult.recoveredFiles.size());
-
-        // If we have a progress callback, simulate some progress updates
-        if (progressCallback && serviceResult.success) {
-            models::RecoveryProgress progress;
-            progress.operationId = operationId;
-            progress.operationType = "file_recovery";
-            progress.status = "completed";
-            progress.percentage = 100;
-            progress.currentStep = "Recovery completed";
-            progress.processedBytes = result.processedBytes;
-            progress.totalBytes = result.processedBytes;
-            progress.elapsedSeconds = 5;  // Placeholder
-            progress.estimatedRemainingSeconds = 0;
-            progress.recoveredItemsCount = result.recoveredItemsCount;
-            progress.failedItemsCount = result.failedItemsCount;
-            progress.isCancellable = false;
-            progress.isPausable = false;
-            progress.timestamp = std::chrono::system_clock::now();
-
-            progressCallback(progress);
-        }
-
-    } catch (const std::exception& e) {
+    } catch (const std::exception& error) {
         result.success = false;
-        result.errorMessage = "Exception during file recovery: " + std::string(e.what());
-        recoverysuite::logging::Logger::instance().error("Exception during file recovery: " + std::string(e.what()));
-
-        // Clean up cancellation token if registered
-        // Note: In a real implementation, we'd need to track the operationId properly
+        result.errorMessage = error.what();
     }
-
+    result.endTime = std::chrono::system_clock::now();
+    if (progressCallback) {
+        models::RecoveryProgress progress{};
+        progress.operationType = result.operationType;
+        progress.status = result.cancelled ? "cancelled" : (result.success ? "completed" : "failed");
+        progress.currentStep = result.cancelled ? "Cancelled" : (result.success ? "Processing complete; output has not been exported" : result.errorMessage);
+        progress.elapsedSeconds = std::chrono::duration_cast<std::chrono::seconds>(result.endTime - result.startTime).count();
+        progress.recoveredItemsCount = result.recoveredItemsCount;
+        progress.timestamp = result.endTime;
+        progressCallback(progress);
+    }
     return result;
 }
 
 models::RecoveryResult GUIRecoveryService::recoverMetadata(const std::string& devicePath, uint64_t startSector, uint64_t numSectors,
-                                                          const std::string& outputPath,
-                                                          std::function<void(const models::RecoveryProgress&)> progressCallback,
-                                                          std::function<bool()> cancellationToken) {
-    models::RecoveryResult result;
-    result.success = false;
-    result.errorMessage = "Recovery service not available";
-
-    if (!recoveryService_) {
-        recoverysuite::logging::Logger::instance().info("No recovery service available for metadata recovery");
-        return result;
-    }
-
+    const std::string& outputPath,
+    std::function<void(const models::RecoveryProgress&)> progressCallback,
+    std::function<bool()> cancellationToken) {
+    models::RecoveryResult result{};
+    result.operationType = "metadata_recovery";
+    result.destination = outputPath;
+    result.startTime = std::chrono::system_clock::now();
+    result.details["export"] = "Output files have not been saved.";
     try {
-        recoverysuite::logging::Logger::instance().info("GUI requesting metadata recovery: " + devicePath +
-                                                       ", start_sector=" + std::to_string(startSector) +
-                                                       ", num_sectors=" + std::to_string(numSectors) +
-                                                       ", output_path=" + outputPath);
-
-        // Generate operation ID for tracking
-        std::string operationId = "metadata_recovery_" + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count());
-
-        // Register cancellation token if provided
-        if (cancellationToken) {
-            operationCancellationTokens_[operationId] = cancellationToken;
+        if (cancellationToken && cancellationToken()) {
+            result.cancelled = true;
+        } else if (!recoveryService_) {
+            result.errorMessage = "Recovery service not available";
+        } else if (devicePath.empty() || !isSectorRangeValid(devicePath, startSector, numSectors)) {
+            result.errorMessage = "Invalid source or sector range";
+        } else {
+            models::RecoveryProgress progress{};
+            progress.operationType = result.operationType;
+            progress.status = "running";
+            progress.currentStep = "Processing source; detailed progress is not reported by the backend";
+            progress.isCancellable = true;
+            if (progressCallback) progressCallback(progress);
+            if (cancellationToken && cancellationToken()) {
+                result.cancelled = true;
+            } else {
+                const auto backend = recoveryService_->recoverMetadata(startSector, numSectors);
+                result.success = backend.success;
+                result.errorMessage = backend.errorMessage;
+                for (const auto& [name, data] : backend.recoveredMetadata) {
+                    result.recoveredItems.push_back({name, static_cast<uint64_t>(data.size())});
+                    result.recoveredBytes += data.size();
+                }
+                result.recoveredItemsCount = result.recoveredItems.size();
+                result.cancelled = cancellationToken && cancellationToken();
+                if (result.cancelled) result.success = false;
+            }
         }
-
-        // Call the underlying recovery service
-        auto serviceResult = recoveryService_->recoverMetadata(startSector, numSectors);
-
-        // Unregister cancellation token
-        operationCancellationTokens_.erase(operationId);
-
-        // Convert to GUI model
-        result.success = serviceResult.success;
-        result.errorMessage = serviceResult.errorMessage;
-        result.operationType = "metadata_recovery";
-        result.processedBytes = static_cast<uint64_t>(numSectors) * 512;  // Assuming 512 byte sectors
-        result.recoveredBytes = serviceResult.success ? result.processedBytes : 0;
-        result.failedBytes = serviceResult.success ? 0 : result.processedBytes;
-        result.recoveredItemsCount = serviceResult.success ? static_cast<uint64_t>(serviceResult.recoveredMetadata.size()) : 0;
-        result.failedItemsCount = serviceResult.success ? 0 : 1;  // Simplified
-        result.startTime = std::chrono::system_clock::now() - std::chrono::seconds(5);  // Placeholder
-        result.endTime = std::chrono::system_clock::now();
-
-        // Add details
-        result.details["recovered_metadata_count"] = std::to_string(serviceResult.recoveredMetadata.size());
-
-        // If we have a progress callback, simulate some progress updates
-        if (progressCallback && serviceResult.success) {
-            models::RecoveryProgress progress;
-            progress.operationId = operationId;
-            progress.operationType = "metadata_recovery";
-            progress.status = "completed";
-            progress.percentage = 100;
-            progress.currentStep = "Metadata recovery completed";
-            progress.processedBytes = result.processedBytes;
-            progress.totalBytes = result.processedBytes;
-            progress.elapsedSeconds = 5;  // Placeholder
-            progress.estimatedRemainingSeconds = 0;
-            progress.recoveredItemsCount = result.recoveredItemsCount;
-            progress.failedItemsCount = result.failedItemsCount;
-            progress.isCancellable = false;
-            progress.isPausable = false;
-            progress.timestamp = std::chrono::system_clock::now();
-
-            progressCallback(progress);
-        }
-
-    } catch (const std::exception& e) {
+    } catch (const std::exception& error) {
         result.success = false;
-        result.errorMessage = "Exception during metadata recovery: " + std::string(e.what());
-        recoverysuite::logging::Logger::instance().error("Exception during metadata recovery: " + std::string(e.what()));
-
-        // Clean up cancellation token if registered
-        // Note: In a real implementation, we'd need to track the operationId properly
+        result.errorMessage = error.what();
     }
-
+    result.endTime = std::chrono::system_clock::now();
+    if (progressCallback) {
+        models::RecoveryProgress progress{};
+        progress.operationType = result.operationType;
+        progress.status = result.cancelled ? "cancelled" : (result.success ? "completed" : "failed");
+        progress.currentStep = result.cancelled ? "Cancelled" : (result.success ? "Processing complete; output has not been exported" : result.errorMessage);
+        progress.elapsedSeconds = std::chrono::duration_cast<std::chrono::seconds>(result.endTime - result.startTime).count();
+        progress.recoveredItemsCount = result.recoveredItemsCount;
+        progress.timestamp = result.endTime;
+        progressCallback(progress);
+    }
     return result;
 }
 
 models::RecoveryResult GUIRecoveryService::carveFiles(const std::string& devicePath, uint64_t startSector, uint64_t numSectors,
-                                                     const std::string& outputPath,
-                                                     std::function<void(const models::RecoveryProgress&)> progressCallback,
-                                                     std::function<bool()> cancellationToken) {
-    models::RecoveryResult result;
-    result.success = false;
-    result.errorMessage = "Recovery service not available";
-
-    if (!recoveryService_) {
-        recoverysuite::logging::Logger::instance().info("No recovery service available for carving");
-        return result;
-    }
-
+    const std::string& outputPath,
+    std::function<void(const models::RecoveryProgress&)> progressCallback,
+    std::function<bool()> cancellationToken) {
+    models::RecoveryResult result{};
+    result.operationType = "carving";
+    result.destination = outputPath;
+    result.startTime = std::chrono::system_clock::now();
+    result.details["export"] = "Output files have not been saved.";
     try {
-        recoverysuite::logging::Logger::instance().info("GUI requesting carving: " + devicePath +
-                                                       ", start_sector=" + std::to_string(startSector) +
-                                                       ", num_sectors=" + std::to_string(numSectors) +
-                                                       ", output_path=" + outputPath);
-
-        // Generate operation ID for tracking
-        std::string operationId = "carving_" + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count());
-
-        // Register cancellation token if provided
-        if (cancellationToken) {
-            operationCancellationTokens_[operationId] = cancellationToken;
+        if (cancellationToken && cancellationToken()) {
+            result.cancelled = true;
+        } else if (!recoveryService_) {
+            result.errorMessage = "Recovery service not available";
+        } else if (devicePath.empty() || !isSectorRangeValid(devicePath, startSector, numSectors)) {
+            result.errorMessage = "Invalid source or sector range";
+        } else {
+            models::RecoveryProgress progress{};
+            progress.operationType = result.operationType;
+            progress.status = "running";
+            progress.currentStep = "Processing source; detailed progress is not reported by the backend";
+            progress.isCancellable = true;
+            if (progressCallback) progressCallback(progress);
+            if (cancellationToken && cancellationToken()) {
+                result.cancelled = true;
+            } else {
+                const auto backend = recoveryService_->carveFiles(startSector, numSectors);
+                result.success = backend.success;
+                result.errorMessage = backend.errorMessage;
+                for (const auto& [name, data] : backend.carvedFiles) {
+                    result.recoveredItems.push_back({name, static_cast<uint64_t>(data.size())});
+                    result.recoveredBytes += data.size();
+                }
+                result.recoveredItemsCount = result.recoveredItems.size();
+                result.cancelled = cancellationToken && cancellationToken();
+                if (result.cancelled) result.success = false;
+            }
         }
-
-        // Call the underlying recovery service
-        auto serviceResult = recoveryService_->carveFiles(startSector, numSectors);
-
-        // Unregister cancellation token
-        operationCancellationTokens_.erase(operationId);
-
-        // Convert to GUI model
-        result.success = serviceResult.success;
-        result.errorMessage = serviceResult.errorMessage;
-        result.operationType = "carving";
-        result.processedBytes = static_cast<uint64_t>(numSectors) * 512;  // Assuming 512 byte sectors
-        result.recoveredBytes = serviceResult.success ? result.processedBytes : 0;
-        result.failedBytes = serviceResult.success ? 0 : result.processedBytes;
-        result.recoveredItemsCount = serviceResult.success ? static_cast<uint64_t>(serviceResult.carvedFiles.size()) : 0;
-        result.failedItemsCount = serviceResult.success ? 0 : 1;  // Simplified
-        result.startTime = std::chrono::system_clock::now() - std::chrono::seconds(5);  // Placeholder
-        result.endTime = std::chrono::system_clock::now();
-
-        // Add details
-        result.details["carved_file_count"] = std::to_string(serviceResult.carvedFiles.size());
-
-        // If we have a progress callback, simulate some progress updates
-        if (progressCallback && serviceResult.success) {
-            models::RecoveryProgress progress;
-            progress.operationId = operationId;
-            progress.operationType = "carving";
-            progress.status = "completed";
-            progress.percentage = 100;
-            progress.currentStep = "Carving completed";
-            progress.processedBytes = result.processedBytes;
-            progress.totalBytes = result.processedBytes;
-            progress.elapsedSeconds = 5;  // Placeholder
-            progress.estimatedRemainingSeconds = 0;
-            progress.recoveredItemsCount = result.recoveredItemsCount;
-            progress.failedItemsCount = result.failedItemsCount;
-            progress.isCancellable = false;
-            progress.isPausable = false;
-            progress.timestamp = std::chrono::system_clock::now();
-
-            progressCallback(progress);
-        }
-
-    } catch (const std::exception& e) {
+    } catch (const std::exception& error) {
         result.success = false;
-        result.errorMessage = "Exception during carving: " + std::string(e.what());
-        recoverysuite::logging::Logger::instance().error("Exception during carving: " + std::string(e.what()));
-
-        // Clean up cancellation token if registered
-        // Note: In a real implementation, we'd need to track the operationId properly
+        result.errorMessage = error.what();
     }
-
+    result.endTime = std::chrono::system_clock::now();
+    if (progressCallback) {
+        models::RecoveryProgress progress{};
+        progress.operationType = result.operationType;
+        progress.status = result.cancelled ? "cancelled" : (result.success ? "completed" : "failed");
+        progress.currentStep = result.cancelled ? "Cancelled" : (result.success ? "Processing complete; output has not been exported" : result.errorMessage);
+        progress.elapsedSeconds = std::chrono::duration_cast<std::chrono::seconds>(result.endTime - result.startTime).count();
+        progress.recoveredItemsCount = result.recoveredItemsCount;
+        progress.timestamp = result.endTime;
+        progressCallback(progress);
+    }
     return result;
 }
 
@@ -437,7 +541,15 @@ uint64_t GUIRecoveryService::extractDiskNumber(const std::string& /*devicePath*/
     return 0;
 }
 
-std::shared_ptr<recoverysuite::disk::IDiskReader> GUIRecoveryService::getDiskReaderForDevice(const std::string& /*devicePath*/) const {
+std::shared_ptr<recoverysuite::disk::IDiskReader> GUIRecoveryService::getDiskReaderForDevice(const std::string& devicePath) const {
+    if (deviceReader_ && devicePath != sourcePath_)
+        throw std::invalid_argument("Source does not match the opened physical drive");
+    if (imageReader_) {
+        std::error_code error;
+        if (disk::utf8Path(std::filesystem::canonical(disk::nativePath(devicePath), error)) != sourcePath_ || error)
+            throw std::invalid_argument("Source does not match the opened image");
+    }
+    if (!recoveryService_) return nullptr;
     // Delegate to the underlying recovery service's disk reader
     // In a more complex implementation, we might need to create a new reader
     // specific to this device path

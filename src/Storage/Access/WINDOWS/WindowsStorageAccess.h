@@ -11,12 +11,12 @@ namespace storage {
  * @brief Windows-specific storage access implementation
  *
  * This class provides Windows-specific storage access functionality
- * using Windows APIs like WMI, SMART via IOCTL, etc.
+ * using observed disk metadata. Unmeasured diagnostics remain unavailable.
  */
 class WindowsStorageAccess : public StorageAccess {
 public:
     WindowsStorageAccess();
-    ~WindowsStorageAccess();
+    ~WindowsStorageAccess() override;
 
     // Disable copy/move
     WindowsStorageAccess(const WindowsStorageAccess&) = delete;

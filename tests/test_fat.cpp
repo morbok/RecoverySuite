@@ -1,262 +1,384 @@
-#include <memory>
-#include <iostream>
-#include <cassert>
-#include <cstring>
-#include "Filesystem/FAT/FATFilesystem.h"
-#include "Filesystem/FAT/FATConstants.h"
-#include "Filesystem/FAT/FATStructures.h"
-#include "Filesystem/FAT/FATReader.h"
-#include "Filesystem/FAT/FATMetadata.h"
 #include "Filesystem/FAT/FATAnalyzer.h"
+#include "Filesystem/FAT/FATConstants.h"
+#include "Filesystem/FAT/FATFilesystem.h"
+#include "Filesystem/FAT/FATMetadata.h"
+#include "Filesystem/FAT/FATReader.h"
+#include "Filesystem/FAT/FATStructures.h"
 #include "Filesystem/FAT/FATVolume.h"
 #include "Filesystem/FilesystemTypes.h"
+#include <algorithm>
+#include <cassert>
+#include <cstring>
+#include <iostream>
+#include <limits>
+#include <memory>
+#include <stdexcept>
 
 using namespace recoverysuite::filesystem::fat;
 using recoverysuite::filesystem::FilesystemCapabilities;
+using recoverysuite::filesystem::FilesystemCapability;
+using recoverysuite::filesystem::FilesystemType;
 
 // Mock reader for testing
 class MockFATReader : public FATReader {
 public:
-    MockFATReader(uint64_t startOffset, uint32_t sectorSize, const FATBootSectorCommon& bootSectorData)
-        : FATReader(startOffset, sectorSize), bootSectorData_(bootSectorData) {
-    }
+  MockFATReader(uint64_t startOffset, uint32_t sectorSize,
+                const FATBootSectorCommon &bootSectorData)
+      : FATReader(startOffset, sectorSize), bootSectorData_(bootSectorData),
+        sectorSize_(sectorSize) {}
 
-    uint32_t readSector(uint64_t sectorIndex, uint8_t* buffer, uint32_t sectorSize) override {
-        if (sectorIndex != 0) {
-            return 0; // Only sector 0 is valid for this mock
-        }
-        if (sectorSize < sizeof(FATBootSectorCommon)) {
-            return 0;
-        }
-        std::memcpy(buffer, &bootSectorData_, sizeof(FATBootSectorCommon));
-        return sizeof(FATBootSectorCommon);
+  uint32_t readSector(uint64_t sectorIndex, uint8_t *buffer,
+                      uint32_t sectorSize) override {
+    if (sectorIndex != 0) {
+      return 0; // Only sector 0 is valid for this mock
     }
+    if (sectorSize < sizeof(FATBootSectorCommon)) {
+      return 0;
+    }
+    std::memset(buffer, 0, sectorSize);
+    std::memcpy(buffer, &bootSectorData_, sizeof(FATBootSectorCommon));
+    return std::min(sectorSize, readLimit);
+  }
 
-    uint32_t readSectors(uint64_t startSector, uint32_t sectorCount, uint8_t* buffer, uint32_t sectorSize) override {
-        (void)startSector;
-        (void)sectorCount;
-        (void)buffer;
-        (void)sectorSize;
-        return 0; // Not implemented for this test
-    }
+  uint32_t readSectors(uint64_t startSector, uint32_t sectorCount,
+                       uint8_t *buffer, uint32_t sectorSize) override {
+    (void)startSector;
+    (void)sectorCount;
+    (void)buffer;
+    (void)sectorSize;
+    return 0; // Not implemented for this test
+  }
 
-    uint32_t readCluster(uint64_t clusterIndex, uint8_t* buffer, uint32_t clusterSize) override {
-        (void)clusterIndex;
-        (void)buffer;
-        (void)clusterSize;
-        return 0; // Not implemented for this test
-    }
+  uint32_t readCluster(uint64_t clusterIndex, uint8_t *buffer,
+                       uint32_t clusterSize) override {
+    (void)clusterIndex;
+    (void)buffer;
+    (void)clusterSize;
+    return 0; // Not implemented for this test
+  }
 
-    uint32_t readClusters(uint64_t startCluster, uint32_t clusterCount, uint8_t* buffer, uint32_t clusterSize) override {
-        (void)startCluster;
-        (void)clusterCount;
-        (void)buffer;
-        (void)clusterSize;
-        return 0; // Not implemented for this test
-    }
+  uint32_t readClusters(uint64_t startCluster, uint32_t clusterCount,
+                        uint8_t *buffer, uint32_t clusterSize) override {
+    (void)startCluster;
+    (void)clusterCount;
+    (void)buffer;
+    (void)clusterSize;
+    return 0; // Not implemented for this test
+  }
 
-    uint64_t getTotalSectors() const override {
-        return 0; // Not implemented for this test
-    }
+  uint64_t getTotalSectors() const override {
+    return 0; // Not implemented for this test
+  }
 
-    uint32_t getSectorSize() const override {
-        return 512; // Default sector size
-    }
+  uint32_t getSectorSize() const override { return sectorSize_; }
+
+  uint32_t readLimit = std::numeric_limits<uint32_t>::max();
 
 private:
-    FATBootSectorCommon bootSectorData_;
+  FATBootSectorCommon bootSectorData_;
+  uint32_t sectorSize_;
 };
 
+template <class Exception, class Function>
+void expect_rejected(Function action) {
+  bool rejected = false;
+  try {
+    action();
+  } catch (const Exception &) {
+    rejected = true;
+  }
+  assert(rejected);
+}
+
 void test_fat12_boot_sector() {
-    // Create a mock FAT12 boot sector
-    FATBootSectorCommon bootSector = {};
-    bootSector.jumpInstruction[0] = 0xEB;
-    bootSector.jumpInstruction[1] = 0x3C;
-    bootSector.jumpInstruction[2] = 0x90;
-    std::memcpy(bootSector.oemName, "MSWIN4.1", 8);
+  // Create a mock FAT12 boot sector
+  FATBootSectorCommon bootSector = {};
+  bootSector.jumpInstruction[0] = 0xEB;
+  bootSector.jumpInstruction[1] = 0x3C;
+  bootSector.jumpInstruction[2] = 0x90;
+  std::memcpy(bootSector.oemName, "MSWIN4.1", 8);
 
-    bootSector.bytesPerSector = 512;
-    bootSector.sectorsPerCluster = 1;
-    bootSector.reservedSectorCount = 1;
-    bootSector.fatCount = 2;
-    bootSector.rootEntryCount = 224;
-    bootSector.totalSectors16 = 2880; // 1.44 MB floppy
-    bootSector.mediaType = 0xF0;
-    bootSector.sectorsPerFat16 = 9;
-    bootSector.sectorsPerTrack = 18;
-    bootSector.headCount = 2;
-    bootSector.hiddenSectors = 0;
-    bootSector.totalSectors32 = 0;
+  bootSector.bytesPerSector = 512;
+  bootSector.sectorsPerCluster = 1;
+  bootSector.reservedSectorCount = 1;
+  bootSector.fatCount = 2;
+  bootSector.rootEntryCount = 224;
+  bootSector.totalSectors16 = 2880; // 1.44 MB floppy
+  bootSector.mediaType = 0xF0;
+  bootSector.sectorsPerFat16 = 9;
+  bootSector.sectorsPerTrack = 18;
+  bootSector.headCount = 2;
+  bootSector.hiddenSectors = 0;
+  bootSector.totalSectors32 = 0;
 
-    // FAT12 extended BPB
-    bootSector.fat16.driveNumber = 0x00;
-    bootSector.fat16.reserved1 = 0;
-    bootSector.fat16.bootSignature = 0x29;
-    bootSector.fat16.volumeID = 0x12345678;
-    std::memcpy(bootSector.fat16.volumeLabel, "NO NAME    ", 11);
-    std::memcpy(bootSector.fat16.fatTypeLabel, "FAT12   ", 8);
+  // FAT12 extended BPB
+  bootSector.fat16.driveNumber = 0x00;
+  bootSector.fat16.reserved1 = 0;
+  bootSector.fat16.bootSignature = 0x29;
+  bootSector.fat16.volumeID = 0x12345678;
+  std::memcpy(bootSector.fat16.volumeLabel, "NO NAME    ", 11);
+  std::memcpy(bootSector.fat16.fatTypeLabel, "FAT12   ", 8);
 
-    bootSector.bootSignature = FAT_BOOT_SIGNATURE;
+  bootSector.bootSignature = FAT_BOOT_SIGNATURE;
 
+  // Test FATFilesystem
+  FATFilesystem fs(std::make_shared<MockFATReader>(0, 512, bootSector));
 
-    // Test FATFilesystem
-    FATFilesystem fs(std::make_shared<MockFATReader>(0, 512, bootSector));
+  // Test getType
+  assert(fs.getType() == FilesystemType::FAT12);
 
-    // Test getType
-    assert(fs.getType() == FilesystemType::FAT12);
+  // Test getName
+  assert(fs.getName() == "FAT12");
 
-    // Test getName
-    assert(fs.getName() == "FAT12");
+  // Test getVersion
+  assert(fs.getVersion() == "");
 
-    // Test getVersion
-    assert(fs.getVersion() == "");
+  // Test supportsCapability
+  assert(fs.supportsCapability(FilesystemCapability::READ_SUPPORT) == true);
+  assert(fs.supportsCapability(FilesystemCapability::WRITE_SUPPORT) == false);
+  assert(fs.supportsCapability(FilesystemCapability::METADATA_SUPPORT) == true);
 
-    // Test supportsCapability
-    assert(fs.supportsCapability(FilesystemCapability::READ_SUPPORT) == true);
-    assert(fs.supportsCapability(FilesystemCapability::WRITE_SUPPORT) == false);
-    assert(fs.supportsCapability(FilesystemCapability::METADATA_SUPPORT) == true);
+  // Test getCapabilities
+  FilesystemCapabilities caps = fs.getCapabilities();
+  assert((caps & static_cast<FilesystemCapabilities>(
+                     FilesystemCapability::READ_SUPPORT)) != 0);
+  assert((caps & static_cast<FilesystemCapabilities>(
+                     FilesystemCapability::METADATA_SUPPORT)) != 0);
+  assert((caps & static_cast<FilesystemCapabilities>(
+                     FilesystemCapability::WRITE_SUPPORT)) == 0);
 
-    // Test getCapabilities
-    FilesystemCapabilities caps = fs.getCapabilities();
-    assert((caps & FilesystemCapability::READ_SUPPORT) != 0);
-    assert((caps & FilesystemCapability::METADATA_SUPPORT) != 0);
-    assert((caps & FilesystemCapability::WRITE_SUPPORT) == 0);
+  // Test createReader
+  auto fsReader = fs.createReader();
+  assert(fsReader != nullptr);
 
-    // Test createReader
-    auto fsReader = fs.createReader();
-    assert(fsReader != nullptr);
+  // Test createAnalyzer
+  auto fsAnalyzer = fs.createAnalyzer();
+  assert(fsAnalyzer != nullptr);
 
-    // Test createAnalyzer
-    auto fsAnalyzer = fs.createAnalyzer();
-    assert(fsAnalyzer != nullptr);
+  // Test getMetadata
+  auto metadataOwner = fs.getMetadata();
+  auto *fsMetadata = dynamic_cast<FATMetadata *>(metadataOwner.get());
+  assert(fsMetadata != nullptr);
+  assert(fsMetadata->getType() == FilesystemType::FAT12);
+  assert(fsMetadata->getName() == "FAT12");
+  assert(fsMetadata->getBytesPerSector() == 512);
+  assert(fsMetadata->getSectorsPerCluster() == 1);
+  assert(fsMetadata->getReservedSectorCount() == 1);
+  assert(fsMetadata->getFatCount() == 2);
+  assert(fsMetadata->getRootEntryCount() == 224);
 
-    // Test getMetadata
-    auto fsMetadata = fs.getMetadata();
-    assert(fsMetadata != nullptr);
-    assert(fsMetadata->getType() == FilesystemType::FAT12);
-    assert(fsMetadata->getName() == "FAT12");
-    assert(fsMetadata->getBytesPerSector() == 512);
-    assert(fsMetadata->getSectorsPerCluster() == 1);
-    assert(fsMetadata->getReservedSectorCount() == 1);
-    assert(fsMetadata->getFatCount() == 2);
-    assert(fsMetadata->getRootEntryCount() == 224);
+  // Test getVolume
+  auto fsVolume = fs.getVolume();
+  assert(fsVolume != nullptr);
+  assert(fsVolume->getFilesystemType() == FilesystemType::FAT12);
+  assert(fsVolume->isValid());
+  expect_rejected<std::logic_error>([&] { fsVolume->isBootable(); });
+  expect_rejected<std::logic_error>([&] { fsVolume->isActive(); });
+  expect_rejected<std::logic_error>([&] { fsVolume->isHidden(); });
+  expect_rejected<std::logic_error>([&] { fsVolume->getPartitionType(); });
+  expect_rejected<std::logic_error>([&] { fsMetadata->getFreeSpace(); });
+  expect_rejected<std::logic_error>([&] { fsMetadata->getUsedSpace(); });
+  expect_rejected<std::logic_error>([&] { fsMetadata->getFreeBlockCount(); });
+  expect_rejected<std::logic_error>([&] { fsMetadata->isMounted(); });
+  expect_rejected<std::logic_error>([&] { fsAnalyzer->analyze(*fsReader); });
+  expect_rejected<std::logic_error>([&] { fsAnalyzer->needsRepair(); });
+  expect_rejected<std::logic_error>([&] { fsAnalyzer->getErrorCount(); });
 
-    // Test getVolume
-    auto fsVolume = fs.getVolume();
-    assert(fsVolume != nullptr);
-    assert(fsVolume->getFilesystemType() == FilesystemType::FAT12);
-    assert(fsVolume->isBootable() == true);
-
-    std::cout << "[PASS] FAT12 boot sector test passed" << std::endl;
+  std::cout << "[PASS] FAT12 boot sector test passed" << std::endl;
 }
 
 void test_fat16_boot_sector() {
-    // Create a mock FAT16 boot sector
-    FATBootSectorCommon bootSector = {};
-    bootSector.jumpInstruction[0] = 0xEB;
-    bootSector.jumpInstruction[1] = 0x3C;
-    bootSector.jumpInstruction[2] = 0x90;
-    std::memcpy(bootSector.oemName, "MSWIN4.1", 8);
+  // Create a mock FAT16 boot sector
+  FATBootSectorCommon bootSector = {};
+  bootSector.jumpInstruction[0] = 0xEB;
+  bootSector.jumpInstruction[1] = 0x3C;
+  bootSector.jumpInstruction[2] = 0x90;
+  std::memcpy(bootSector.oemName, "MSWIN4.1", 8);
 
-    bootSector.bytesPerSector = 512;
-    bootSector.sectorsPerCluster = 4;
-    bootSector.reservedSectorCount = 32;
-    bootSector.fatCount = 2;
-    bootSector.rootEntryCount = 512;
-    bootSector.totalSectors16 = 65535; // Max value for 16-bit
-    bootSector.mediaType = 0xF8;
-    bootSector.sectorsPerFat16 = 16384;
-    bootSector.sectorsPerTrack = 63;
-    bootSector.headCount = 255;
-    bootSector.hiddenSectors = 0;
-    bootSector.totalSectors32 = 0;
+  bootSector.bytesPerSector = 512;
+  bootSector.sectorsPerCluster = 4;
+  bootSector.reservedSectorCount = 32;
+  bootSector.fatCount = 2;
+  bootSector.rootEntryCount = 512;
+  bootSector.totalSectors16 = 65535; // Max value for 16-bit
+  bootSector.mediaType = 0xF8;
+  bootSector.sectorsPerFat16 = 16384;
+  bootSector.sectorsPerTrack = 63;
+  bootSector.headCount = 255;
+  bootSector.hiddenSectors = 0;
+  bootSector.totalSectors32 = 0;
 
-    // FAT16 extended BPB
-    bootSector.fat16.driveNumber = 0x80;
-    bootSector.fat16.reserved1 = 0;
-    bootSector.fat16.bootSignature = 0x29;
-    bootSector.fat16.volumeID = 0x12345678;
-    std::memcpy(bootSector.fat16.volumeLabel, "NO NAME    ", 11);
-    std::memcpy(bootSector.fat16.fatTypeLabel, "FAT16   ", 8);
+  // FAT16 extended BPB
+  bootSector.fat16.driveNumber = 0x80;
+  bootSector.fat16.reserved1 = 0;
+  bootSector.fat16.bootSignature = 0x29;
+  bootSector.fat16.volumeID = 0x12345678;
+  std::memcpy(bootSector.fat16.volumeLabel, "NO NAME    ", 11);
+  std::memcpy(bootSector.fat16.fatTypeLabel, "FAT16   ", 8);
 
-    bootSector.bootSignature = FAT_BOOT_SIGNATURE;
+  bootSector.bootSignature = FAT_BOOT_SIGNATURE;
 
+  // Test FATFilesystem
+  FATFilesystem fs(std::make_shared<MockFATReader>(0, 512, bootSector));
 
-    // Test FATFilesystem
-    FATFilesystem fs(std::make_shared<MockFATReader>(0, 512, bootSector));
+  // Test getType
+  assert(fs.getType() == FilesystemType::FAT16);
 
-    // Test getType
-    assert(fs.getType() == FilesystemType::FAT16);
+  // Test getName
+  assert(fs.getName() == "FAT16");
 
-    // Test getName
-    assert(fs.getName() == "FAT16");
-
-    std::cout << "[PASS] FAT16 boot sector test passed" << std::endl;
+  std::cout << "[PASS] FAT16 boot sector test passed" << std::endl;
 }
 
 void test_fat32_boot_sector() {
-    // Create a mock FAT32 boot sector
-    FATBootSectorCommon bootSector = {};
-    bootSector.jumpInstruction[0] = 0xEB;
-    bootSector.jumpInstruction[1] = 0x58;
-    bootSector.jumpInstruction[2] = 0x90;
-    std::memcpy(bootSector.oemName, "MSWIN4.1", 8);
+  // Create a mock FAT32 boot sector
+  FATBootSectorCommon bootSector = {};
+  bootSector.jumpInstruction[0] = 0xEB;
+  bootSector.jumpInstruction[1] = 0x58;
+  bootSector.jumpInstruction[2] = 0x90;
+  std::memcpy(bootSector.oemName, "MSWIN4.1", 8);
 
-    bootSector.bytesPerSector = 512;
-    bootSector.sectorsPerCluster = 8;
-    bootSector.reservedSectorCount = 32;
-    bootSector.fatCount = 2;
-    bootSector.rootEntryCount = 0; // For FAT32, root entry count is 0
-    bootSector.totalSectors16 = 0; // For FAT32, this is 0
-    bootSector.mediaType = 0xF8;
-    bootSector.sectorsPerFat16 = 0; // For FAT32, this is 0
-    bootSector.sectorsPerTrack = 63;
-    bootSector.headCount = 255;
-    bootSector.hiddenSectors = 0;
-    bootSector.totalSectors32 = 2048000; // ~1 GB
+  bootSector.bytesPerSector = 512;
+  bootSector.sectorsPerCluster = 8;
+  bootSector.reservedSectorCount = 32;
+  bootSector.fatCount = 2;
+  bootSector.rootEntryCount = 0; // For FAT32, root entry count is 0
+  bootSector.totalSectors16 = 0; // For FAT32, this is 0
+  bootSector.mediaType = 0xF8;
+  bootSector.sectorsPerFat16 = 0; // For FAT32, this is 0
+  bootSector.sectorsPerTrack = 63;
+  bootSector.headCount = 255;
+  bootSector.hiddenSectors = 0;
+  bootSector.totalSectors32 = 2048000; // ~1 GB
 
-    // FAT32 extended BPB
-    bootSector.fat32.sectorsPerFat32 = 8192;
-    bootSector.fat32.extFlags = 0;
-    bootSector.fat32.fsVersion = 0;
-    bootSector.fat32.rootCluster = 2;
-    bootSector.fat32.fsInfoSector = 1;
-    bootSector.fat32.backupBootSector = 6;
-    std::memcpy(bootSector.fat32.reserved2, "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00", 12);
-    bootSector.fat32.driveNumber = 0x80;
-    bootSector.fat32.reserved3 = 0;
-    bootSector.fat32.bootSignature = 0x29;
-    bootSector.fat32.volumeID = 0x12345678;
-    std::memcpy(bootSector.fat32.volumeLabel, "NO NAME    ", 11);
-    std::memcpy(bootSector.fat32.fatTypeLabel, "FAT32   ", 8);
+  // FAT32 extended BPB
+  bootSector.fat32.sectorsPerFat32 = 8192;
+  bootSector.fat32.extFlags = 0;
+  bootSector.fat32.fsVersion = 0;
+  bootSector.fat32.rootCluster = 2;
+  bootSector.fat32.fsInfoSector = 1;
+  bootSector.fat32.backupBootSector = 6;
+  std::memcpy(bootSector.fat32.reserved2,
+              "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00", 12);
+  bootSector.fat32.driveNumber = 0x80;
+  bootSector.fat32.reserved3 = 0;
+  bootSector.fat32.bootSignature = 0x29;
+  bootSector.fat32.volumeID = 0x12345678;
+  std::memcpy(bootSector.fat32.volumeLabel, "NO NAME    ", 11);
+  std::memcpy(bootSector.fat32.fatTypeLabel, "FAT32   ", 8);
 
-    bootSector.bootSignature = FAT_BOOT_SIGNATURE;
+  bootSector.bootSignature = FAT_BOOT_SIGNATURE;
 
+  // Test FATFilesystem
+  FATFilesystem fs(std::make_shared<MockFATReader>(0, 512, bootSector));
 
-    // Test FATFilesystem
-    FATFilesystem fs(std::make_shared<MockFATReader>(0, 512, bootSector));
+  // Test getType
+  assert(fs.getType() == FilesystemType::FAT32);
 
-    // Test getType
-    assert(fs.getType() == FilesystemType::FAT32);
+  // Test getName
+  assert(fs.getName() == "FAT32");
+  assert(fs.getMetadata()->getType() == FilesystemType::FAT32);
+  assert(fs.getVolume()->getFilesystemType() == FilesystemType::FAT32);
+  assert(fs.getVolume()->isValid());
 
-    // Test getName
-    assert(fs.getName() == "FAT32");
+  bootSector.fat32.rootCluster = 1;
+  FATVolume invalid(0, 512, bootSector);
+  assert(!invalid.isValid());
 
-    std::cout << "[PASS] FAT32 boot sector test passed" << std::endl;
+  std::cout << "[PASS] FAT32 boot sector test passed" << std::endl;
+}
+
+void test_fat_geometry_faults_and_4k_reads() {
+  FATBootSectorCommon boot{};
+  boot.bootSignature = FAT_BOOT_SIGNATURE;
+  boot.bytesPerSector = 4096;
+  boot.sectorsPerCluster = 1;
+  boot.reservedSectorCount = 1;
+  boot.fatCount = 2;
+  boot.rootEntryCount = 224;
+  boot.totalSectors16 = 2880;
+  boot.sectorsPerFat16 = 9;
+  auto reader = std::make_shared<MockFATReader>(4096, 4096, boot);
+  FATFilesystem fs(reader);
+  assert(fs.getType() == FilesystemType::FAT12);
+  assert(fs.getMetadata()->getTotalSize() == uint64_t{2880} * 4096);
+  assert(fs.getVolume()->getEndOffset() == uint64_t{2881} * 4096 - 1);
+  assert(fs.getVolume()->isValid());
+  reader->readLimit = 511;
+  expect_rejected<std::runtime_error>([&] {
+    FATFilesystem bad(reader);
+    bad.getType();
+  });
+  expect_rejected<std::runtime_error>([&] { FATMetadata bad(*reader); });
+  expect_rejected<std::invalid_argument>([] {
+    FATFilesystem bad(
+        std::shared_ptr<recoverysuite::filesystem::FilesystemReader>{});
+  });
+  expect_rejected<std::invalid_argument>([] { FATFilesystem bad(0, 8192); });
+  FATVolume overflow(std::numeric_limits<uint64_t>::max() - 5, 4096, boot);
+  assert(!overflow.isValid());
+  expect_rejected<std::runtime_error>([&] { overflow.getEndOffset(); });
+  for (int fault = 0; fault < 8; ++fault) {
+    auto bad = boot;
+    switch (fault) {
+    case 0:
+      bad.bytesPerSector = 0;
+      break;
+    case 1:
+      bad.sectorsPerCluster = 0;
+      break;
+    case 2:
+      bad.sectorsPerCluster = 3;
+      break;
+    case 3:
+      bad.totalSectors16 = 1;
+      break;
+    case 4:
+      bad.fatCount = 0;
+      break;
+    case 5:
+      bad.sectorsPerFat16 = 1;
+      bad.totalSectors16 = 65535;
+      break;
+    case 6:
+      bad.bootSignature = 0;
+      break;
+    case 7:
+      bad.bytesPerSector = 512;
+      break;
+    }
+    auto source = std::make_shared<MockFATReader>(0, 4096, bad);
+    expect_rejected<std::runtime_error>([&] {
+      FATFilesystem invalid(source);
+      invalid.getType();
+    });
+    expect_rejected<std::runtime_error>([&] { FATMetadata invalid(*source); });
+    assert(!FATVolume(0, 4096, bad).isValid());
+  }
+  // One FAT must be included in the type calculation just like two FATs.
+  boot.bytesPerSector = 512;
+  boot.fatCount = 1;
+  boot.sectorsPerFat16 = 32;
+  boot.totalSectors16 = 4110;
+  auto single = std::make_shared<MockFATReader>(0, 512, boot);
+  assert(FATFilesystem(single).getType() == FilesystemType::FAT12);
+  assert(FATMetadata(*single).getType() == FilesystemType::FAT12);
+  assert(FATVolume(0, 512, boot).getFilesystemType() == FilesystemType::FAT12);
 }
 
 int main() {
-    std::cout << "Testing RecoverySuite FAT Filesystem Module..." << std::endl;
+  std::cout << "Testing RecoverySuite FAT Filesystem Module..." << std::endl;
 
-    try {
-        test_fat12_boot_sector();
-        test_fat16_boot_sector();
-        test_fat32_boot_sector();
+  try {
+    test_fat12_boot_sector();
+    test_fat16_boot_sector();
+    test_fat32_boot_sector();
+    test_fat_geometry_faults_and_4k_reads();
 
-        std::cout << "All FAT filesystem tests passed!" << std::endl;
-        return 0;
-    } catch (const std::exception& e) {
-        std::cerr << "Test failed with exception: " << e.what() << std::endl;
-        return 1;
-    }
+    std::cout << "All FAT filesystem tests passed!" << std::endl;
+    return 0;
+  } catch (const std::exception &e) {
+    std::cerr << "Test failed with exception: " << e.what() << std::endl;
+    return 1;
+  }
 }

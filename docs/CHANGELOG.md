@@ -1,3 +1,134 @@
+# 2026-10-31 — NTFS tree/checking and deleted candidates
+
+Added NTFS directory paths with sequence/depth/cycle checks, checked allocation/index recovery,
+resident/nonresident user-file attribute-list extensions and bounded 64 KiB streaming for files
+up to 2 GiB. Added 128 MiB initialized-MFT option; existing compatibility modes retain earlier limits.
+Validate resident indexes and INDX children, allocation bitmaps, extension references and VCN coverage.
+
+Added GUI/CLI NTFS deleted candidates from retained unused records with free nonresident clusters,
+and FAT12/16/32 candidates inferred from contiguous free clusters in deleted short entries. Reserve
+live/metadata extents, reject reused clusters, preserve output/no-overwrite/cancellation guarantees,
+and display uncertainty. Lost FAT names, arbitrary deleted fragmentation, MFT bootstrap/nested lists,
+sparse/compressed/encrypted streams and full filesystem repair remain unsupported.
+
+# 2026-10-31 — NTFS nonresident root-file recovery
+
+Extended GUI/CLI image ntfs-files to bounded nonresident unnamed DATA from in-use root files.
+Share mapping-pairs validation with the MFT reader; support fragmented/backward runs, exact logical
+length and zero-filled uninitialized tails. Reject malformed/out-of-volume/self-overlapping runs,
+MFT/prior-file overlaps, incomplete extensions and failed payload reads before exporting that file.
+Keep resident-only API compatibility and existing safe output/cancellation behavior. Limits: 16 MiB
+per file, 4096 runs/file and 65536 tracked extents. No allocation/index validation, directory traversal,
+deleted recovery, attribute-list extensions, sparse/compressed/encrypted streams or ADS export.
+Added GUI/CLI byte-equality, malformed-run, short/oversized/failed-read and cancellation regressions.
+
+# 2026-10-31 — Honest legacy NTFS boot inspection
+
+Corrected packed NTFS wire layouts and 64-bit boot fields with compile-time offset/size checks.
+Legacy metadata, volume and probe paths now use bounded byte-wise reads instead of raw casts.
+Report full serial/declared size/cluster geometry, validate reader bounds and avoid end-offset overflow.
+Removed the fixed version, fake consistency/repair/corruption results and fabricated free/used metrics;
+unexamined numeric/boolean properties throw explicit unavailable errors. Fixed the analyzer base-header
+include collision exposed when importing legacy and recovery APIs together. New regression coverage
+uses high 64-bit geometry/serials, short reads, malformed OEM IDs, unsupported metrics and bounds.
+
+# 2026-10-31 — NTFS resident root-file recovery
+
+Added GUI/CLI image ntfs-files for unnamed resident DATA from in-use base FILE records. Check
+root-parent sequence references, attribute/value bounds, Unicode names, unsupported file flags
+and duplicate streams. Preserve empty files and restored data across USA strides. Skip non-root,
+directory, extension and unused records; report unsupported/nonresident root files as partial.
+Share the bounded UTF-16 filename decoder with FAT and the attribute walker with MFT snapshots.
+No allocation-bitmap/index validation, nonresident/deleted/recursive recovery or ADS export.
+
+# 2026-10-31 — Bounded NTFS MFT snapshots
+
+Added GUI/CLI image mft exports of the actual NTFS boot sector and initialized MFT stream.
+Validate 64-bit geometry, bootstrap attributes, mapping pairs (including backward/fragmented
+extents), overlapping runs, FILE header bounds and 512-byte update-sequence fixups. Preserve raw
+output bytes and stop before export on unsupported/corrupt metadata. New NTFS integration suite
+covers GUI/CLI output, corruption, large offsets, cancellation, read failures and partial output.
+User-file reconstruction, attribute-list extensions and mirror fallback remain unsupported.
+
+# 2026-10-31 — Bounded recursive FAT recovery
+
+Added GUI files-with-subfolders and CLI image tree for allocated FAT12/16/32 directories/files,
+including fragmented directory chains and validated Unicode names. All discovered directory chains
+are reserved before file payload reads. Bound depth, directory count/read bytes, path length and
+file sizes/count; replace the global cluster set with a bounded bitmap. POSIX hierarchical output
+rejects symlinks/traversal, creates private folders and files, and preserves existing files.
+Empty folders, original metadata, deleted chains and NTFS remain unsupported.
+
+# 2026-10-31 — Reject directory/file cross-links
+
+Fixed root-file recovery exporting directory clusters as file data when the directory entry appeared
+later in the root. Reserve child-directory chains before file reads; added first-cluster and tail
+cross-link regression images. Debug/Release: 27/27; targeted ASan/UBSan: 3/3.
+
+# 2026-10-31 — Validated FAT long filenames
+
+FAT12/16/32 root-file recovery now uses Unicode LFN names after validating ordinal order, checksum,
+entry metadata, terminators/padding and UTF-16. Unsafe/malformed/overlong names fall back to ASCII
+8.3 aliases and are counted in results. File creation remains exclusive; collisions never rename or
+overwrite previous outputs. Added synthetic Unicode, record/cluster-boundary and corruption cases.
+
+# 2026-10-31 — Allocated FAT32 root-file recovery
+
+Extended GUI/CLI/legacy root-file recovery to FAT32: fragmented root chains, 28-bit FAT values,
+full directory first-cluster fields, active-FAT selection when mirroring is disabled, and masked
+comparison of mirrored cluster values. Root chains are bounded to 16 MiB and reserved against file
+cross-links. Invalid root geometry/chains and unsupported FAT32 versions fail before output.
+Added synthetic FAT32 fixtures covering fragmented high-numbered file clusters, dirty flags,
+reserved FAT bits, active/mirrored copies, corruption and cancellation. Metadata snapshot mode
+still exports boot/FAT regions only for FAT32; NTFS, deleted chains and recursive recovery remain open.
+
+# 2026-10-31 — Allocated FAT12/16 root-file recovery
+
+Added actual root-file copying with ASCII 8.3 aliases, fragmented allocated chains, zero-byte files,
+FAT mirror validation, chain/name/resource checks and cancellation. Integrated GUI/CLI export and
+legacy buffered recovery. Added FAT12/4 KiB FAT16 fixtures, dirty flags, corruption/cross-link tests,
+GUI/CLI execution, no-overwrite and source preservation. Deleted entries and subdirectories remain
+outside this mode.
+
+# 2026-10-30 — Honest image boot-sector analysis
+
+Added CLI image analyze with validated boot-sector reads and explicit unknown metrics. Removed
+unaligned reads, fake version/free-space defaults and unintended full-metadata traversal; report
+declared geometry warnings and sanitize boot labels for terminal output. Fixed source binding and
+GUI service field conversion. NTFS boot layout reference:
+https://github.com/torvalds/linux/blob/master/fs/ntfs3/ntfs.h
+
+# 2026-10-30 — Real FAT snapshots and shared carving
+
+Added safe GUI/CLI export of actual FAT boot sectors, FAT copies and FAT12/16 root entries. Removed
+manufactured file/FAT/MFT contents. Fixed selected-range and byte-offset handling, bounded metadata
+reads, short-read rejection and output inode replacement detection. Unified legacy carving with
+the streaming scanner, exact absolute offsets and bounded buffered results. Added FAT12/16/32,
+unaligned/4 KiB-sector, GUI/CLI, cancellation, short-read and stable-offset regressions.
+
+Format reference: Microsoft FAT Specification, sections 3 and 6.6:
+https://academy.cba.mit.edu/classes/networking_communications/SD/FAT.pdf
+
+# 2026-10-30 — CLI image export
+
+Added read-only image info/carve commands, verified filesystem export, strict flags, meaningful exit
+codes and cooperative Ctrl+C/SIGTERM cancellation. Removed misleading physical-recovery completion
+without saved output and fixed physical reader double ownership in analysis. Added subprocess tests.
+
+# 2026-10-30 — Read-only image recovery and safe export
+
+Added a real GUI source-to-output workflow for regular raw images, bounded streaming JPEG/PDF/ZIP
+signature candidates, validated configuration and POSIX no-overwrite export with readback verification.
+Progress/cancellation reaches scan/export loops; partial failures and completed outputs remain visible.
+Added source/path/range/boundary/cancellation/GUI regressions: 24 CTest executables pass in Debug/Release,
+and the image suite passes ASan/UBSan locally. Windows export and legacy recovery remain incomplete.
+
+# 2026-10-30 — Recovery-results handoff
+
+Completed the unfinished results view; repaired build/test registration and worker lifecycle;
+removed fabricated GUI recovery metrics; fixed boot-sector and partition parser validation;
+added assertion-enabled Debug/Release Linux CI. See SESSION_STATE.md for validation and limitations.
+
 # RecoverySuite Changelog
 
 All notable changes to this project will be documented in this file.

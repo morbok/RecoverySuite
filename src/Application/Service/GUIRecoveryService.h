@@ -8,6 +8,10 @@
 #include <cstdint>
 #include <functional>
 #include <chrono>
+#include <mutex>
+#include "Disk/Access/disk_image_reader.h"
+#include "Disk/Access/read_only_device.h"
+#include "Recovery/disk_scan.h"
 #include "Models/GUIModels.h"
 #include "RecoveryService.h"
 
@@ -39,6 +43,27 @@ public:
      * @brief Destructor
      */
     ~GUIRecoveryService();
+
+    /** Open a regular disk image read-only, retaining the previous source on failure.
+     * Source changes are rejected while executeOperation is active.
+     */
+    models::StorageDevice openImage(const std::string& path, uint32_t sectorSize = 512);
+    models::StorageDevice openDevice(const std::string& path, int authorizedDescriptor = -1);
+    /** Read a bounded prefix (default 64 KiB, maximum 16 MiB); no files written.
+     * Call off the GUI thread. Cancellation also stops discovery replay.
+     */
+    std::vector<uint8_t> previewCandidate(const std::string& name,
+        const std::function<bool()>& cancelled = {}, size_t byteLimit = 65536);
+    models::RecoveryResult rescueToImage(const std::string& path, const std::function<void(uint64_t)>& progress = {}, const std::function<bool()>& cancelled = {}, bool resume = false);
+    void saveScan(const std::string& path, const std::function<bool()>& cancelled = {});
+    models::RecoveryResult loadScan(const std::string& path, const std::function<bool()>& cancelled = {});
+    bool sourceIsPhysical() const { return bool(deviceReader_); }
+    /** Return an empty string if valid, otherwise a user-facing validation error. No output is written. */
+    std::string validateOperation(const models::RecoveryOperation& operation) const;
+    /** Stream signature carving into exclusively created output files. Runs synchronously on caller's thread. */
+    models::RecoveryResult executeOperation(const models::RecoveryOperation& operation,
+        std::function<void(const models::RecoveryProgress&)> progressCallback = {},
+        std::function<bool()> cancellationToken = {});
 
     /**
      * @brief Enumerate all available storage devices
@@ -131,6 +156,25 @@ public:
     recoverysuite::disk::DeviceInformation getDiskInfo(const std::string& devicePath) const;
 
 private:
+    std::shared_ptr<disk::DiskImageReader> imageReader_;
+    std::shared_ptr<disk::ReadOnlyDevice> deviceReader_;
+    std::shared_ptr<disk::IDiskReader> sourceReader_;
+    std::string sourcePath_;
+    std::vector<recovery::FoundVolume> scanVolumes_;
+    std::map<std::string, uint64_t> scanCatalog_;
+    bool scanValid_{};
+    recovery::DiskScanCheckpoint scanCheckpoint_;
+    bool scanDeepSearch_{true};
+    std::string scanFingerprint_;
+    models::RecoveryResult savedScan_;
+    static std::string fingerprintSource(disk::IDiskReader& source,
+        const std::function<bool()>& cancelled);
+    models::RecoveryResult executeDiskOperation(const models::RecoveryOperation& operation,
+        const std::function<void(const models::RecoveryProgress&)>& progress,
+        const std::function<bool()>& cancelled);
+    mutable std::mutex imageMutex_;
+    std::string validateImageOperation(const models::RecoveryOperation& operation) const;
+
     // The underlying recovery service
     std::unique_ptr<RecoveryService> recoveryService_;
 

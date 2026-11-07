@@ -1,0 +1,5 @@
+add_executable(fuzz_recovery_parsers fuzz_recovery_parsers.cpp)
+target_include_directories(fuzz_recovery_parsers PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(fuzz_recovery_parsers PRIVATE RecoverySuite_Recovery)
+target_compile_options(fuzz_recovery_parsers PRIVATE -fsanitize=fuzzer,address,undefined)
+target_link_options(fuzz_recovery_parsers PRIVATE -fsanitize=fuzzer,address,undefined)

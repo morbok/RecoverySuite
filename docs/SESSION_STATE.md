@@ -1,136 +1,610 @@
-# RecoverySuite Session State
+# RecoverySuite session state
 
-This document tracks the current state of the RecoverySuite project and must be updated at the end of each development session.
+Updated: 2026-11-05
 
-## Current Phase
-**Recovery Logging, Diagnostics & Audit Trail** - Integrated logging system with Recovery operations to provide reliable diagnostic information without leaking sensitive data. [COMPLETED]
+## Checkpoint
 
-## Completed Work
-- [x] Repository initialized with basic structure
-- [x] README.md created with project title
-- [x] TEST.txt created as placeholder
-- [x] Architecture documentation completed:
-  - [x] Project structure (`docs/architecture/project_structure.md`)
-  - [x] Architecture review (`docs/architecture/architecture_review.md`)
-  - [x] High-performance scanning engine design (`docs/architecture/scanning_engine_design.md`)
-  - [x] Modern forensic GUI design (`docs/architecture/gui_design.md`)
-  - [x] Enterprise hex editor design (`docs/architecture/hex_editor_design.md`)
-  - [x] Recovery pipeline design (`docs/architecture/recovery_pipeline_design.md`)
-  - [x] SSD analysis subsystem design (`docs/architecture/ssd_analysis_design.md`)
-- [x] Project audit completed (`docs/PROJECT_AUDIT.md`)
-- [x] Development rules established (`docs/DEVELOPMENT_RULES.md`)
-- [x] External repository contamination removed (OmniRoute cloned by mistake and removed)
-- [x] Git history cleaned to only show RecoverySuite initialization
-- [x] Build system configured (CMake with C++20 support)
-- [x] Directory structure established (src/, include/, tests/, etc.)
-- [x] Basic CLI executable created to verify build system
-- [x] Basic test framework established
-- [x] Disk Layer foundation interfaces implemented:
-  - [x] Disk exception handling framework
-  - [x] Device information structures (DiskGeometry, DiskInfo)
-  - [x] Disk enumerator interface (IDiskEnumerator)
-  - [x] Disk reader interface (IDiskReader)
-  - [x] Disk device interface (IDiskDevice)
-  - [x] Disk manager class
-  - [x] Physical disk access abstraction (Windows-specific implementation with validation and error handling)
-  - [x] Windows platform-specific disk enumerator implementation
-  - [x] Unit tests for disk module interface (basic tests implemented, validation tests added)
-- [x] Storage Intelligence Subsystem - Not implemented (skipped as per user direction to proceed to Partition after Disk)
-- [x] Partition module foundation (MBR) implemented:
-  - [x] Partition exception handling framework (PartitionException.hpp)
-  - [x] MBR header structure (MBRHeader.hpp)
-  - [x] MBR partition entry parser (MBRPartitionEntry.hpp)
-  - [x] Partition table wrapper (PartitionTable.hpp)
-  - [x] Partition geometry model (PartitionGeometry.hpp)
-  - [x] MBR parser interface (MBParser.hpp) and implementation (MBParser.cpp)
-  - [x] Partition validator interface (PartitionValidator.hpp) and implementation (PartitionValidator.cpp)
-  - [x] Partition manager interface (PartitionManager.hpp) and implementation (PartitionManager.cpp)
-  - [x] Updated CMakeLists.txt to build Partition module
-  - [x] Unit tests for Partition module (tests/test_partition_mbr.cpp) with test cases for valid MBR, invalid signature, empty partition table, overlapping partitions, and edge cases
-  - [x] **Fixed MBR partition type offset (was showing 2 instead of 7 for NTFS)**
-- [x] Partition module foundation (GPT) implemented:
-  - [x] GPT header structure (GPTHeader.hpp)
-  - [x] GPT partition entry structure (GPTPartitionEntry.hpp)
-  - [x] GPT partition table structure (GPTPartitionTable.hpp)
-  - [x] GPT parser interface (GPTParser.hpp) and implementation (GPTParser.cpp)
-  - [x] GPT validator interface (GPTValidator.hpp) and implementation (GPTValidator.cpp)
-  - [x] Updated CMakeLists.txt to build Partition module with GPT components
-  - [x] Unit tests for GPT module (tests/test_gpt.cpp) with test cases for valid GPT, corrupted header, invalid CRC, etc.
-- [x] FAT boot sector foundation (Phase 7A) - implemented FAT12/FAT16/FAT32 boot sector models, parser, volume representation, constants, validation, CMake integration, and comprehensive tests (excluding FAT table parsing, directory parsing, recovery, and disk writing as per scope).
-- [x] FAT table and cluster chain foundation (Phase 7B) - implemented FATEntry, FATClusterState, FATTable, FATTableParser, FATChainReader, and FATValidator classes with full read-only access to FAT12/FAT16/FAT32 table structures, cluster chain traversal, overflow safety, and validation capabilities.
-- [x] **Recovery capability and safety validation (Phase 9E) - implemented** RecoveryCapability, RecoveryCapabilityRegistry, RecoverySafetyPolicy, ValidationReport, and RecoveryOperationValidator classes with full support for filesystem detection, analysis, metadata recovery, file recovery, carving, and output/export capabilities, including safety precondition validation and detailed error reporting.
-- [x] **Basic filesystem detection capability - INTEGRATED** - implemented FilesystemDetector class that uses the recovery validation framework to detect FAT and NTFS filesystems on storage media with actual disk I/O through IDiskReader interface.
-- [x] **Filesystem analysis capability - INTEGRATED** - implemented FilesystemAnalyzer class that uses the recovery validation framework to analyze FAT and NTFS filesystems and extract detailed boot sector information with actual disk I/O.
-- [x] **Metadata recovery capability - INTEGRATED** - implemented MetadataRecovery class that uses the recovery validation framework to recover FAT tables, NTFS MFT, and other filesystem metadata structures with actual disk I/O.
-- [x] **File recovery capability - INTEGRATED** - implemented FileRecovery class that uses the recovery validation framework to recover files from FAT and NTFS filesystems by parsing directory structures and following cluster chains with actual disk I/O.
-- [x] **Carving capability - INTEGRATED** - implemented CarvingEngine class that uses the recovery validation framework to perform signature-based file carving for JPEG, PDF, and ZIP files with actual disk I/O.
-- [x] **Output/export capability - INTEGRATED** - implemented OutputExporter class that uses the recovery validation framework to export recovered data to output storage with actual disk I/O.
-- [x] **CLI Recovery Workflow Integration (PHASE 11B) - COMPLETED** - implemented CLI handler for recovery operations integrated with RecoveryService layer, providing safe workflows for listing storage sources, inspecting partitions, detecting filesystem type, analyzing sources, validating/recovery operations, selecting capabilities/output destinations, starting/cancelling operations, displaying progress/errors/completion status. Includes comprehensive test coverage using synthetic data only.
-- [x] **Added missing test files to repository:**
-  - [x] tests/test_basic.cpp
-  - [x] tests/test_disk.cpp
-  - [x] tests/test_storage.cpp
-  - [x] tests/test_gpt.cpp
-  - [x] **Recovery Logging, Diagnostics & Audit Trail (PHASE 11C) - COMPLETED** - Integrated logging system with Recovery operations to provide reliable diagnostic information without leaking sensitive data. Implemented thread-safe singleton Logger class with DEBUG, INFO, WARN, ERROR levels. Integrated logging with RecoveryService and CLIHandler components. Logged meaningful lifecycle events and useful diagnostic context while ensuring sensitive disk information is not unnecessarily exposed. Verified logging does not materially degrade recovery performance and that failures remain diagnosable even when exceptions occur. Added tests verifying important Recovery events are logged. Verified logging behavior for success/failure/cancellation/validation rejection.
+Resumed Claude's Phase 15A work at `c8475ee`, restored the results interface, repaired Qt/build/test
+integration and partition/input validation, and added Linux Debug/Release CI. Original local work
+was backed up outside the repository before edits; unintended executable bits were normalized.
 
-## Repository Health
-**Status: Healthy**
-- Clean repository with only RecoverySuite-specific files
-- Build system configured with CMake (C++20 support)
-- Source code implemented for Disk Layer interfaces and Windows-specific disk reader/device with validation and error handling
-- Source code implemented for Partition module foundation (MBR and GPT parsers, validators, managers)
-- Source code implemented for Recovery module with actual disk I/O integration
-- All documentation in place and up-to-date
-- No secrets, credentials, or temporary files committed
-- Build system configured and tested
-- **No test failures (all tests pass: BasicTest, DiskTest, StorageTest, MBR partition test, GPT partition test, FAT tests)**
-- Recovery module successfully integrated with Disk, Partition, FAT, and NTFS layers
+The next checkpoint implements the first usable image-to-output GUI flow. It does not complete
+the recovery product. README.md describes the supported workflow and MASTER_TODO.md tracks blockers.
 
-## Open Issues
-None - checkpoint reached.
+## Implemented
 
-## Next Recommended Task
-Recovery module integration and validation complete. Proceed to implement the next phase of the recovery subsystem or move on to other subsystem implementations.
+- Read-only regular image reader, sector-size/range limits and POSIX identity/size/mtime checks.
+- Actual image selection and operation configuration; no fake discovery or validation success dialog.
+- Bounded streaming JPEG/PDF/ZIP candidate carving, including nonzero start sectors and signatures
+  split across read boundaries. Missing end markers and candidates above 16 MiB are reported.
+- POSIX directory-anchored, no-overwrite export; traversal/symlink/name rejection, readback verification,
+  partial-write cleanup, per-output failures and preservation of completed files after cancellation.
+- Worker-thread execution uses the exact configured operation; progress/cancellation reaches scan and
+  export loops. Source changes/concurrent operations are blocked and closing waits for worker cleanup.
+- Results show actual saved names, bytes, failures, cancellation and measured timing.
 
-## Specific subtasks:
-None.
+## Validation
 
-## Future Priorities
-1. Volume Discovery & Mount Analysis (Phase 4A)
-2. Filesystem Foundation (Phase 5)
-3. NTFS Engine Foundation (Phase 6)
-4. Implement Core module with logging, configuration, and utilities
-5. Implement Storage Intelligence subsystem
-6. Implement Recovery module with advanced recovery capabilities (building on validated foundation)
-7. Implement GUI module with basic window framework
-8. Implement SSD module with basic detection capabilities
-9. Implement Plugin system infrastructure
-10. Implement CLI module
-11. Implement Database module for session persistence
-12. Implement Drivers module (Windows kernel-mode components)
+30 CTest executables pass locally in Debug and Release with assertions active. The image, FAT metadata,
+FAT file, NTFS, persistent-session and native-I/O integration suites also pass AddressSanitizer/UBSan. Tests cover source mutation, invalid ranges/destinations,
+symlinks/hardlinks/traversal, no-overwrite/partial output, cancellation, incomplete/oversized candidates,
+GUI clicks and closing during recovery. Source hashes and saved bytes are checked on synthetic images.
+GitHub Linux Debug and Release checks passed for code revision `7606815ff46a4aef9efe2423abbf80982a1e7a2b`
+(run `41153617015`), verified in the PR checks UI on 2026-10-31. Any newer head needs its own CI check
+before merge; code review remains outstanding. Earlier checkpoint CI notes below are historical.
 
-## Metrics
-- Lines of code: ~9500 (Disk Layer implementation with validation and error handling, Partition module foundation for MBR and GPT, FAT foundation including boot sector, table and cluster chain, Recovery module with integrated disk I/O)
-- Documentation files: 12 (README.md, TEST.txt, 6 architecture docs, PROJECT_AUDIT.md, DEVELOPMENT_RULES.md, SESSION_STATE.md, MASTER_TODO.md, CHANGELOG.md, HANDOFF.md, RECOVERY_LOG.md, plus 2 phase-specific docs)
-- Architecture completeness: 100% of planned designs completed
-- Repository cleanliness: 100% RecoverySuite-specific content
-- Build readiness: 100% (CMake configured, executable builds and tests pass)
-- Implementation readiness: 80% (Disk Layer foundation, Partition module foundation for MBR and GPT, FAT foundation, Recovery module with integrated disk I/O)
+## Limits and next work
 
-## Session Notes
-This session focused on Phase 10A - Recovery Integration & Dependency Validation. We integrated the Recovery module with the actual implemented Disk, Partition, FAT, and NTFS layers by:
-1. Adding proper dependencies to Recovery CMakeLists.txt
-2. Replacing all simulation TODOs with actual diskReader_->readSectors() calls
-3. Fixing IDiskReader interface mismatch (changed readSectors return type from uint64_t to bool)
-4. Implementing missing interface methods in PhysicalDisk
-5. Fixing variable shadowing and other implementation issues
-6. Updating test mocks to match the corrected interface
-7. Verifying the complete build and test suite passes
+GUI and CLI image workflows export signature candidates, FAT metadata, allocated FAT directory trees,
+initialized NTFS MFT snapshots and resident/nonresident NTFS root files. Fragmented FAT chains and MFT streams
+are supported within documented bounds. Checked NTFS mode now adds directory paths, bounded user-file attribute-list extensions, allocation/index
+cross-checks and streamed files up to 2 GiB; separate FAT/NTFS modes export deleted candidates with
+explicit uncertainty. MFT bootstrap/nested lists and broader damaged/deleted-chain inference remain work. Persistent
+image sessions, native read-only CLI acquisition and anchored Windows export are implemented;
+see current platform CI results below and RELEASE_QA.md for remaining hardware/release gates.
+The signature carver does not validate full file formats. Limits: 16 MiB/candidate, 10,000 attempted
+outputs, 64 KiB scan chunks. Windows synthetic CI is validated at the prototype baseline below; physical hardware remains unqualified.
 
-Accomplishments in this session:
-- Recovery module now performs actual disk I/O through the IDiskReader interface
-- All recovery capabilities (detection, analysis, metadata recovery, file recovery, carving, export) work with real disk layer implementations
-- Build system correctly links Recovery against Disk, Partition, and Filesystem libraries
-- All tests pass (6/6 tests passed)
-- No remaining errors from integration work
-- End-to-end integration verified through successful compilation and test execution
+Graphify 0.9.97 was installed as a local developer tool and Codex skill. The ignored graphify-out/
+contains the AST graph, report, HTML and query memory. Use scoped queries first and update after edits;
+inferred call edges require source verification. No new runtime dependency was added to the product.
+
+## CLI checkpoint
+
+Added image info/carve commands using the same read-only source, validated range and safe export as
+the GUI. Added foreground SIGINT/SIGTERM cancellation and meaningful exit codes. Removed legacy
+physical-recovery success claims without export, and fixed double ownership of physical disk readers
+in analysis. A real-process QtTest suite checks saved bytes, parser failures, no-overwrite and signals.
+
+## FAT snapshot and backend audit checkpoint
+
+Added verified FAT12/16/32 metadata snapshots to GUI and CLI, including nonzero volume offsets,
+512/1024/4096-byte sectors and no-overwrite export. Snapshot scope is explicit: boot/FAT copies plus
+FAT12/16 fixed root entries; no FAT32 root chain, NTFS MFT or metadata repair. Each region is capped
+at 16 MiB. Cancellation reaches each 64 KiB read and output loop.
+
+Removed manufactured README.TXT/BINARY.BIN/FAT/MFT contents from legacy recovery. Directory/cluster
+reconstruction now fails explicitly. Corrected contiguous-file and metadata byte extraction for
+actual sector sizes, unaligned offsets, selected-range containment, overflow and short/oversized reads.
+Legacy carving now shares the bounded streaming implementation and reports stable absolute offsets;
+its buffered APIs are capped at 64 MiB total and 10,000 items. Safe export checks final filename/inode
+identity and size before declaring completion.
+
+The 26-test suite includes actual FAT snapshots through GUI and CLI, source-byte equality, malformed
+regions, short reads, cancellation, exact carving offsets and output-file replacement regressions.
+
+Recovery components now own their safety-policy values, so default temporary policies cannot leave
+dangling references in validators. CLI signal interception applies to image export operations only.
+
+## Boot-sector analysis checkpoint
+
+Added CLI image analyze for read-only FAT/NTFS boot-field inspection, including nonzero volume starts.
+Replaced unaligned integer casts and unchecked initial reads with bounded byte extraction. Removed
+false free/used-space, version and label defaults; report explicit unknowns and declared-size warnings.
+Fixed GUI service conversion of the backend's actual field names, preserved raw reported properties,
+and rejected requests naming a different opened image. Tests cover source binding, exact serial/label
+fields, NTFS 64-bit size overflow, unknown metrics, short reads and CLI subprocess output.
+
+## 2026-10-31 — Allocated FAT12/16 root files
+
+Added a bounded FAT root-file reader shared by GUI file_recovery, CLI image files and the legacy
+FileRecovery buffer API. Follows actual allocated chains (including fragmentation), preserves ASCII
+8.3 aliases and zero-byte files, compares mirrored FATs, accepts FAT16 dirty/error flags, and rejects
+invalid geometry, unsafe names, loops, invalid cluster links, short/overlong and cross-linked root
+file chains. Cancellation reaches reads and writes; saved files survive later failures. Limits remain
+16 MiB/file, 10,000 items; legacy buffered files are capped at 64 MiB. Deleted entries, LFN records
+and subdirectories are skipped. FAT32/NTFS file reconstruction remains unsupported.
+
+27 registered CTest executables now include a real fragmented-chain fixture on FAT12 and 4 KiB FAT16,
+corruption cases, GUI/CLI output, no-overwrite, source preservation and cancellation.
+
+
+## 2026-10-31 — FAT32 allocated root-file checkpoint
+
+Extended the shared root-file reader to FAT32. It follows bounded fragmented root-directory
+chains, reserves directory clusters against file cross-links, combines directory high/low cluster
+words, masks reserved FAT nibbles, accepts dirty/error status flags, and honors active-FAT selection.
+Mirrored copies must agree on meaningful cluster values. Unknown versions, malformed geometry,
+root-chain corruption and invalid active indexes fail before output. ASCII 8.3 aliases remain the
+filename format; no recursive/deleted/NTFS recovery was added. FAT32 metadata snapshot behavior
+is unchanged (boot/FAT regions only).
+
+Validation: all 27 CTest executables passed in Debug and Release. Image, metadata snapshot and
+FAT-file suites passed ASan/UBSan with leak detection disabled for Qt. FAT32 fixtures cover a
+fragmented root, clusters above 65535, active second FAT, ignored high FAT bits, dirty flags,
+cycles, cross-links, copy mismatches, invalid versions/flags and cancellation. CLI export is exercised.
+Graphify AST update: 3695 nodes / 6468 edges; existing 20 source_file warnings concern config nodes.
+Remote CI remains unverified because browser access is unavailable and the connector needs an
+account connection. Do not merge until current CI and code review have been checked.
+
+
+## 2026-10-31 — Unicode FAT long-name checkpoint
+
+Added a bounded, dependency-free LFN decoder for FAT12/16/32 root files. It validates contiguous
+reverse ordinal sequences, entry fields, matching short-name checksums, terminators/padding and
+UTF-16 (including surrogate pairs). Invalid sequences, unsafe names and names exceeding 255 UTF-8
+bytes fall back to ASCII 8.3 aliases. Results expose the fallback count. State is reset across deleted
+entries, directories and volume labels so names cannot attach across unrelated records. Exclusive
+safe output creation and the existing chain/range limits remain in force. OEM short-name code-page
+reconstruction and recursive directories are still pending.
+
+Validation: 27/27 Debug and Release CTest executables; image, FAT metadata and FAT-file integration
+suites passed ASan/UBSan (Qt leak detection disabled). Fixtures cover Turkish/emoji names, surrogate
+pairs split across records, LFNs split across FAT32 root clusters, 13/255-unit boundaries, unsafe
+names, invalid Unicode, checksum/order/type/cluster/padding errors, interruptions and CLI export.
+Graphify AST update: 3716 nodes / 6512 edges; 20 existing config-node source_file warnings remain.
+Remote CI is unverified; current code review/CI is required before merge.
+
+
+## 2026-10-31 — Debug: directory/file cross-links
+
+A Debug baseline passed all 27 CTest targets. Two new corrupt-image regression cases then failed:
+a root file sharing the first or a later cluster of a child-directory chain was exported as successful.
+Root-file recovery now reserves known child-directory chains before any file export, regardless of
+entry order, without reading or exporting those subdirectories. Cyclic chains are bounded by the
+visited-cluster set and cancellation is checked throughout. Both new regressions pass; all 27 Debug
+and Release CTest targets and the image/metadata/FAT-file ASan+UBSan suites pass.
+
+
+## 2026-10-31 — Recursive FAT tree checkpoint
+
+Added optional GUI FAT files-with-subfolders and CLI image tree, with the same source/range/output
+checks and signal cancellation as other image exports. The shared FAT reader discovers allocated
+FAT12/16/32 directories, including fragmented chains and cross-cluster Unicode LFN records, before
+reading file payloads. Directory claims are reserved even when their names or sizes are invalid;
+claimed metadata cannot be exported as file data. Dot/parent links are ignored. A bounded bitmap
+tracks cluster ownership. Root-only mode and legacy buffered APIs remain root-only by default.
+
+POSIX tree export validates every path component, anchors traversal with directory handles,
+rejects symlinks/traversal and existing files, creates private directories (0700)/files (0600), and
+cleans incomplete files on failure or cancellation. Existing real directories can be reused.
+Empty directories and original timestamps/permissions are not reconstructed; cancellation/output
+failures may leave empty created folders. Limits: 32 directory levels, 1023 attempted subdirectories,
+16 MiB per directory, 64 MiB directory reads, 4095 path bytes, 255 component bytes, and existing
+16 MiB/file plus 10,000-file caps. Global item-limit failures abort discovery before export.
+
+Validation: all 27 CTest targets pass in Debug and Release; image, metadata snapshot and FAT-file
+suites pass ASan/UBSan (Qt leak detection disabled). Recursive tests cover FAT12, FAT16 4K sectors,
+FAT32, nonzero volume offsets, actual GUI and CLI actions, Unicode names, fragmentation, nested
+and empty files, repeats/no-overwrite, cancellation, directory/file/parent cycles, symlinks,
+invalid directory-name claims, directory byte/count and depth limits. Selected recursive GUI and
+corruption cases also exited normally under GDB (12 QtTest passes including setup/cleanup).
+Graphify updated: 3732 nodes / 6574 edges, with 20 existing config-node source_file warnings.
+Remote CI remains unverified; do not merge without checking current CI and code review.
+
+Next release work: OEM short-name encoding, deleted-file reconstruction, NTFS MFT/files, Windows
+safe export, persisted sessions/resume, real-device QA and packaging. Do not label the product done.
+
+
+## 2026-10-31 — NTFS initialized-MFT snapshot checkpoint
+
+Added an independent byte-wise NTFS reader (no packed legacy boot/attribute casts) and GUI/CLI
+image mft. Validates 64-bit declared geometry, boot record size, bootstrap FILE header/USA fixups,
+resident attribute bounds and unnamed nonresident DATA mapping pairs. Supports positive/negative
+LCN deltas and fragmented streams; rejects overlaps, invalid lengths/ranges, sparse/compressed/
+encrypted data, attribute-list extensions and noncontiguous bootstrap records. Reads only initialized
+MFT bytes, capped at 16 MiB; each nonzero FILE slot has header/fixup validation. Raw output bytes
+are preserved, including update-sequence tags, unused slots and zero-filled slots. Counts describe
+header flags/slots, not confirmed user-file counts. Metadata failures precede any output writes.
+
+The existing safe exporter handles boot/MFT outputs, no-overwrite, verification and cancellation.
+New test_ntfs_mft covers actual GUI and CLI actions, 512/4096-byte sectors, backward/fragmented
+runs, attributes crossing a 512-byte fixup stride, malicious geometry/attributes/runlists, torn later
+records, source preservation, cancellation and partial output conflicts. A sparse reader validates
+LCNs/volume sizes above 32 bits at a nonzero partition offset, plus short/oversized/failed reads.
+
+Validation: 28/28 Debug and Release CTest targets pass. Image, FAT metadata, FAT files and NTFS MFT
+integration suites pass ASan/UBSan (Qt leak detection disabled). Selected NTFS workflows exit normally
+under GDB, 7 QtTest passes including setup/cleanup. Graphify: 3798 nodes / 6721 edges; 20 existing
+config-node source_file warnings. Remote CI remains unverified; no merge. Next: actual NTFS user-file
+reconstruction. Legacy NTFS factory structs/analyzer remain unvalidated and are not used by this path.
+
+
+## 2026-10-31 — NTFS resident root-file checkpoint
+
+Added GUI NTFS resident root files and CLI image ntfs-files. Read initialized MFT with the shared
+validated reader, then copy unnamed resident DATA from in-use user base records. Check the root
+record and parent sequence references, STANDARD_INFORMATION/FILE_NAME/DATA bounds, required
+metadata, duplicate data attributes and unsafe Unicode names. Restore USA words before copying
+payloads, including data that crosses a 512-byte stride. Empty resident files are preserved.
+Choose one preferred safe root name per record (Windows before DOS); count other names not exported.
+Skip unused, directory, extension and non-root records. Unsupported/nonresident root files make the
+result failed/partial; completed output is retained. No allocation-bitmap/index cross-check,
+nonresident/deleted/recursive recovery, ADS export or original permissions/timestamps.
+
+The attribute walker is shared with MFT bootstrap parsing. FAT and NTFS share a bounded UTF-16 to
+UTF-8 filename decoder; FAT regression tests remain green. Cancellation, source identity and safe
+flat POSIX output behavior are reused. Added real GUI/CLI export tests at nonzero volume offsets
+with 512/4096 sectors, Unicode and empty files, exact restored payload bytes, unused/non-root/extension
+records, stale root references, invalid names and attribute bounds, duplicate/missing attributes,
+unsupported file features, root validation, DOS-name preference, repeats and cancellation.
+
+Validation: 28/28 CTest targets in Debug and Release; image, FAT metadata, FAT files and NTFS suites
+pass ASan/UBSan (Qt leak detection disabled). Selected resident tests exit normally under GDB:
+22 QtTest passes including setup/cleanup. Graphify: 3839 nodes / 6834 edges; 20 existing config-node
+source_file warnings. Remote CI remains unverified; no merge. Remaining NTFS scope includes
+nonresident file streams, directory traversal, allocation/index consistency and attribute lists.
+
+
+## 2026-10-31 — Legacy NTFS boot/inspection audit checkpoint
+
+Corrected NTFS boot/header models to their real wire offsets: 512-byte boot sector, 64-bit totals
+and MFT locations, record-size encodings at 64/68, 8-byte serial at 72 and signature at 510.
+Added compile-time layout checks; corrected resident attribute flag positions, NTFS 3.x FILE header
+size and index-entry key length. Runtime legacy metadata/probe/volume reads now use a bounded
+byte-wise helper rather than packed casts; check exact OEM ID, sector/cluster/record geometry,
+64-bit multiplication, declared source bounds and short reads. Report full serial, declared size
+and cluster counts. Volume offsets come from the reader; end-offset overflow returns unavailable.
+
+Removed fixed version/label, fabricated allocation/mount/partition flags, fake MFT validation,
+corruption counts and consistency/repair claims. Version/label stay Unknown; unavailable numeric/
+boolean metrics throw std::logic_error, as documented. The legacy analyzer returns false for
+unavailable full consistency analysis and explains which fields remain unknown. FilesystemReader
+access is read-only. The supported GUI/CLI MFT and resident-file workflows remain independent.
+Fixed NTFSAnalyzer.h resolving the recovery analyzer header instead of its filesystem base when
+both API families are included; use an explicit relative base-header include.
+
+Regression coverage checks layouts, >32-bit sizes/LCNs, complete serials, cluster geometry,
+short reads, malformed OEM IDs, unsupported metrics and offset overflow. All 28 CTest targets
+pass in Debug and Release; all four image/FAT/NTFS integration suites pass ASan/UBSan with Qt leak
+detection disabled. Legacy regression exits normally under GDB (3 passes including setup/cleanup).
+Graphify: 3861 nodes / 6866 edges; 20 existing config-node source_file warnings. Remote CI remains
+unverified; no merge. Still open: nonresident/recursive NTFS files, allocation/index consistency,
+deleted recovery, Windows safe export, persisted sessions, hardware QA and packaging.
+
+## 2026-10-31 — Verification checkpoint
+
+Rebuilt Debug, Release and ASan/UBSan configurations at code revision `7606815` and reran validation:
+28/28 Debug tests (3.96 s), 28/28 Release tests (1.62 s), and 4/4 sanitizer integration suites
+(14.12 s; ASAN_OPTIONS=detect_leaks=0 for Qt). Local HEAD matched the remote branch before this
+documentation update. No source changes or newly failing tests were found.
+
+Verified both GitHub Linux jobs succeeded for that exact code revision:
+https://github.com/morbok/RecoverySuite/actions/runs/41153617015
+This checkpoint updates the current validation/scope summary above; it does not imply release
+completion, Windows/hardware validation or completed code review.
+
+## 2026-10-31 — NTFS nonresident root-file checkpoint
+
+Extended GUI NTFS root files and CLI image ntfs-files to unnamed nonresident DATA in in-use root
+base records. Reuse mapping-pairs decoding with MFT snapshots; validate complete VCN coverage,
+physical bounds, size relationships and run overlaps. Support fragmented/backward runs, trim allocation
+slack and zero-fill the uninitialized logical tail. Reserve MFT and earlier-file runs; later conflicts
+fail while earlier completed outputs remain. Payload read failures do not export the affected file.
+Keep the resident-only public helper as a compatibility wrapper. Limits: 16 MiB/file, 4096 runs/file,
+65536 tracked extents, plus existing MFT and output limits. Source identity, safe output and cancellation
+are shared with existing workflows. No allocation/index consistency, directory traversal, attribute-list
+extensions, deleted reconstruction, sparse/compressed/encrypted data or ADS export.
+
+Validation: 28/28 Debug CTest executables (3.87 s), 28/28 Release (1.67 s), and 4/4 ASan/UBSan
+integration suites (14.45 s; Qt leak detection disabled). New GDB-selected tests exit normally,
+22 QtTest passes including setup/cleanup. Cover GUI/CLI bytes at nonzero offsets and 512/4096 sectors,
+fragmented negative-delta runs, exact logical lengths, zero/partial/full initialization, no-overwrite,
+cancellation during payload reads, malformed mappings, self/MFT/prior-file overlaps, and short,
+oversized or failed payload reads. New revision still needs its own remote CI and code review.
+
+## NTFS directory-tree milestone
+
+Added GUI NTFS files with subfolders and CLI image ntfs-tree. Resolve safe Unicode parent paths
+with directory/in-use/base-record and sequence checks; bound depth to 32, directory count to 1023
+and paths to 4095 bytes. Reject cyclic/stale/missing/unsafe ancestors and preserve completed outputs.
+NTFS integration tests cover nested Unicode paths through service/CLI and malformed ancestors.
+Allocation/index verification, extensions and deleted files are the next milestones.
+
+## NTFS extensions, consistency and streaming milestone
+
+Added GUI/CLI checked NTFS recovery with MFT/volume bitmap checks, parent directory index membership,
+resident index roots and bounded INDX traversal with fixups/VCNs/bitmap/cycle checks. Resolve bounded
+resident/nonresident user-file ATTRIBUTE_LIST references with exact sequence/base/type/name/instance
+checks and contiguous multi-record VCN coverage. MFT bootstrap lists/nested lists remain unsupported.
+Safe exporter pulls and verifies 64 KiB chunks; checked files <=2 GiB, initialized MFT <=128 MiB.
+Metadata streams <=16 MiB, attribute lists <=1 MiB, <=64 extension records/file and <=4096 runs/file.
+Tests include split DATA extensions, malformed references, allocation/index mismatches, INDX corruption,
+17 MiB streamed output/cancellation and 20 MiB MFT snapshots with explicit resource limits.
+
+## Deleted candidates milestone
+
+Added GUI/CLI ntfs-deleted and fat-deleted. NTFS requires unused MFT records and currently free data
+clusters, retained valid attributes and sequence-matching parents/extensions; deleted parent directories
+may resolve retained paths. Protect live/system metadata, named streams and earlier output extents.
+FAT scans live directory trees for deleted short entries and infers only contiguous free, unclaimed
+clusters, reserving all reachable live chains and conservative live spans before candidates. Output
+names explicitly replace the lost first short-name character; deleted LFNs/directories are unsupported.
+Confidence text warns that free clusters and retained metadata do not establish original contents.
+New image commands install cooperative SIGINT/SIGTERM handlers. Final validation follows below.
+
+Final local validation for the three milestones: Debug 28/28 (6.20 s), Release 28/28 (2.07 s),
+ASan/UBSan image/FAT metadata/FAT files/NTFS integration 4/4 (27.63 s; Qt leak detection disabled).
+Selected NTFS tree/checking/streaming/deleted tests exit normally under GDB: 34 QtTest passes
+including setup/cleanup. GUI clicks and CLI subprocesses cover checked/deleted modes. Source bytes,
+no-overwrite, partial-output cleanup and cancellation are verified on synthetic fixtures.
+Graphify: 3971 nodes / 7240 edges; 20 existing config-node source_file warnings. Stage-two GitHub
+Linux Debug and Release passed for 36909e2 (run 41225845937). Final head needs its own CI check.
+No Windows or real-hardware validation, release completion or merge is claimed.
+
+## Stage 4 — Persistent recovery sessions
+
+Added optional versioned JSON sessions across image export methods, full-source SHA-256 identity,
+pending/completed per-output hashes, atomic state replacement and single-process locking. Resume
+replays discovery, verifies earlier files through anchored handles and retries remaining items without
+overwrite. CLI image --session and session resume; GUI session path and File/Resume configuration
+review. Tests cover interruption/restart, CLI, source/output tampering, malformed schema/engine,
+configuration mismatch, pending/missing outputs and concurrent locks. Hard-killed incomplete output
+is reported as a conflict; no arbitrary file is deleted. Linux integration validation follows.
+
+## Stage 5 — Native read-only device acquisition and Windows I/O
+
+Added native Linux sysfs and Windows storage-interface enumeration with measured geometry and
+reported identity fields. Removed manufactured storage health/NAND/vendor-command results.
+PhysicalDisk now delegates to a read-only native device reader; all physical writes are disabled.
+CLI `device capture <device> --output <new-image>` streams and verifies an exclusive image output,
+reports SHA-256 and removes its incomplete output on cancellation/errors. Mounted source disks on
+Linux and online source disks on Windows are rejected. Output on the same underlying physical
+disk is rejected. No device state is changed automatically. Use normal image recovery afterwards.
+
+Windows image I/O uses Unicode native paths, retained file IDs and write/delete sharing restrictions.
+Windows export now anchors each component to retained directory handles, rejects reparse points and
+unsafe/reserved names, creates outputs exclusively, verifies bytes and atomically replaces only the
+selected session state. The Windows CI job compiles and runs all registered tests; actual CI outcome
+will be recorded separately. Native I/O tests cover Unicode, source identity, output paths, state
+replacement, no-overwrite, cancellation, regular-file/device rejection and injectable Linux sysfs.
+Local Debug: 30 registered test executables. Real hardware remains untested.
+
+## Stage 6 — Development packaging and parser fuzzing
+
+Added CPack runtime-only Linux TGZ/Ubuntu DEB and Windows portable ZIP generation, package SHA-256
+files, desktop integration and release-QA instructions. Windows bundles Qt via windeployqt; the
+official VC redistributable is a documented prerequisite. CI uploads development artifacts only.
+A shared synthetic corpus feeds installed/extracted package smoke tests (FAT/NTFS exact bytes,
+carving, Unicode source/output paths, resume, no-overwrite, source preservation and GUI startup).
+Clang libFuzzer instruments library code with ASan/UBSan and exercises carving plus FAT/NTFS
+metadata/file/tree/checked/deleted parsers. CI includes a bounded fuzz run and fresh read-only
+Linux loop-device acquisition with mounted-source rejection and output comparison.
+
+Local TGZ generation and extracted-package CLI/GUI smoke passed. No local Debian packaging tools
+or passwordless loop-device permissions are available; those checks run on dedicated CI fixtures.
+Windows first CI caught storage-header include ordering, fixed at 6206532. Further CI validation
+and fuzz/sanitizer totals are recorded in the final checkpoint. Real hardware, signing, application
+license decision/third-party notice review and code review remain stable-release gates.
+
+Local stage 4–6 validation: Debug 30/30 (6.27 s), Release 30/30 (2.03 s), six ASan/UBSan
+integration executables 6/6 (29.04 s; Qt leak detection disabled). The final optimized Clang harness,
+including MBR/GPT, completed 20,000 fuzz runs in 32 s (625/s; peak RSS 445 MiB), with fatal
+sanitizer recovery disabled and no findings. The earlier exploratory Debug harness is separate.
+Linux CI at 2b716c2 passed all tests and generated TGZ/DEB packages with installed/extracted smoke;
+its loop capture produced a verified 32 MiB image, then its unprivileged comparison failed on the
+root-owned 0600 output. The fixture comparison now uses sudo. Windows SDK duplication was narrowed
+to the user-mode winioctl header. A fresh head must pass all jobs before merge.
+
+At 87fa53c GitHub Linux Debug/Release and fuzz passed (run 41234730249), including TGZ/DEB
+installed/extracted CLI+GUI smoke and the 32 MiB read-only loop fixture. Windows compiled all
+targets and passed 27/30 test executables; three Windows fixture/checkpoint tests need fixes.
+Boot-analysis fixtures now use separate images instead of rewriting a source held read-only.
+Windows QtTest reports are captured to files and printed in CI, and destination handles request
+add/rename rights only at the selected output directory. No safety checks or tests are disabled.
+
+## 2026-11-04 — CI-only validation and prototype delivery
+
+User requested continued Linux and Windows work and no testing on their workstation. Keep
+application, package, fuzz and device tests on disposable CI runners from this checkpoint.
+Local source edits, Graphify updates and Git saves/pushes remain authorized.
+
+Added persistent CTest JUnit/Qt reports for both platforms, including failed runs, and a
+combined prototype job gated on Linux Debug/Release, Windows Release, fuzz and bundle integrity
+checks. It validates all three package SHA-256 sidecars before producing source-revision metadata,
+installation notes and the combined artifact. No public release, tag or merge is performed.
+
+Static review found that Windows checkpoint cleanup deleted the newly committed journal if
+its post-rename flush failed. Preserve the committed state on that error; delete only an
+uncommitted temporary file. Existing checkpoint tests remain enabled in Windows CI.
+
+No tests were run on the user's workstation for this checkpoint. CI from fc11f11 remains
+unverified here: the GitHub connection is missing and unauthenticated API access returns 404.
+A GitHub connection has been requested; do not claim Windows or prototype qualification without
+reading the resulting exact-head checks.
+
+## 2026-11-04 — GitHub connected; Windows checkpoint diagnosis
+
+GitHub access is now connected. Exact-head CI for `50c3dfb` (run `41720671775`)
+passed Linux Debug/Release, fuzz and prototype tooling checks. Windows compiled and
+passed 28/30 test executables; native I/O and session tests failed at checkpoint
+replacement with Windows error 87. The combined prototype was correctly skipped.
+
+Replaced the failing Win32 rename wrapper with native NtSetInformationFile,
+FileRenameInformation (class 10), preserving the retained destination directory
+handle and relative Unicode filename. Errors retain the native NTSTATUS. Added
+Unicode checkpoint replacement and failed-directory-replacement preservation/temporary
+cleanup coverage to the native I/O suite. No checks are disabled and no path-based
+rename fallback is used. This fix still requires its own remote CI outcome.
+
+No application, build, package, unit, fuzz or device tests were run on this workstation.
+
+CI at `5e15757` (run `41904888587`) passed all 30 Windows test executables,
+including session/native I/O regressions; Linux Debug/Release, packages, loop QA,
+fuzz and tooling passed. Windows VHD QA successfully rejected an online source,
+captured the offline fixture byte-for-byte and rejected an existing destination.
+Its step still exited 1 because PowerShell retained the expected rejection's
+LASTEXITCODE. The fixture now explicitly exits 0 only after its assertions and
+cleanup succeed. Exceptions still fail the step. Windows packaging and the
+combined prototype remain pending a successful new-head run.
+
+
+## 2026-11-05 — Scoped legacy FAT audit and bounded session reads
+
+Verified baseline `8de6f93` passed all six CI jobs, including Linux Debug/Release,
+Windows 30/30 tests, loop/VHD acquisition, package smoke, fuzz and combined prototype.
+Updated README, handoff and active roadmap to distinguish that evidence from
+remaining physical-device and stable-release gates.
+
+Static review found legacy FATFilesystem reading 4 KiB sectors into a 512-byte
+stack buffer, divide-by-zero/underflow risks in repeated geometry calculations,
+incorrect one-FAT/FAT32 sizing and unchecked volume-end overflow. Shared bounded
+boot reads and validated wide geometry now cover filesystem, metadata and volume
+inspection. Null readers and short/mismatched sector reads fail explicitly.
+Removed fabricated FAT health/error/allocation/mount/partition/bootability answers;
+unobserved properties throw explicit unavailable errors. The analyzer retains no
+reference to the factory's temporary cached-boot reader.
+
+Session JSON now limits the actual read to 16 MiB plus one detection byte, even
+if the file grows after the size check. CI regression cases cover 4 KiB reads,
+invalid geometry, insufficient FAT capacity, one-FAT type selection, null/short
+reads, offset overflow, unknown metrics and session size boundaries. Parser fuzzing
+now also exercises the legacy FAT inspection path with 4 KiB/zero-cluster seeds.
+This is a scoped audit; remaining legacy analysis/cancellation/orphaned tests and
+broader features are still open. No local builds or tests were run for this work;
+new-head CI must pass before claiming this change is qualified.
+
+
+## 2026-11-05 — Product correction: general disk recovery
+
+User explicitly corrected the product direction: this is a general disk data-recovery
+application for deletion, lost partitions and interrupted writes, not an image-recovery product.
+See PRODUCT_SCOPE.md, which supersedes image-first milestone completion claims.
+
+Added direct read-only native sources to GUIRecoveryService; images remain optional. The main
+source page lists real connected drives. Automatic whole-disk scanning finds bounded surviving
+FAT/NTFS boot volumes without relying on partition entries, then reconstructs metadata candidates
+and searches signatures. Scans only build a catalog; selected-file export is a separate operation
+with verification, source identity, different-physical-disk and no-overwrite guards.
+GUI provides candidate filtering/check selection and a destination chooser; advanced parser/range
+controls remain secondary. CLI scan/device recover share the same service. Scan callbacks are
+not retained; export replays discovery against the still-open source and checks catalog membership.
+
+New Qt fixtures cover erased partition entries, damaged boot/signature fallback, selected files,
+source preservation, no-overwrite, stale scan rejection, cancellation and GUI scan/review/recover.
+CI loop/VHD jobs now recover a chosen file directly from a disposable device. Exact-head results
+are pending. No tests/builds/apps were run on the user's workstation for this transformation.
+Physical hardware, exFAT, richer previews, broader corruption recovery, native scan persistence,
+permissions UX and failing-media retries remain open; do not claim Disk Drill feature parity.
+
+## 2026-11-06: exFAT recovery milestone
+
+Added bounded read-only single-FAT exFAT 1.0 reconstruction to automatic disk scan
+and selected export: boot and entry-set checksums, contiguous/fragmented chains,
+allocation bitmap checks, retained deleted candidates, UTF-16 paths and zeroed
+uninitialized tails. Added CI-only synthetic erased-partition recovery and corrupt
+metadata cases; parser is included in the sanitizer fuzz target. Validation pending
+for this revision. No local builds, tests or device scans were performed.
+
+Added asynchronous, cancellable candidate inspection in the review screen. The
+service replays current-volume discovery and reads at most 64 KiB; text/hex output
+is inert and writes nothing. CI cases cover content, invalid selection, cancellation
+and the GUI preview-before-recovery flow. Exact-head validation remains pending.
+
+The follow-up revision adds source-identity checks for image previews, a 70,000-byte
+file test proving preview truncation at 65,536 bytes, and a changed-source rejection
+case. Standard-formatted native exFAT QA and cross-link rejection are now in CI.
+
+CI follow-up: Linux final revision passed all 31 suites, native exFAT recovery
+and 5,000 sanitizer fuzz iterations. Windows exposed a fixture error: the open
+read-only image handle correctly prevents the mutation used by the changed-source
+test. The test now checks write denial plus unchanged preview on Windows, and
+changed-source rejection after a successful mutation on Linux. The implementation
+revision before that fixture addition passed all 31 Windows suites.
+
+## 2026-11-06: saved catalogs and ext4
+
+Added source-bound save/open drive catalogs (File menu) with bounded JSON, sampled
+identity/content fingerprint, transactional restore and current-source reconstruction.
+Added retained allocated ext4 file recovery with extent trees, allocation checks,
+sparse/unwritten zeroing and lost-volume discovery. This is explicitly not ext4
+undelete/journal replay or metadata-checksum verification. Synthetic, standard-
+formatted disposable device and fuzz cases run only in CI. Validation pending.
+
+Added explicit rescue capture via File menu and CLI: bounded sector retries,
+zero-filled unreadable ranges, mandatory report, SHA-256 verification of stored
+bytes without rereading unstable source media, and partial-result reporting.
+Normal capture still fails on read errors. CI fault/loop/VHD/GUI cases added.
+No local tests or source scans; exact-head CI pending.
+
+Added filesystem-only search (GUI checkbox / CLI --quick), retained in saved scan
+catalogs. Discovery now skips recognized volume payloads; a counted-read CI test
+proves that optimization instead of asserting an implementation-specific result.
+
+Ext4 now verifies CRC32C metadata checksums (when enabled) for superblocks, group
+descriptors, bitmaps, inodes, external extent nodes and linear directory blocks.
+Unsupported checksummed indexed directories are rejected. Added a known vector
+and independent checksummed/corruption fixtures; native mkfs.ext4 CI validates
+interoperability. This supersedes the earlier unverified-checksum limitation.
+
+Checksum CI caught a failed-bitmap cache surviving validation rejection. Both
+inode/block bitmap caches now clear rejected bytes before throwing, so a later
+lookup cannot bypass checksum verification. The existing injected-corruption
+case exercises this regression; final qualification is rerunning.
+
+## Completion pass: restartable rescue capture
+
+Added an explicit software acceptance checklist in RELEASE_ACCEPTANCE.md. Rescue
+capture now retains a flushed prefix, cumulative SHA-256 and native file identity.
+Resume validates source identity/samples and the stored prefix before truncating
+only uncommitted tail bytes. Source data before the checkpoint is not reread.
+Added cancellation, tampered prefix, identity and real process-crash/restart CI
+cases, including stale-lock recovery. Validation pending; no local tests run.
+
+## Interrupted drive scans
+
+Partial drive scans can now be saved to `.rscan`, opened after restart and continued from File → Continue interrupted scan. Volume discovery keeps its next sector; completed filesystem volumes are skipped; an interrupted filesystem volume is replayed with candidate deduplication. Signature discovery keeps the earliest unconsumed byte and naming counter, rereading at most the bounded pending candidate rather than the whole source. Saved source binding is checked before continuation. Added CI-only cross-service cancellation/resume and malformed cursor coverage. No local build/test execution.
+
+## Bounded raster previews
+
+Candidate inspection can decode a first-frame PNG/JPEG/BMP/GIF/WebP thumbnail on the worker thread. Input is capped at 16 MiB, dimensions at 16 million pixels and decoder allocation at 64 MiB; the UI receives a re-encoded PNG no larger than 800×450. Text/hex remains capped at 64 KiB. No external viewer, active markup or source writes. CI covers byte-exact source preservation and a real raster thumbnail.
+
+## User-authorized disk access
+
+Linux GUI has an explicit Authorize read-only access action using UDisks2 Block.OpenDevice(mode=r, O_EXCL|O_CLOEXEC|O_NONBLOCK) over the system bus. The app stays unprivileged; its native reader duplicates and independently checks the returned descriptor, read-only mode, block identity, geometry and mount state. No setuid installation or disk permission changes. Windows provides an explicit UAC administrator-window action; offline-source and no-write guards remain active. CI adds real UDisks2 transport on an owned disposable loop device plus bad-descriptor tests; interactive desktop consent still needs external qualification. API: https://storaged.org/doc/udisks2-api/latest/gdbus-org.freedesktop.UDisks2.Block.html and https://learn.microsoft.com/en-us/windows/win32/secbp/running-with-administrator-privileges .
+
+## Delivery help and notices
+
+Embedded Help and packaged USER_GUIDE.md now describe the same general-drive scan/review/recover, authorization, paused scan continuation and resumable rescue workflows. Runtime packaging excludes SDK headers, includes user/completion guides and runtime notices, and validates every collected upstream notice hash in installed/extracted packages. Windows notice collection runs only in CI and verifies the official Qt source archive against a pinned SHA-256. Application licensing, real hardware qualification, independent review and signing remain explicit external release gates.
+
+## CI download reliability
+
+A later access run failed before compilation in Linux Release/fuzz: the Azure Ubuntu mirror trickled an 11 MiB CMake package for minutes despite per-socket timeouts. Dependency installation now uses isolated official Ubuntu HTTPS source lists on disposable GitHub runners only, omits unnecessary recommendations and reuses preinstalled build tools. The workstation package configuration is never touched. Windows elevation compile failure was an include-order issue and is corrected.
+
+## Final continuation review
+
+Preserve bounded filesystem issue messages across saved-catalog restore and continued scans, so completed-volume skipping cannot hide earlier unsupported/corrupt-record warnings. Added ext4 save/open/continue regression coverage. The final source-revision artifact and exact-head CI remain the acceptance evidence.
+
+## Software acceptance closure
+
+All six required jobs passed on `7a4d0523d556659c2f3463355fd259735242df8f`, run https://github.com/morbok/RecoverySuite/actions/runs/42176003051, including 31 CTest suites per OS, native read-only UDisks2/loop/VHD operations, standard ext4/exFAT exact bytes, 5,000 ASan/UBSan fuzz runs, installed/extracted packages and all runtime notice hashes. The final warning-preservation change and acceptance documentation require the final head's own green run and manifest before delivery. The software feature checklist is implemented; physical/interactive-consent qualification, independent review, application-license choice and signing remain external release gates. No automatic merge or public release.
+
+## General-recovery coverage continuation: ext4 indexed directories
+
+User requested continued work beyond the prototype closure. Implement bounded htree directory traversal (root plus up to two indirect levels), root/interior/leaf metadata checksum validation, no cyclic/aliased/out-of-range/unreferenced directory blocks, and metadata-read budgeting for directory payloads. This closes a gap that skipped ordinary large ext4 folders. Synthetic CI covers plain/checksummed roots, internal nodes, corrupt checksums, counts/depth and references; native CI formats and populates a 1,000-file directory, forces a multi-level index using e2fsck -D on its disposable image, recovers selected long-name files and verifies unchanged source bytes. No workstation builds/tests/device scans. Layout reference: https://www.kernel.org/doc/html/latest/filesystems/ext4/directory.html . Implementation is independently written from on-disk format requirements.
+
+## exFAT damaged main-boot recovery
+
+Validate full main/backup boot regions before consuming geometry. If the main copy is damaged/unreadable, Reader can use the checksum-valid twelve-sector backup. Discovery maps a surviving backup to its original volume start using the stored media-relative offset, with raw-volume-image support at sector twelve. It does not create a second volume twelve sectors late. A checksum-valid unsupported main layout is never bypassed with an older backup. No source writes. Scan details preserve backup provenance. CI cases cover missing/corrupt main, invalid backup, stale backup against an unsupported primary, raw-image offsets, save/open/preview/export and unchanged bytes. Reference: https://learn.microsoft.com/en-us/windows/win32/fileio/exfat-specification .
+
+## Large FAT files in automatic recovery
+
+Automatic FAT scanning now consumes synchronous bounded file-source callbacks instead of materializing payload buffers. Metadata discovery validates chains first; reads during preview/export are at most 64 KiB. Live file cross-links are detected across the catalog before any file is offered, rejecting both owners. Streamed files are bounded at 2 GiB and one million clusters/file, with four million aggregate live-chain references; legacy targeted buffered methods keep their 16 MiB behavior. Retained deleted candidates remain explicitly contiguous-free hypotheses. CI adds a fragmented 17 MiB+ binary file, partial preview, saved-catalog round trip, exact selective export, source hash preservation and cross-linked-owner rejection on both platforms. No local tests.
+
+Native exFAT CI additionally erases the main boot region only on its newly formatted disposable fixture, reopens it read-only, recovers nested binary/document files using the real backup and verifies exact bytes plus the damaged source hash. Native ext4 CI explicitly checks both 1 KiB multi-level and 4 KiB indexed directory layouts.
+
+## Native kernel read-fault validation
+
+Add a CI-only fresh read-only loop plus owned device-mapper error target: exactly sectors 8–9 return kernel EIO. Plain capture must fail and remove partial output; explicit rescue must return partial status, zero-fill exactly those sectors, verify its image/report digest, and leave the backing source hash unchanged. Cleanup removes a mapping only after this script successfully created it; no existing host device or mapping is selected, reloaded or offlined. This supplements in-process fault injection without claiming physical failing-hardware qualification.
+
+## Native fault test finding: cached neighboring sectors
+
+The first kernel-EIO run found that buffered Linux block I/O reported eight unreadable sectors for an error target covering only sectors 8–9: the shared 4 KiB page cache contaminated healthy neighbors. Keep the exact-two-sector test unchanged. Native Linux source access now sets O_DIRECT on its held read-only descriptor (including UDisks handoff), with 4 KiB-aligned bounded buffers and logical-sector-aligned read validation. This avoids cached-page false gaps and stale cached disk content. No source writes or device-state changes; validation remains CI-only. Final exact-head native EIO test must prove that healthy neighbors are recovered.
+
+## 2026-11-06 — Owner licensing and hardware decisions
+
+The owner selected MIT for RecoverySuite’s own code. Added LICENSE, runtime-package installation and exact license-content checks in the existing CI package smoke gate; dependency notices retain their original terms. Prototype delivery notes and release documents now record this decision. The owner confirmed no separate test computer/runner is currently available. Physical-hardware and interactive-consent qualification remains open; no tests are authorized on the user’s PC. Independent review and signing remain open. All execution validation for this change must use its new exact-head GitHub run.
+
+## 2026-11-07 — Repository presentation and credential protection
+
+Confirmed all six jobs at e0d468f/run 42255314931 passed before repository cleanup. Replaced the front page with installation, five-step general disk recovery, support/limits and troubleshooting; added documentation/contributor/security navigation. Archived historical root status pages, stopped tracking local assistant settings and redundant backup files, and replaced private workstation home paths in documentation with portable examples. No application code or device behavior changed.
+
+Gitleaks 8.30.1 found no credential candidates across all fetched refs/history before cleanup. Added redacted staged checks, private-filename rejection and a checksum-pinned full-history CI workflow with synthetic rejection/redaction tests. No credential values are printed or uploaded. Machine-local assistant files remain on disk and are ignored. Source disk images, recovery outputs and reports are ignored. No public history rewrite, merge or release performed. Application/device tests remain CI-only; local credential/document checks are authorized repository maintenance.
+
+## 2026-11-07 — Download-first README presentation
+
+Updated the README presentation using the user-provided repository as a structural reference: original RecoverySuite SVG banner, centered platform/license/status badges, prominent combined-package download, navigation, short features and numbered setup/recovery instructions. Separate Windows, Ubuntu DEB and Linux archive sections explain double extraction, executable locations, prerequisites and checksum verification; source ZIP is explicitly distinguished from application packages. Download points to the already qualified fec923c artifact/run. Local link/asset and SVG XML/whitespace checks passed; credential hook runs before committing. Documentation/assets only; no local application/device tests.
+
+## 2026-11-07 — Simplified download choices
+
+Removed the decorative README banner and unused SVG asset. Moved download/install ahead of features. Windows now uses a single extract/open instruction; Ubuntu uses one install-and-launch command after downloading/extracting the shared bundle. macOS is explicitly unsupported rather than offering a nonfunctional installer. Advanced archive/checksum/build information is collapsed. No application behavior changed; no application/device tests performed locally.

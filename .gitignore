@@ -21,10 +21,6 @@ CTestTestfile.cmake
 # Object files
 *.o
 *.obj
-*.lo
-*.la
-*.lo
-*.lo
 
 # Libraries
 *.lib
@@ -44,10 +40,6 @@ CTestTestfile.cmake
 
 # Compiler specific
 *.ds_store
-*.lo
-*.la
-*.lo
-*.lo
 
 # IDE files
 .vscode/
@@ -101,17 +93,52 @@ third_party/
 graphify-out/
 */graphify-out/
 
-# Local build directories
-build*/
-bin/
-lib/
+# Private configuration and credentials (never force-add)
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+.claude/
+.codex/
+.ssh/
+.aws/
+.azure/
+.kube/
+.netrc
+.npmrc
+.pypirc
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa
+id_ed25519
+credentials.json
+service-account.json
+
+# Local snapshots, recovered content and disk data
+*.backup*
+*.img
+*.iso
+*.vhd
+*.vhdx
+*.vmdk
+*.qcow2
+*.rscan
+*.rescue.json
+outputs/
+recovered/
+captures/
+secret-audit*.json
+gitleaks-report*
 
 # Local build directories
 build*/
 bin/
 lib/
 
-# Local build directories
-build*/
-bin/
-lib/
+# Historical local scratch file
+/TEST.txt

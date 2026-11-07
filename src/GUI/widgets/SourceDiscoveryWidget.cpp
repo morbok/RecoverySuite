@@ -1,246 +1,107 @@
 #include "SourceDiscoveryWidget.h"
+#include "GUI/core/DeviceAccess.h"
+#include <QVBoxLayout>
+#include <QFormLayout>
+#include <QHBoxLayout>
+#include <QLineEdit>
+#include <QComboBox>
+#include <QPushButton>
+#include <QLabel>
+#include <QFileDialog>
+#include <QGroupBox>
+#include <QTreeWidget>
 #include <QHeaderView>
-#include <QMessageBox>
-#include <QDebug>
-#include <QTimer>
-#include "Logging/Logger.h"
-
-namespace recoverysuite {
-namespace gui {
-namespace widgets {
-
-SourceDiscoveryWidget::SourceDiscoveryWidget(QWidget *parent)
-    : QWidget(parent),
-      recoveryService_(nullptr),
-      selectedDevicePath_("") {
-    setupUI();
-    setupConnections();
-}
-
-SourceDiscoveryWidget::~SourceDiscoveryWidget() {
-    // Destructor
-}
-
-void SourceDiscoveryWidget::setRecoveryService(recoverysuite::application::service::GUIRecoveryService* service) {
-    recoveryService_ = service;
-    // Initially populate the device table
-    populateDeviceTable();
-}
-
-void SourceDiscoveryWidget::setupUI() {
-    // Main layout
-    QVBoxLayout* mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(10, 10, 10, 10);
-    mainLayout->setSpacing(10);
-
-    // Status label
-    statusLabel_ = new QLabel("Ready", this);
-    statusLabel_->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-    statusLabel_->setStyleSheet(
-        "QLabel { "
-        "   padding: 4px; "
-        "   background-color: #f0f0f0; "
-        "   border: 1px solid #ccc; "
-        "   border-radius: 4px; "
-        "}");
-    mainLayout->addWidget(statusLabel_);
-
-    // Device table view
-    deviceTableView_ = new QTableView(this);
-    deviceTableView_->setAlternatingRowColors(true);
-    deviceTableView_->setSelectionBehavior(QAbstractItemView::SelectRows);
-    deviceTableView_->setSelectionMode(QAbstractItemView::SingleSelection);
-    deviceTableView_->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    deviceTableView_->horizontalHeader()->setStretchLastSection(true);
-    deviceTableView_->verticalHeader()->setVisible(false);
-    deviceTableView_->setSortingEnabled(true);
-    mainLayout->addWidget(deviceTableView_);
-
-    // Button layout
-    QHBoxLayout* buttonLayout = new QHBoxLayout();
-    buttonLayout->setSpacing(10);
-
-    refreshButton_ = new QPushButton("&Refresh", this);
-    refreshButton_->setToolTip("Refresh the list of storage devices");
-    buttonLayout->addWidget(refreshButton_);
-
-    selectButton_ = new QPushButton("&Select Source", this);
-    selectButton_->setToolTip("Select the highlighted device for recovery operations");
-    selectButton_->setEnabled(false); // Initially disabled until a device is selected
-    buttonLayout->addWidget(selectButton_);
-
-    buttonLayout->addStretch();
-
-    mainLayout->addLayout(buttonLayout);
-
-    // Set the model for the table view
-    deviceModel_ = new QStandardItemModel(0, 5, this);
-    deviceModel_->setHorizontalHeaderLabels({
-        QString("Device"),
-        QString("Capacity"),
-        QString("Sector Size"),
-        QString("Partitions"),
-        QString("Status")
+namespace recoverysuite::gui::widgets {
+SourceDiscoveryWidget::SourceDiscoveryWidget(QWidget* parent) : QWidget(parent) {
+    auto* layout = new QVBoxLayout(this);
+    auto* heading = new QLabel(tr("Recover lost data from a drive"), this);
+    heading->setStyleSheet("font-size: 24px; font-weight: 600;"); layout->addWidget(heading);
+    auto* help = new QLabel(tr("Deleted files, a lost partition, or a drive disconnected during a write? Select the affected drive, scan for recoverable files, then save your selection to another drive."), this);
+    help->setWordWrap(true); layout->addWidget(help);
+    drives_ = new QTreeWidget(this); drives_->setObjectName("connectedDrives");
+    drives_->setHeaderLabels({tr("Drive"),tr("Capacity"),tr("Device path")});
+    drives_->setRootIsDecorated(false); drives_->header()->setSectionResizeMode(QHeaderView::ResizeToContents);
+    drives_->header()->setStretchLastSection(true); layout->addWidget(drives_);
+    auto* actions = new QHBoxLayout;
+    auto* refresh = new QPushButton(tr("Refresh drives"), this); refresh->setObjectName("refreshDrives");
+    auto* select = new QPushButton(tr("Use selected drive"), this); select->setObjectName("openPhysicalDrive");
+    actions->addWidget(refresh); actions->addStretch(); actions->addWidget(select); layout->addLayout(actions);
+    connect(refresh, &QPushButton::clicked, this, &SourceDiscoveryWidget::onRefreshClicked);
+    connect(select, &QPushButton::clicked, this, [this] {
+        const auto* row = drives_->currentItem();
+        if (!row || !service_) { status_->setText(tr("Select a connected drive first.")); return; }
+        try {
+            const auto source = service_->openDevice(row->data(0, Qt::UserRole).toString().toStdString());
+            status_->setText(tr("Drive opened read-only.")); emit sourceSelected(QString::fromStdString(source.devicePath));
+        } catch (const std::exception& error) { status_->setText(QString::fromUtf8(error.what())); }
     });
-    deviceTableView_->setModel(deviceModel_);
-
-    // Adjust column widths
-    deviceTableView_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
-    deviceTableView_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
-    deviceTableView_->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
-    deviceTableView_->horizontalHeader()->setSectionResizeMode(3, QHeaderView::Stretch);
-    deviceTableView_->horizontalHeader()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
-
-    setLayout(mainLayout);
-}
-
-void SourceDiscoveryWidget::setupConnections() {
-    connect(refreshButton_, &QPushButton::clicked, this, &SourceDiscoveryWidget::onRefreshClicked);
-    connect(selectButton_, &QPushButton::clicked, this, &SourceDiscoveryWidget::onSelectClicked);
-    connect(deviceTableView_, &QTableView::doubleClicked, this, &SourceDiscoveryWidget::onDeviceDoubleClicked);
-    connect(deviceTableView_->selectionModel(), &QItemSelectionModel::selectionChanged,
-            this, [this](const QItemSelection& selected, const QItemSelection&) {
-        selectButton_->setEnabled(!selected.isEmpty());
-        if (!selected.isEmpty()) {
-            QModelIndex index = selected.indexes().first();
-            int row = index.row();
-            selectedDevicePath_ = deviceModel_->index(row, 0).data().toString();
-        }
+    auto* authorize=new QPushButton(this);authorize->setObjectName("authorizeSourceAccess");
+#ifdef _WIN32
+    authorize->setText(tr("Open administrator window…"));
+#else
+    authorize->setText(tr("Authorize read-only access…"));
+#endif
+    layout->addWidget(authorize);
+    connect(authorize,&QPushButton::clicked,this,[this] {
+        const auto* row=drives_->currentItem();
+        if(!row || !service_) {status_->setText(tr("Select a connected drive first."));return;}
+        const auto path=row->data(0,Qt::UserRole).toString();
+        window()->setEnabled(false);
+        try {
+#ifdef __linux__
+            const auto descriptor=core::authorizeReadOnlyDevice(path);
+            const auto source=service_->openDevice(path.toStdString(),descriptor.fileDescriptor());
+            window()->setEnabled(true);status_->setText(tr("Authorized read-only access. Source state was not changed."));
+            emit sourceSelected(QString::fromStdString(source.devicePath));
+#elif defined(_WIN32)
+            core::requestAdministratorWindow();window()->setEnabled(true);
+            status_->setText(tr("Use the new administrator window and select this drive again. The source must still be offline."));
+#else
+            throw std::runtime_error("Device authorization is available on Windows and Linux");
+#endif
+        } catch(const std::exception& error) {window()->setEnabled(true);status_->setText(QString::fromUtf8(error.what()));}
     });
+    auto* access = new QLabel(tr("Source access is read-only. Unmount its volumes on Linux or take the source disk offline on Windows first; system drives cannot be scanned while in use. Device permissions may be required. RecoverySuite never changes this state automatically."), this);
+    access->setWordWrap(true); layout->addWidget(access);
+    auto* imageToggle = new QPushButton(tr("Open an existing disk image instead…"), this); imageToggle->setObjectName("imageSourceOptions"); layout->addWidget(imageToggle);
+    auto* image = new QGroupBox(tr("Optional image source"), this); auto* imageLayout = new QVBoxLayout(image);
+    auto* form = new QFormLayout;
+    path_ = new QLineEdit(this); path_->setObjectName("imagePath"); form->addRow(tr("Image file"), path_);
+    sectorSize_ = new QComboBox(this); sectorSize_->setObjectName("imageSectorSize");
+    for (int size : {512,1024,2048,4096}) sectorSize_->addItem(QString::number(size), size);
+    form->addRow(tr("Sector size"), sectorSize_); imageLayout->addLayout(form);
+    auto* imageActions = new QHBoxLayout;
+    auto* browse = new QPushButton(tr("Browse…"), this); auto* open = new QPushButton(tr("Open image"), this); open->setObjectName("openImage");
+    imageActions->addWidget(browse); imageActions->addWidget(open); imageLayout->addLayout(imageActions);
+    layout->addWidget(image); image->hide();
+    connect(imageToggle, &QPushButton::clicked, image, [image] { image->setVisible(!image->isVisible()); });
+    connect(browse, &QPushButton::clicked, this, [this] {
+        const auto file = QFileDialog::getOpenFileName(this, tr("Choose disk image"), {}, tr("Disk images (*.img *.raw *.dd);;All files (*)"));
+        if (!file.isEmpty()) path_->setText(file);
+    });
+    connect(open, &QPushButton::clicked, this, [this] { openImagePath(path_->text(), sectorSize_->currentData().toUInt()); });
+    status_ = new QLabel(tr("Select the drive that contained your missing files"), this); status_->setObjectName("sourceStatus");
+    status_->setWordWrap(true); status_->setTextFormat(Qt::PlainText); layout->addWidget(status_);
 }
-
+void SourceDiscoveryWidget::setRecoveryService(application::service::GUIRecoveryService* service) { service_ = service; onRefreshClicked(); }
 void SourceDiscoveryWidget::onRefreshClicked() {
-    updateStatus("Refreshing storage devices...");
-    refreshButton_->setEnabled(false);
-    selectButton_->setEnabled(false);
-
-    // Use a timer to simulate non-blocking operation (in a real implementation, we would use threads or async)
-    QTimer::singleShot(100, this, [this]() {
-        populateDeviceTable();
-        refreshButton_->setEnabled(true);
-        updateStatus("Ready");
-    });
-}
-
-void SourceDiscoveryWidget::onSelectClicked() {
-    if (selectedDevicePath_.isEmpty()) {
-        QMessageBox::warning(this, "No Selection", "Please select a device from the list.");
-        return;
-    }
-
-    // Validate the selected source (in a real implementation, we would call the service to validate)
-    // For now, we assume the selected device is valid.
-    updateStatus(tr("Validating source %1...").arg(selectedDevicePath_));
-
-    // Simulate validation delay
-    QTimer::singleShot(500, this, [this]() {
-        // In a real implementation, we would check if the device is available, readable, etc.
-        // For now, we assume validation passes.
-        updateStatus(tr("Source %1 validated.").arg(selectedDevicePath_));
-        emit sourceSelected(selectedDevicePath_);
-    });
-}
-
-void SourceDiscoveryWidget::onDeviceDoubleClicked(const QModelIndex& index) {
-    int row = index.row();
-    selectedDevicePath_ = deviceModel_->index(row, 0).data().toString();
-    onSelectClicked(); // Trigger selection on double click
-}
-
-void SourceDiscoveryWidget::populateDeviceTable() {
-    if (!recoveryService_) {
-        updateStatus("Recovery service not available.");
-        return;
-    }
-
-    // Clear the existing model
-    deviceModel_->removeRows(0, deviceModel_->rowCount());
-
-    // In a real implementation, we would get the list of storage devices from the service.
-    // For now, we will use placeholder data.
-
-    // We are going to simulate a few devices.
-    // Note: In a real application, we would call recoveryService_->enumerateStorageDevices()
-    // and then for each device, get detailed information.
-
-    // Since we don't have a real implementation of enumerateStorageDevices in the GUIRecoveryService,
-    // we will use mock data for now.
-
-    // Mock data: list of devices with their properties.
-    struct MockDevice {
-        QString devicePath;
-        QString modelName;
-        QString serialNumber;
-        uint64_t totalSizeBytes;
-        uint32_t sectorSizeBytes;
-        bool isRemovable;
-        bool isReadOnly;
-    };
-
-    QList<MockDevice> mockDevices = {
-        {"/dev/sda", "Samsung SSD 860 EVO", "S2H3NF0J900000", 500ULL * 1024 * 1024 * 1024, 512, false, false},
-        {"/dev/sdb", "Seagate Barracuda", "WMAP987654321", 2ULL * 1024 * 1024 * 1024 * 1024, 512, false, false},
-        {"/dev/sdc", "SanDisk Ultra Fit", "1234567890ABCDEF", 32ULL * 1024 * 1024 * 1024, 512, true, false},
-        {"/dev/sdd", "Dummy Read-Only Disk", "READONLY000000", 10ULL * 1024 * 1024 * 1024, 512, false, true}
-    };
-
-    for (const MockDevice& device : mockDevices) {
-        int row = deviceModel_->rowCount();
-        deviceModel_->insertRow(row);
-
-        // Device path
-        deviceModel_->setData(deviceModel_->index(row, 0), device.devicePath);
-
-        // Capacity
-        QString capacityStr;
-        if (device.totalSizeBytes >= 1024ULL * 1024 * 1024) {
-            capacityStr = QString("%1 GB").arg(device.totalSizeBytes / (1024ULL * 1024 * 1024));
-        } else if (device.totalSizeBytes >= 1024ULL * 1024) {
-            capacityStr = QString("%1 MB").arg(device.totalSizeBytes / (1024ULL * 1024));
-        } else {
-            capacityStr = QString("%1 KB").arg(device.totalSizeBytes / 1024);
+    drives_->clear(); if (!service_) return;
+    try {
+        for (const auto& drive : service_->enumerateStorageDevices()) {
+            if(!drive.totalBytes)continue;
+            auto* row = new QTreeWidgetItem(drives_);
+            row->setText(0, QString::fromStdString(drive.modelNumber.empty() ? "Unnamed drive" : drive.modelNumber));
+            row->setText(1, drive.totalBytes>=1000000000 ? tr("%1 GB").arg(double(drive.totalBytes)/1000000000.0,0,'f',1) : tr("%1 MB").arg(double(drive.totalBytes)/1000000.0,0,'f',1));
+            row->setText(2, QString::fromStdString(drive.devicePath)); row->setData(0,Qt::UserRole,row->text(2));
         }
-        deviceModel_->setData(deviceModel_->index(row, 1), capacityStr);
-
-        // Sector size
-        deviceModel_->setData(deviceModel_->index(row, 2), QString("%1 bytes").arg(device.sectorSizeBytes));
-
-        // Partitions (we don't have real partition data, so we show a placeholder)
-        deviceModel_->setData(deviceModel_->index(row, 3), "Scan required");
-
-        // Status
-        QString statusStr;
-        if (device.isReadOnly) {
-            statusStr = "Read-Only";
-        } else {
-            statusStr = "Ready";
-        }
-        if (!device.isRemovable) {
-            statusStr += ", Fixed";
-        } else {
-            statusStr += ", Removable";
-        }
-        deviceModel_->setData(deviceModel_->index(row, 4), statusStr);
-    }
-
-    // If no devices were found, show a message
-    if (mockDevices.isEmpty()) {
-        deviceModel_->insertRow(0);
-        deviceModel_->setData(deviceModel_->index(0, 0), "No devices detected");
-        deviceModel_->setData(deviceModel_->index(0, 1), "");
-        deviceModel_->setData(deviceModel_->index(0, 2), "");
-        deviceModel_->setData(deviceModel_->index(0, 3), "");
-        deviceModel_->setData(deviceModel_->index(0, 4), "");
-    }
-
-    updateStatus(tr("Found %1 device(s).").arg(mockDevices.size()));
+        status_->setText(drives_->topLevelItemCount() ? tr("Select a source drive. Recovered files must go to a different drive.") : tr("No drives reported. Refresh after reconnecting the drive, or open an existing image."));
+    } catch (const std::exception& error) { status_->setText(QString::fromUtf8(error.what())); }
 }
-
-void SourceDiscoveryWidget::updateStatus(const QString& message) {
-    statusLabel_->setText(message);
-    recoverysuite::logging::Logger::instance().info("SourceDiscoveryWidget: " + message.toStdString());
+void SourceDiscoveryWidget::openImagePath(const QString& path, uint32_t sectorSize) {
+    if (!service_) { status_->setText(tr("Recovery service is unavailable")); return; }
+    try {
+        const auto source = service_->openImage(path.toStdString(), sectorSize); path_->setText(QString::fromStdString(source.devicePath));
+        status_->setText(tr("Opened read-only: %1 bytes").arg(source.totalBytes)); emit sourceSelected(QString::fromStdString(source.devicePath));
+    } catch (const std::exception& failure) { status_->setText(QString::fromUtf8(failure.what())); }
 }
-
-} // namespace widgets
-} // namespace gui
-} // namespace recoverysuite
+}

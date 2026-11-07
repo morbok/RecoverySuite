@@ -23,11 +23,13 @@ public:
     uint64_t getStartOffset() const override;
     uint64_t getSize() const override;
     uint64_t getEndOffset() const override;
+    // Partition/bootability flags are unexamined; these getters throw std::logic_error.
     bool isBootable() const override;
     bool isActive() const override;
     bool isHidden() const override;
     uint8_t getPartitionType() const override;
     FilesystemType getFilesystemType() const override;
+    // Validates boot geometry only, not MFT/allocation consistency.
     bool isValid() const override;
 
 private:

@@ -8,6 +8,8 @@ add_library(RecoverySuite_Disk STATIC
     DiskManager.cpp
     Access/PhysicalDisk.h
     Access/PhysicalDisk.cpp
+    Access/disk_image_reader.cpp
+    Access/read_only_device.cpp
     IDiskReader.hpp
 )
 
@@ -32,6 +34,7 @@ target_link_libraries(RecoverySuite_Disk
         RecoverySuite_Logging
         RecoverySuite_Errors
         RecoverySuite_Config
+        RecoverySuite_Platform
 )
 
 # Platform-specific libraries for disk access
@@ -42,6 +45,7 @@ if(WIN32)
             setupapi
             version
             cfgmgr32
+            RecoverySuite_Platform
     )
 elseif(UNIX AND NOT APPLE)
     # Linux-specific libraries

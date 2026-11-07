@@ -11,6 +11,7 @@
 #include <chrono>
 #include <thread>
 #include <atomic>
+#include <functional>
 
 #include "../Application/Service/RecoveryService.h"
 #include "../Disk/IDiskReader.hpp"
@@ -26,7 +27,7 @@ namespace cli {
 
 class CLIHandler {
 public:
-    CLIHandler();
+    explicit CLIHandler(std::function<bool()> cancellation = {});
     ~CLIHandler();
 
     // Main CLI loop
@@ -43,7 +44,15 @@ public:
     void showHelp(const std::vector<std::string>& args);
     void showVersion(const std::vector<std::string>& args);
 
+    // Parse user input without starting an operation or touching a disk.
+    bool parseUint64(const std::string& str, uint64_t& value);
+    recoverysuite::recovery::RecoveryCapability parseCapability(const std::string& capStr);
+
 private:
+    int handleImage(const std::vector<std::string>& args);
+    std::function<bool()> cancellation_;
+    int exitCode_{};
+
     // Helper methods
     void printSeparator();
     void printSuccess(const std::string& message);
@@ -51,10 +60,10 @@ private:
     void printWarning(const std::string& message);
     void printInfo(const std::string& message);
 
-    bool parseUint64(const std::string& str, uint64_t& value);
+
     bool parseBool(const std::string& str, bool& value);
 
-    recoverysuite::recovery::RecoveryCapability parseCapability(const std::string& capStr);
+
     std::string capabilityToString(recoverysuite::recovery::RecoveryCapability capability);
 
     bool confirmAction(const std::string& message);

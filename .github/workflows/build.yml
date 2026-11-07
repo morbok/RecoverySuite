@@ -1,0 +1,190 @@
+name: Build and test
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [Debug, Release]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        timeout-minutes: 5
+        run: bash scripts/install_ci_dependencies.sh
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+      - name: Build
+        run: cmake --build build --parallel 2
+      - name: Test
+        run: ctest --test-dir build --output-on-failure --timeout 60 --output-junit "$GITHUB_WORKSPACE/build/test-results.xml"
+
+      - name: Preserve Linux test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostics-Linux-${{ matrix.build_type }}
+          path: |
+            build/test-results.xml
+            build/Testing/Temporary/LastTest.log
+            build/Testing/Temporary/LastTestsFailed.log
+            build/screenshots/*.png
+          if-no-files-found: ignore
+      - name: Installed package smoke and Linux packages
+        if: matrix.build_type == 'Release'
+        run: |
+          cmake --install build --prefix "$RUNNER_TEMP/recoverysuite-stage" --component Runtime
+          python3 scripts/package_smoke.py "$RUNNER_TEMP/recoverysuite-stage/bin/RecoverySuite_CLI"
+          cd build
+          cpack -G 'TGZ;DEB'
+          mkdir unpacked
+          tar -xzf RecoverySuite-*-Linux-*.tar.gz -C unpacked
+          python3 ../scripts/package_smoke.py "$(find unpacked -type f -name RecoverySuite_CLI)"
+          dpkg-deb -x RecoverySuite-*-Linux-*.deb unpacked-deb
+          python3 ../scripts/package_smoke.py unpacked-deb/usr/bin/RecoverySuite_CLI
+      - name: Read-only synthetic block device QA
+        if: matrix.build_type == 'Release'
+        run: bash scripts/qa_loop_device.sh build/bin/RecoverySuite_CLI build/bin/test_disk_recovery
+      - name: Native kernel read-error rescue
+        if: matrix.build_type == 'Release'
+        run: bash scripts/qa_fault_device.sh build/bin/RecoverySuite_CLI
+      - name: Standard-formatted ext4 device recovery
+        if: matrix.build_type == 'Release'
+        run: |
+          bash scripts/qa_ext4_device.sh build/bin/RecoverySuite_CLI 1024
+          bash scripts/qa_ext4_device.sh build/bin/RecoverySuite_CLI 4096
+      - name: Standard-formatted exFAT device recovery
+        if: matrix.build_type == 'Release'
+        run: bash scripts/qa_exfat_device.sh build/bin/RecoverySuite_CLI
+      - uses: actions/upload-artifact@v4
+        if: matrix.build_type == 'Release'
+        with:
+          name: RecoverySuite-Linux-development
+          path: |
+            build/RecoverySuite-*.tar.gz*
+            build/RecoverySuite-*.deb*
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          arch: win64_msvc2022_64
+          cache: true
+          setup-python: false
+      - name: Collect pinned Qt runtime notices
+        run: python scripts/collect_qt_notices.py build/runtime-notices
+      - name: Configure
+        run: cmake -S . -B build -A x64
+      - name: Build
+        run: cmake --build build --config Release --parallel 2
+      - name: Test
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          ctest --test-dir build -C Release --output-on-failure --timeout 60 --output-junit "$env:GITHUB_WORKSPACE/build/test-results.xml"
+          $testExit = $LASTEXITCODE
+          Get-ChildItem build/tests -Filter '*.qt.txt' | ForEach-Object { Write-Output $_.Name; Get-Content -LiteralPath $_.FullName }
+          if ($testExit -ne 0) { exit $testExit }
+
+      - name: Preserve Windows test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostics-Windows
+          path: |
+            build/test-results.xml
+            build/tests/*.qt.txt
+            build/screenshots/*.png
+            build/Testing/Temporary/LastTest.log
+            build/Testing/Temporary/LastTestsFailed.log
+          if-no-files-found: ignore
+      - name: Read-only synthetic Windows VHD QA
+        shell: pwsh
+        run: ./scripts/qa_vhd_device.ps1 -Cli build/bin/Release/RecoverySuite_CLI.exe
+      - name: Windows portable package and extracted CLI smoke
+        shell: pwsh
+        run: |
+          cmake --install build --config Release --prefix "$env:RUNNER_TEMP/recoverysuite-stage" --component Runtime
+          if ($LASTEXITCODE -ne 0) { throw 'Install failed' }
+          python scripts/package_smoke.py "$env:RUNNER_TEMP/recoverysuite-stage/bin/RecoverySuite_CLI.exe"
+          if ($LASTEXITCODE -ne 0) { throw 'Installed CLI smoke failed' }
+          Push-Location build
+          cpack -C Release -G ZIP
+          if ($LASTEXITCODE -ne 0) { throw 'CPack failed' }
+          $archive = Get-ChildItem RecoverySuite-*.zip | Select-Object -First 1
+          Expand-Archive $archive.FullName unpacked
+          $cli = Get-ChildItem unpacked -Filter RecoverySuite_CLI.exe -Recurse | Select-Object -First 1
+          python ../scripts/package_smoke.py $cli.FullName
+          if ($LASTEXITCODE -ne 0) { throw 'Extracted CLI smoke failed' }
+          Pop-Location
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RecoverySuite-Windows-development
+          path: build/RecoverySuite-*.zip*
+          if-no-files-found: error
+
+  fuzz:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        timeout-minutes: 5
+        run: bash scripts/install_ci_dependencies.sh fuzz
+      - name: Configure instrumented parsers
+        run: cmake -S . -B build-fuzz -G Ninja -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_BUILD_TYPE=RelWithDebInfo -DRECOVERYSUITE_FUZZING=ON
+      - name: Build parser harness
+        run: cmake --build build-fuzz --target fuzz_recovery_parsers --parallel 2
+      - name: Seed and fuzz
+        run: |
+          python3 scripts/fuzz_corpus.py build-fuzz/corpus
+          mkdir build-fuzz/findings
+          ASAN_OPTIONS=detect_leaks=0 build-fuzz/bin/fuzz_recovery_parsers build-fuzz/corpus -runs=5000 -max_len=262144 -timeout=5 -artifact_prefix=build-fuzz/findings/
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: fuzz-findings
+          path: build-fuzz/findings
+          if-no-files-found: ignore
+
+  tooling:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify prototype package integrity gates
+        run: python3 -m unittest discover -s tests -p test_prototype_bundle.py -v
+
+  prototype:
+    needs: [linux, windows, fuzz, tooling]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: RecoverySuite-Linux-development
+          path: prototype/Linux
+      - uses: actions/download-artifact@v4
+        with:
+          name: RecoverySuite-Windows-development
+          path: prototype/Windows
+      - name: Assemble qualified prototype bundle
+        env:
+          PROTOTYPE_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: python3 scripts/assemble_prototype.py prototype
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RecoverySuite-prototype
+          path: prototype/
+          if-no-files-found: error

@@ -130,6 +130,7 @@ void OperationProgressWidget::updateProgress(const QString& operationName, int p
     operationLabel_->setText(operationName);
 
     // Update progress bar
+    progressBar_->setRange(0, 100);
     progressBar_->setValue(progress);
 
     // Update status label
@@ -157,13 +158,14 @@ void OperationProgressWidget::updateProgress(const QString& operationName,
     operationLabel_->setText(operationName);
 
     // Update progress bar
+    progressBar_->setRange(0, totalBytes > 0 ? 100 : 0);
     progressBar_->setValue(progress);
 
     // Update status label
     statusLabel_->setText(statusText);
 
     // Update detailed labels
-    processedBytesLabel_->setText(QString("Processed: %1 bytes").arg(processedBytes));
+    processedBytesLabel_->setText(totalBytes > 0 ? QString("Processed: %1 bytes").arg(processedBytes) : QString("Processed: not reported"));
     if (totalBytes > 0) {
         totalBytesLabel_->setText(QString("Total: %1 bytes").arg(totalBytes));
     } else {
@@ -177,6 +179,7 @@ void OperationProgressWidget::updateProgress(const QString& operationName,
 
 void OperationProgressWidget::resetProgress() {
     operationLabel_->setText("No operation running");
+    progressBar_->setRange(0, 100);
     progressBar_->setValue(0);
     statusLabel_->setText("Ready");
     detailsLabel_->clear();

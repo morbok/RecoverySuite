@@ -19,7 +19,7 @@ namespace storage {
 class StorageAccess {
 public:
     StorageAccess();
-    ~StorageAccess();
+    virtual ~StorageAccess();
 
     // Disable copy/move
     StorageAccess(const StorageAccess&) = delete;
@@ -32,7 +32,7 @@ public:
      * @return StorageDeviceInfo containing basic device information
      * @throws StorageException if query fails
      */
-    StorageDeviceInfo getDeviceInfo(uint64_t diskNumber);
+    virtual StorageDeviceInfo getDeviceInfo(uint64_t diskNumber);
 
     /**
      * @brief Get health/SMART data for a storage device
@@ -41,7 +41,7 @@ public:
      * @return StorageHealthData containing health information
      * @throws StorageException if query fails
      */
-    StorageHealthData getHealthData(uint64_t diskNumber);
+    virtual StorageHealthData getHealthData(uint64_t diskNumber);
 
     /**
      * @brief Check if TRIM is enabled on a storage device
@@ -50,7 +50,7 @@ public:
      * @return TRIMStatus indicating TRIM status
      * @throws StorageException if check fails
      */
-    TRIMStatus getTrimStatus(uint64_t diskNumber);
+    virtual TRIMStatus getTrimStatus(uint64_t diskNumber);
 
     /**
      * @brief Get wear leveling assessment for a storage device
@@ -59,7 +59,7 @@ public:
      * @return WearLevelingQuality indicating wear leveling quality
      * @throws StorageException if assessment fails
      */
-    WearLevelingQuality getWearLevelingQuality(uint64_t diskNumber);
+    virtual WearLevelingQuality getWearLevelingQuality(uint64_t diskNumber);
 
     /**
      * @brief Get garbage collection aggressiveness for a storage device
@@ -68,7 +68,7 @@ public:
      * @return GarbageCollectionAggressiveness indicating GC aggressiveness
      * @throws StorageException if assessment fails
      */
-    GarbageCollectionAggressiveness getGcAggressiveness(uint64_t diskNumber);
+    virtual GarbageCollectionAggressiveness getGcAggressiveness(uint64_t diskNumber);
 
     /**
      * @brief Send a vendor-specific command to a storage device
@@ -80,7 +80,7 @@ public:
      * @return Number of bytes written to buffer
      * @throws StorageException if command fails
      */
-    uint32_t sendVendorCommand(
+    virtual uint32_t sendVendorCommand(
         uint64_t diskNumber,
         const std::vector<uint8_t>& command,
         std::vector<uint8_t>& buffer);

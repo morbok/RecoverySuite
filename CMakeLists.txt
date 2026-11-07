@@ -14,7 +14,8 @@ set(RECOVERY_SUITE_VERSION_PATCH 0)
 # Compiler-specific warnings and settings
 if(MSVC)
     # MSVC warnings
-    add_compile_options(/W4 /Wall /permissive-)
+    add_compile_options(/W4 /permissive- /utf-8 /MP2)
+    add_compile_definitions(NOMINMAX WIN32_LEAN_AND_MEAN _WIN32_WINNT=0x0A00)
     # Disable specific warnings that are too noisy
     add_compile_options(/wd4251 /wd4275 /wd4800)
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|AppleClang")
@@ -62,16 +63,26 @@ configure_file(
     "${CMAKE_CURRENT_BINARY_DIR}/src/Core/config.h"
 )
 
+option(RECOVERYSUITE_FUZZING "Build Clang libFuzzer parser harness" OFF)
+if(RECOVERYSUITE_FUZZING)
+    if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+        message(FATAL_ERROR "RECOVERYSUITE_FUZZING requires Clang")
+    endif()
+    add_compile_options(-fsanitize=fuzzer-no-link,address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=address,undefined)
+endif()
+
 # Add source directories
 add_subdirectory(src)
 
-# Add Windows platform-specific implementations if on Windows
-if(WIN32)
-    add_subdirectory(src/Platform/Windows)
-endif()
 
 # Add tests
 add_subdirectory(tests)
 
 # Install headers
 install(DIRECTORY include/ DESTINATION ${INSTALL_INCLUDE_DIR})
+
+if(RECOVERYSUITE_FUZZING)
+    add_subdirectory(tests/fuzz)
+endif()
+include(cmake/Packaging.cmake)

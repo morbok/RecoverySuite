@@ -103,9 +103,6 @@ protected:
     // Initialize the metadata by reading the boot sector
     void initialize(FilesystemReader& reader);
 
-private:
-    // Calculate FAT type based on cluster count
-    FATType calculateFatType(uint32_t clusterCount) const;
 };
 
 } // namespace fat

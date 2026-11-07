@@ -2,6 +2,7 @@
 #include "NTFSFilesystem.h"
 #include "NTFSConstants.h"
 #include <cstring>
+#include "ntfs_boot_fields.h"
 
 namespace recoverysuite {
 namespace filesystem {
@@ -40,36 +41,7 @@ std::vector<FilesystemType> NTFSDriver::getSupportedTypes() const {
 }
 
 bool NTFSDriver::validateBootSector(const uint8_t* bootSectorData, uint32_t bootSectorSize) const {
-    if (!bootSectorData || bootSectorSize < sizeof(BootSector)) {
-        return false;
-    }
-    
-    const BootSector* bootSector = reinterpret_cast<const BootSector*>(bootSectorData);
-    
-    // Check NTFS signature
-    if (bootSector->oemId[0] != 'N' || bootSector->oemId[1] != 'T' ||
-        bootSector->oemId[2] != 'F' || bootSector->oemId[3] != 'S') {
-        return false;
-    }
-    
-    // Check bytes per sector (should be power of 2 and reasonable)
-    uint16_t bytesPerSector = bootSector->bytesPerSector;
-    if (bytesPerSector < 256 || bytesPerSector > 4096 || (bytesPerSector & (bytesPerSector - 1)) != 0) {
-        return false;
-    }
-    
-    // Check sectors per cluster (should be power of 2 and reasonable)
-    uint8_t sectorsPerCluster = bootSector->sectorsPerCluster;
-    if (sectorsPerCluster == 0 || sectorsPerCluster > 128 || (sectorsPerCluster & (sectorsPerCluster - 1)) != 0) {
-        return false;
-    }
-    
-    // Check boot signature
-    if (bootSector->bootSignature != 0xAA55) {
-        return false;
-    }
-    
-    return true;
+    return parseNtfsBootFields(bootSectorData,bootSectorSize).has_value();
 }
 
 } // namespace ntfs

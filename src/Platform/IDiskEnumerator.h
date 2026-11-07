@@ -3,7 +3,7 @@
 #include <vector>
 #include <memory>
 #include "../Disk/DeviceInformation.h"
-#include "DiskExceptions.h"
+#include "../Disk/DiskExceptions.h"
 #include "../Core/Version.h"
 
 namespace recoverysuite {
