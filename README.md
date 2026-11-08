@@ -17,13 +17,13 @@ Documents, videos, archives, photos, code, and other files — on Windows and Li
 
 ## Download & install
 
-**[⬇ Download RecoverySuite — Windows & Linux](https://github.com/morbok/RecoverySuite/actions/runs/42355941877/artifacts/13567617573)**
+**[⬇ Linux Flatpak](https://github.com/morbok/RecoverySuite/actions/workflows/flatpak.yml)** · **[⬇ Windows package](https://github.com/morbok/RecoverySuite/actions/runs/42355941877/artifacts/13567617573)**
 
-The combined ZIP contains **Windows/** and **Linux/** folders (Ubuntu DEB/TAR.GZ). For CachyOS, Arch, Fedora and other Linux desktops, use the **Flatpak download below**. GitHub may ask you to sign in.
+Choose your operating system below. GitHub may ask you to sign in for build downloads.
 
 ### Windows
 
-Open **Windows/** → extract the ZIP inside → double-click **bin/RecoverySuite_GUI.exe**.
+Extract the Windows download → open **Windows/** → extract its ZIP → double-click **bin/RecoverySuite_GUI.exe**.
 
 If a runtime is missing, install [Microsoft Visual C++ x64](https://aka.ms/vs/17/release/vc_redist.x64.exe).
 

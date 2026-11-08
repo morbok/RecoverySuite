@@ -17,7 +17,7 @@ jobs:
       - name: Install Flatpak build tools
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y flatpak flatpak-builder appstream desktop-file-utils elfutils
+          sudo apt-get install --no-install-recommends -y flatpak flatpak-builder appstream desktop-file-utils elfutils librsvg2-common
           flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
       - name: Build exact tracked source in KDE SDK
         run: |
