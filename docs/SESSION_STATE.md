@@ -608,3 +608,7 @@ Updated the README presentation using the user-provided repository as a structur
 ## 2026-11-07 — Simplified download choices
 
 Removed the decorative README banner and unused SVG asset. Moved download/install ahead of features. Windows now uses a single extract/open instruction; Ubuntu uses one install-and-launch command after downloading/extracting the shared bundle. macOS is explicitly unsupported rather than offering a nonfunctional installer. Advanced archive/checksum/build information is collapsed. No application behavior changed; no application/device tests performed locally.
+
+## 2026-11-08 — Portable Linux Flatpak delivery
+
+The owner uses CachyOS, not Ubuntu. Added an x86_64 Flatpak built against KDE 6.10 SDK/runtime from tracked source only, desktop/metainfo integration and user installation instructions. Permissions cover host recovery paths, block-device visibility and only UDisks2 system-bus access; no network or host-command execution. Existing source-read/destination guards remain intact. Separate CI builds and installs the actual bundle, verifies FAT/NTFS/signature exports, source preservation/no-overwrite and offscreen GUI startup. Do not execute the application or device tests on this workstation. Deliver the verified .flatpak locally after GitHub checks; physical/interactive authorization qualification is still separate.

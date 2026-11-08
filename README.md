@@ -3,7 +3,7 @@
 <h1>RecoverySuite</h1>
 
 [![Windows](https://img.shields.io/badge/Windows-x64-0078D4?style=for-the-badge)](#windows)
-[![Linux](https://img.shields.io/badge/Linux-Ubuntu_24.04-E95420?style=for-the-badge)](#linux)
+[![Linux](https://img.shields.io/badge/Linux-Flatpak-4A86CF?style=for-the-badge)](#linux)
 [![MIT License](https://img.shields.io/badge/License-MIT-16A085?style=for-the-badge)](LICENSE)
 [![Prototype](https://img.shields.io/badge/Status-Prototype-D49A36?style=for-the-badge)](#supported-recovery)
 
@@ -19,7 +19,7 @@ Documents, videos, archives, photos, code, and other files — on Windows and Li
 
 **[⬇ Download RecoverySuite — Windows & Linux](https://github.com/morbok/RecoverySuite/actions/runs/42355941877/artifacts/13567617573)**
 
-Extract the downloaded ZIP. It contains **Windows/** and **Linux/** folders. GitHub may ask you to sign in.
+The combined ZIP contains **Windows/** and **Linux/** folders (Ubuntu DEB/TAR.GZ). For CachyOS, Arch, Fedora and other Linux desktops, use the **Flatpak download below**. GitHub may ask you to sign in.
 
 ### Windows
 
@@ -27,13 +27,15 @@ Open **Windows/** → extract the ZIP inside → double-click **bin/RecoverySuit
 
 If a runtime is missing, install [Microsoft Visual C++ x64](https://aka.ms/vs/17/release/vc_redist.x64.exe).
 
-### Linux
+### Linux — Flatpak (CachyOS / Arch / Fedora / Ubuntu)
 
-On **Ubuntu 24.04**, open a terminal in the extracted download folder and run:
+Download **RecoverySuite-Flatpak-x86_64** from a successful [Linux Flatpak build](https://github.com/morbok/RecoverySuite/actions/workflows/flatpak.yml), extract the ZIP, then run this in that folder:
 
-```bash
-sudo apt install ./Linux/RecoverySuite-*.deb && RecoverySuite_GUI
+```sh
+flatpak install --user ./RecoverySuite-x86_64.flatpak
 ```
+
+Open **RecoverySuite** from your application menu. [Installation details](docs/FLATPAK.md) cover the runtime download and source-disk authorization. This uses the shared KDE/Qt runtime; Ubuntu is not required.
 
 ### macOS
 
@@ -42,6 +44,7 @@ Not supported yet; there is no macOS installer.
 <details>
 <summary>Other downloads, checksums and build status</summary>
 
+- **Ubuntu alternative:** install the DEB inside **Linux/** with `sudo apt install ./Linux/RecoverySuite-*.deb`.
 - **Linux archive:** extract the TAR.GZ inside **Linux/** and open `usr/bin/RecoverySuite_GUI`. Requires Ubuntu 24.04's Qt6 Core/Gui/Widgets/DBus and libudev runtime libraries; desktop authorization uses UDisks2/polkit.
 - **Verify packages:** use the included `SHA256SUMS` and `manifest.json`.
 - **Download expired?** Open a successful [Build and test run](https://github.com/morbok/RecoverySuite/actions/workflows/build.yml), scroll to **Artifacts**, and download **RecoverySuite-prototype**.

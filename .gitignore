@@ -142,3 +142,11 @@ lib/
 
 # Historical local scratch file
 /TEST.txt
+
+# Generated Flatpak source/build artifacts
+packaging/flatpak/recoverysuite-source.tar
+.flatpak-builder/
+flatpak-build/
+flatpak-repo/
+flatpak-output/
+*.flatpak

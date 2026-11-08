@@ -1,0 +1,57 @@
+name: Linux Flatpak
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  flatpak:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Flatpak build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y flatpak flatpak-builder appstream desktop-file-utils
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+      - name: Build exact tracked source in KDE SDK
+        run: |
+          git archive --format=tar --output=packaging/flatpak/recoverysuite-source.tar HEAD
+          flatpak-builder --force-clean --user --install-deps-from=flathub --disable-rofiles-fuse --repo=flatpak-repo flatpak-build packaging/flatpak/io.github.morbok.RecoverySuite.json
+      - name: Validate desktop entry and metadata
+        run: |
+          desktop-file-validate flatpak-build/files/share/applications/io.github.morbok.RecoverySuite.desktop
+          appstreamcli validate --no-net flatpak-build/files/share/metainfo/io.github.morbok.RecoverySuite.metainfo.xml
+          test ! -d flatpak-build/files/include
+          cmp LICENSE flatpak-build/files/share/doc/recoverysuite/LICENSE
+      - name: Build and install single-file package on disposable runner
+        run: |
+          mkdir -p flatpak-output
+          flatpak build-bundle flatpak-repo flatpak-output/RecoverySuite-x86_64.flatpak io.github.morbok.RecoverySuite prototype --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user --noninteractive flatpak-output/RecoverySuite-x86_64.flatpak
+      - name: Verify installed sandbox recovery and GUI startup
+        run: python3 scripts/qa_flatpak.py
+      - name: Record provenance and checksum
+        env:
+          PACKAGE_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,json,os,subprocess
+          root=Path('flatpak-output')
+          package=root/'RecoverySuite-x86_64.flatpak'
+          digest=hashlib.sha256(package.read_bytes()).hexdigest()
+          (root/'RecoverySuite-x86_64.flatpak.sha256').write_text(digest+'  '+package.name+'\n')
+          runtime=subprocess.check_output(['flatpak','info','--user','--show-runtime','io.github.morbok.RecoverySuite'],text=True).strip()
+          manifest={'sourceRevision':os.environ['PACKAGE_SOURCE_REVISION'],'workflow':f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",'appId':'io.github.morbok.RecoverySuite','runtime':runtime,'sha256':digest,'validation':'Installed sandbox synthetic recovery and offscreen GUI; no physical hardware qualification'}
+          (root/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
+          PY
+          cp docs/FLATPAK.md flatpak-output/INSTALL.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RecoverySuite-Flatpak-x86_64
+          path: flatpak-output/
+          if-no-files-found: error

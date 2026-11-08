@@ -4,6 +4,7 @@ Use the root [README](../README.md) for installation and a first recovery.
 
 | Document | Read it for |
 | --- | --- |
+| [Linux Flatpak](FLATPAK.md) | Install on CachyOS/Arch/Fedora and other Flatpak desktops |
 | [User guide](USER_GUIDE.md) | Scan, preview, selectively recover, save progress and rescue unreadable sectors |
 | [Product scope](PRODUCT_SCOPE.md) | Supported recovery behavior, bounds and unsupported cases |
 | [Release acceptance](RELEASE_ACCEPTANCE.md) | Implemented acceptance criteria and remaining external gates |

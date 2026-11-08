@@ -1,0 +1,39 @@
+{
+  "app-id": "io.github.morbok.RecoverySuite",
+  "runtime": "org.kde.Platform",
+  "runtime-version": "6.10",
+  "sdk": "org.kde.Sdk",
+  "command": "RecoverySuite_GUI",
+  "default-branch": "prototype",
+  "finish-args": [
+    "--socket=wayland",
+    "--socket=fallback-x11",
+    "--share=ipc",
+    "--device=all",
+    "--filesystem=host",
+    "--filesystem=/run/udev:ro",
+    "--system-talk-name=org.freedesktop.UDisks2"
+  ],
+  "modules": [
+    {
+      "name": "recoverysuite",
+      "buildsystem": "simple",
+      "build-commands": [
+        "cmake -S . -B _build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/app",
+        "cmake --build _build --parallel 2 --target RecoverySuite_GUI_Exe RecoverySuite_CLI",
+        "cmake --install _build --component Runtime",
+        "install -Dm644 packaging/flatpak/io.github.morbok.RecoverySuite.desktop /app/share/applications/io.github.morbok.RecoverySuite.desktop",
+        "install -Dm644 packaging/recoverysuite.svg /app/share/icons/hicolor/scalable/apps/io.github.morbok.RecoverySuite.svg",
+        "install -Dm644 packaging/flatpak/io.github.morbok.RecoverySuite.metainfo.xml /app/share/metainfo/io.github.morbok.RecoverySuite.metainfo.xml",
+        "rm /app/share/applications/recoverysuite.desktop /app/share/icons/hicolor/scalable/apps/recoverysuite.svg"
+      ],
+      "sources": [
+        {
+          "type": "archive",
+          "path": "recoverysuite-source.tar",
+          "strip-components": 0
+        }
+      ]
+    }
+  ]
+}
