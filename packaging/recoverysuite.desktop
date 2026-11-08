@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
 Name=RecoverySuite (Development)
-Comment=Recover files from disk images
+Comment=Find lost files and recover them to another drive
 Exec=RecoverySuite_GUI
 Icon=recoverysuite
 Terminal=false

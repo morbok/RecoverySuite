@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.morbok.RecoverySuite</id>
+  <name>RecoverySuite</name>
+  <summary>Find lost files and recover them to another drive</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <developer id="io.github.morbok"><name>RecoverySuite contributors</name></developer>
+  <description>
+    <p>Search supported FAT, exFAT, NTFS and ext4 records on connected disks or disk images, inspect candidates and recover selected files to another drive.</p>
+    <p>This development prototype uses read-only source access, verifies exported bytes and reports unsupported or partial results. Overwritten or unreadable bytes cannot be recreated.</p>
+    <p>Device and host-file access are required for source selection and recovery destinations. Privileged source reads require host UDisks2 authorization. Physical failing-drive qualification remains pending.</p>
+  </description>
+  <launchable type="desktop-id">io.github.morbok.RecoverySuite.desktop</launchable>
+  <url type="homepage">https://github.com/morbok/RecoverySuite</url>
+  <url type="bugtracker">https://github.com/morbok/RecoverySuite/issues</url>
+  <content_rating type="oars-1.1"/>
+  <releases><release version="1.0.0-prototype" date="2026-11-08"/></releases>
+  <supports><control>pointing</control><control>keyboard</control></supports>
+</component>

@@ -608,3 +608,11 @@ Updated the README presentation using the user-provided repository as a structur
 ## 2026-11-07 — Simplified download choices
 
 Removed the decorative README banner and unused SVG asset. Moved download/install ahead of features. Windows now uses a single extract/open instruction; Ubuntu uses one install-and-launch command after downloading/extracting the shared bundle. macOS is explicitly unsupported rather than offering a nonfunctional installer. Advanced archive/checksum/build information is collapsed. No application behavior changed; no application/device tests performed locally.
+
+## 2026-11-08 — Portable Linux Flatpak delivery
+
+The owner uses CachyOS, not Ubuntu. Added an x86_64 Flatpak built against KDE 6.10 SDK/runtime from tracked source only, desktop/metainfo integration and user installation instructions. Permissions cover host recovery paths, block-device visibility and only UDisks2 system-bus access; no network or host-command execution. Existing source-read/destination guards remain intact. Separate CI builds and installs the actual bundle, verifies FAT/NTFS/signature exports, source preservation/no-overwrite and offscreen GUI startup. Do not execute the application or device tests on this workstation. Deliver the verified .flatpak locally after GitHub checks; physical/interactive authorization qualification is still separate.
+
+Flatpak first CI built both application executables successfully in KDE 6.10, then exposed a missing host eu-strip tool during bundle cleanup. Added elfutils to the CI host, corrected the Flatpak GUI cleanup command, and bound checkout to the actual manifest source revision. No local builds or application tests. Await the next exact-head run.
+
+Second Flatpak CI completed compilation and binary cleanup, then AppStream could not decode the SVG menu icon on the minimal runner. Added the explicit host librsvg2-common loader (omitted by no-install-recommends), documented the shared KDE runtime licensing and made the README download choices explicitly platform-specific. Await installed-package checks.

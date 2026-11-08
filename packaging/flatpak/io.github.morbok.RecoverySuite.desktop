@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=RecoverySuite
+Comment=Find lost files and recover them to another drive
+Exec=RecoverySuite_GUI
+Icon=io.github.morbok.RecoverySuite
+Terminal=false
+Categories=Utility;System;
+Keywords=recovery;disk;files;USB;
