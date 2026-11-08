@@ -58,5 +58,5 @@ try:
         raise RuntimeError(f'Flatpak GUI startup failed: {err.decode(errors="replace")}')
     print('Installed Flatpak GUI startup passed (offscreen)')
 finally:
-    subprocess.run(['flatpak', 'kill', '--user', APP], capture_output=True)
+    subprocess.run(['flatpak', 'kill', APP], capture_output=True)
     process.communicate(timeout=15)
